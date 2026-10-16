@@ -1,0 +1,97 @@
+================================================================================
+AUREL · IMAGE USAGE AND VISUAL ASSET CATALOG
+Brand: AUREL (Made With Love For You)
+================================================================================
+
+1. HERO SECTION VISUAL ASSET
+Location: Main Landing Page Top Hero Showcase
+Asset Subject: Bespoke keepsake magazine spread open on limestone table styled with blush garden roses and silk ribbon
+Resolution: High resolution 1200x800 (16:11 aspect ratio on desktop)
+Interaction: Gentle 3D perspective mouse tilt response and live glass overlay card showing Ananya and Vikram First Anniversary Edition
+Fallback Strategy: Neutral blush stone gradient backdrop with rounded border and subtle dark scrim
+
+2. BESPOKE CATEGORY GRID ASSETS
+A. Custom Magazines Visual:
+   Location: Categories Section Card 1 (Large 16:9 Landscape)
+   Asset: Editorial open journal book with fine typography and neutral background
+   Hover Effect: Smooth 108% zoom with title elevation
+
+B. Custom Hampers Visual:
+   Location: Categories Section Card 2 (Large 16:9 Landscape)
+   Asset: Luxury gift box tied with dusty rose silk bow and dried botanical elements
+   Hover Effect: Smooth 108% zoom with subtle scrim elevation
+
+C. Bouquets Visual:
+   Location: Categories Section Card 3 (Square 1:1)
+   Asset: Fresh blush pink garden roses and white sweet peas wrapped in parchment paper
+   Hover Effect: Smooth 108% zoom with quick discovery affordance
+
+D. Single Flowers Visual:
+   Location: Categories Section Card 4 (Square 1:1)
+   Asset: Preserved solitary garden rose stem in crystal clear presentation
+   Hover Effect: Smooth 108% zoom with quick discovery affordance
+
+3. PRODUCT CATALOG ASSETS
+A. Custom Birthday Magazine:
+   Asset: Archival photo journal with heavy paper stock and ribbon
+   Usage: Product Catalog Card & Product Detail Page
+
+B. Custom Anniversary Magazine:
+   Asset: Hardbound love chronicle with embossed gold foil details
+   Usage: Product Catalog Card & Product Detail Page
+
+C. The Keepsake Romance Hamper:
+   Asset: Hand poured soy candle, preserved florals, and Parisian bonbons
+   Usage: Product Catalog Card & Product Detail Page
+
+D. The Celebration Luxury Hamper:
+   Asset: Champagne gift box arrangement with gold wrapped delicacies
+   Usage: Product Catalog Card & Product Detail Page
+
+E. Blush Garden Rose Bouquet:
+   Asset: Fresh stem cuts of pastel pink garden roses
+   Usage: Product Catalog Card & Product Detail Page
+
+F. Whispering Peonies Bouquet:
+   Asset: Opulent blooming pink peonies with baby breath florals
+   Usage: Product Catalog Card & Product Detail Page
+
+G. Single Eternal Pink Rose Stem:
+   Asset: Solitary bloom in protective cylinder sleeve
+   Usage: Product Catalog Card & Product Detail Page
+
+H. Single Velvet Blossom Stem:
+   Asset: French ranunculus preserved in botanical eco glycerin
+   Usage: Product Catalog Card & Product Detail Page
+
+I. Handcrafted Crochet Tulip Blossom:
+   Asset: Knitted cotton tulip stem in pastel rose and sage
+   Usage: Product Catalog Card & Product Detail Page
+
+J. Handmade Crochet Heart Floral Set:
+   Asset: Knitted plush heart duo with daisy blossoms
+   Usage: Product Catalog Card & Product Detail Page
+
+4. MAGAZINE LIVE CUSTOMIZER PREVIEW
+Location: Signature Magazine Feature Section
+Asset: Editorial portrait photo embedded inside real time responsive magazine cover frame
+Interaction: Recipient name entered by visitor renders instantly on the cover masthead in real time. Toggling between Matte and Gloss modifies specular reflection gradients and paper grain textures.
+
+5. CUSTOM GIFT STUDIO (MIX AND MATCH BUILDER)
+Location: Interactive Custom Hamper Studio
+Assets Used:
+- Ivory Silk Keepsake Box
+- Blush Velvet Presentation Box
+- Preserved Blush Garden Rose
+- Handmade Crochet Tulip Stem
+- Damask Rose Scented Soy Candle
+- Pocket Keepsake Memory Folio
+- Belgian Berry Dark Chocolate Bonbons
+- Personalized Wax Sealed Letter
+- Dusty Rose Silk Satin Bow
+Usage: Visual selection grid allowing customers to build their own bespoke hamper with live subtotal calculation.
+
+6. COMMUNITY GALLERY ASSETS
+Location: Social Moments Worth Sharing Section
+Assets: 4 square photography cards showcasing customer unboxings, gift reactions, and table displays with interactive like counts.
+================================================================================

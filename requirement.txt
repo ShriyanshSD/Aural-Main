@@ -1,0 +1,36 @@
+# AUREL Luxury Bespoke E Commerce Requirements Specification
+# Runtime Environment: Node.js 20 or higher / Bun / Vite 8
+
+# Core Frontend Framework
+react>=19.0.0
+react-dom>=19.0.0
+
+# Build Engine and TypeScript
+vite>=8.3.0
+typescript>=5.0.0
+@vitejs/plugin-react>=6.1.1
+tsx>=4.21.0
+
+# Styling and Design Architecture
+tailwindcss>=4.3.0
+@tailwindcss/vite>=4.3.0
+autoprefixer>=10.4.20
+
+# Motion and Animation Engine
+motion>=12.23.0
+
+# Vector Icons and Visual Delights
+lucide-react>=0.546.0
+canvas-confetti>=1.9.4
+@types/canvas-confetti>=1.9.0
+
+# Typography Imports (Configured via Google Fonts CDN in index.html)
+# Cormorant Garamond (Editorial Luxury Serif)
+# Playfair Display (Headline Display Serif)
+# Plus Jakarta Sans (Modern Clean Sans Serif)
+
+# Backend and Server Runtime (Optional for SSR / Fullstack Proxy)
+express>=4.21.2
+dotenv>=17.2.3
+@types/node>=22.14.0
+@types/express>=4.17.21

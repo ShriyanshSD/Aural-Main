@@ -1,0 +1,6 @@
+{
+  "name": "AUREL Luxury Bespoke Gifts",
+  "description": "AUREL helps people turn special moments into keepsakes with bespoke memory magazines, artisanal hampers, luxury bouquets, and preserved single stems.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
