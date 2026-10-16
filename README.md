@@ -49,3 +49,9 @@ npm run dev
 
 To verify and build for production:
 npm run build
+
+## Deploying to Vercel
+
+Import this repository into Vercel and deploy it with the default project root. Vercel uses `vercel.json` to build the Vite frontend into `dist`, and deploys `api/chat.ts` as the `/api/chat` serverless function.
+
+Add `GEMINI_API_KEY` to the project's Environment Variables in Vercel, for each environment where the concierge should be available. The key is used only by the serverless function and must not be added to a `VITE_` variable. Redeploy after adding or changing it.

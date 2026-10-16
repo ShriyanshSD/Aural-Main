@@ -65,7 +65,7 @@ app.post('/api/chat', async (req, res) => {
     }
 
     // Default to gemini-3.5-flash as specified for general chat tasks
-    const targetModel = model || 'gemini-3.5-flash'
+    const targetModel = model || 'gemini-3.8-flash'
 
     // Format multi turn conversation history for @google/genai
     const contents = messages.map((msg: { role: string; content: string }) => ({
