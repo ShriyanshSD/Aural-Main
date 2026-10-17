@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { resendSignupVerificationHandler } from '../../auth-handler'
+import { resendSignupVerificationHandler } from '../../auth-handler.js'
 
 type AuthRequest = IncomingMessage & { body?: unknown }
 

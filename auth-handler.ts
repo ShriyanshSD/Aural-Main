@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { isValidAccountEmail, normalizeValidPhoneNumber } from './src/utils/accountValidation'
+import { isValidAccountEmail, normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
 
 interface AuthRequest extends IncomingMessage {
   body?: unknown

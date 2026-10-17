@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { sessionHandler } from '../../auth-handler'
+import { sessionHandler } from '../../auth-handler.js'
 
 type AuthRequest = IncomingMessage & { body?: unknown }
 

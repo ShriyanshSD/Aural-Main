@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { logoutHandler } from '../../auth-handler'
+import { logoutHandler } from '../../auth-handler.js'
 
 type AuthRequest = IncomingMessage & { body?: unknown }
 
