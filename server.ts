@@ -4,6 +4,14 @@ import { fileURLToPath } from 'url'
 import { createServer as createViteServer } from 'vite'
 import { GoogleGenAI } from '@google/genai'
 import dotenv from 'dotenv'
+import {
+  loginHandler,
+  logoutHandler,
+  resendSignupVerificationHandler,
+  sessionHandler,
+  signupHandler,
+  verifySignupHandler
+} from './auth-handler'
 
 dotenv.config()
 
@@ -28,8 +36,13 @@ const app = express()
 const PORT = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 3000
 
 app.use(express.json())
+app.post('/api/auth/signup', (req, res) => signupHandler(req, res))
+app.post('/api/auth/verify', (req, res) => verifySignupHandler(req, res))
+app.post('/api/auth/resend-verification', (req, res) => resendSignupVerificationHandler(req, res))
+app.post('/api/auth/login', (req, res) => loginHandler(req, res))
+app.get('/api/auth/me', (req, res) => sessionHandler(req, res))
+app.post('/api/auth/logout', (req, res) => logoutHandler(req, res))
 
-// Initialize GoogleGenAI server side
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   httpOptions: {
@@ -39,7 +52,6 @@ const ai = new GoogleGenAI({
   }
 })
 
-// System instruction giving the chatbot its specific brand role
 const AUREL_CONCIERGE_SYSTEM_INSTRUCTION = `You are the AUREL Bespoke Gifting Concierge and Memory Stylist for the luxury brand AUREL.
 Brand tagline: "Made With Love For You"
 Core brand philosophy: AUREL helps people turn special moments into something they can hold, see, and remember.
@@ -55,26 +67,19 @@ Warm, poetic, attentive, intimate, and refined. Never sound like a generic corpo
 STRICT RULE: Do not use hyphens and do not use semicolons anywhere in your responses. Use commas, spaces, or bullet points instead.
 Assist the user with thoughtful gift recommendations, emotional dedication wording, and customized memory ideas.`
 
-// Chat API Route (supports multi turn conversation history)
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages, model } = req.body
-
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'Messages array is required' })
     }
 
-    // Default to gemini-3.5-flash as specified for general chat tasks
-    const targetModel = model || 'gemini-3.8-flash'
-
-    // Format multi turn conversation history for @google/genai
     const contents = messages.map((msg: { role: string; content: string }) => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.content }]
     }))
-
     const response = await ai.models.generateContent({
-      model: targetModel,
+      model: model || 'gemini-3.8-flash',
       contents,
       config: {
         systemInstruction: AUREL_CONCIERGE_SYSTEM_INSTRUCTION,
@@ -83,11 +88,7 @@ app.post('/api/chat', async (req, res) => {
     })
 
     const replyText = response.text || 'I am here to help you craft an unforgettable keepsake for your cherished moments.'
-
-    // Ensure no hyphens or semicolons in response
-    const cleanReply = replyText.replace(/[-;]/g, ' ')
-
-    return res.json({ reply: cleanReply })
+    return res.json({ reply: replyText.replace(/[-;]/g, ' ') })
   } catch (error: any) {
     console.error('Gemini API Error:', error)
     return res.status(500).json({
@@ -97,11 +98,10 @@ app.post('/api/chat', async (req, res) => {
   }
 })
 
-// Mount Vite or serve static
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { 
+      server: {
         middlewareMode: true,
         host: '0.0.0.0',
         hmr: process.env.DISABLE_HMR !== 'true'

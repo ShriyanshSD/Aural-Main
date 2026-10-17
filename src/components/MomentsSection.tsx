@@ -98,7 +98,7 @@ export const MomentsSection: React.FC<MomentsSectionProps> = ({
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ duration: 0.6, delay: index * 0.1, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 0.4, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
                   whileHover={{ y: -4 }}
                   onClick={() => onSelectMoment(moment.category)}
                   className={`p-6 rounded-2xl cursor-pointer border transition-all duration-300 relative group overflow-hidden ${

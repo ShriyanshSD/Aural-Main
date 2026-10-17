@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { X, Star, Heart, Check, Minus, Plus, ShoppingBag, Sparkles, ArrowLeft, ShieldCheck, Truck } from 'lucide-react'
 import { Product, FinishType, CartItem } from '../types'
 
@@ -10,6 +10,7 @@ interface ProductDetailModalProps {
   onAddToCart: (item: CartItem) => void
   isWishlisted: boolean
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
+  isAuthenticated: boolean
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -18,7 +19,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   onAddToCart,
   isWishlisted,
-  onToggleWishlist
+  onToggleWishlist,
+  isAuthenticated
 }) => {
   if (!product) return null
 
@@ -102,12 +104,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {/* Left: Product Image / Live Preview */}
             <div className="md:col-span-6 space-y-4">
               <div className="relative aspect-[4/3] sm:aspect-[1/1] rounded-2xl overflow-hidden shadow-lg bg-[#F5ECE8] group">
-                <img
+                <MotionConfig reducedMotion="never">
+                <motion.img
                   src={product.imageUrl}
                   alt={product.name}
                   referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  whileHover={{ scale: 1.045 }}
+                  transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                  className="h-full w-full object-cover"
                 />
+                </MotionConfig>
 
                 {/* Live Personalization Overlay for Magazines */}
                 {product.category === 'magazines' && recipientName.trim() && (
@@ -126,17 +132,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 )}
 
                 {/* Wishlist Button */}
-                <button
-                  onClick={(e) => onToggleWishlist(product.id, e)}
-                  aria-label="Save to favorites"
-                  className="absolute top-4 right-4 p-2.5 rounded-full bg-white/85 dark:bg-[#1D1716]/85 backdrop-blur-md shadow-md"
-                >
-                  <Heart
-                    className={`w-4 h-4 transition-colors ${
-                      isWishlisted ? 'text-[#B36D6D] fill-[#B36D6D]' : 'text-[#8E7A74]'
-                    }`}
-                  />
-                </button>
+                {isAuthenticated && (
+                  <button
+                    onClick={(e) => onToggleWishlist(product.id, e)}
+                    aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+                    aria-pressed={isWishlisted}
+                    className="absolute right-4 top-4 rounded-full bg-white/85 p-2.5 shadow-md backdrop-blur-md dark:bg-[#1D1716]/85"
+                  >
+                    <Heart
+                      className={`h-4 w-4 transition-colors ${
+                        isWishlisted ? 'fill-[#B36D6D] text-[#B36D6D]' : 'text-[#8E7A74]'
+                      }`}
+                    />
+                  </button>
+                )}
               </div>
 
               {/* Trust Badges */}

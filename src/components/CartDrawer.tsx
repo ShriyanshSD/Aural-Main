@@ -48,7 +48,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-            className={`fixed top-0 bottom-0 right-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-hidden border-l transition-colors duration-500 ${
+            className={`theme-surface fixed top-0 bottom-0 right-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-hidden border-l ${
               isDarkMode 
                 ? 'bg-[#1C1817] text-[#F3EBE6] border-[#342A27]' 
                 : 'bg-[#FAF6F2] text-[#2C2422] border-[#E8D4CB]'

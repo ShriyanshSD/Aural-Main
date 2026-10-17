@@ -1,15 +1,17 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { X, ShieldCheck, CheckCircle2, AlertCircle, Lock, Smartphone, CreditCard, ArrowRight, Sparkles, Copy, Check, QrCode, Building2, RefreshCw } from 'lucide-react'
 import confetti from 'canvas-confetti'
-import { CartItem, OrderDetails } from '../types'
+import { AuthUser, CartItem, OrderDetails } from '../types'
 import { validateCheckoutForm } from '../utils/security'
+import { normalizeValidPhoneNumber } from '../utils/accountValidation'
 
 interface CheckoutModalProps {
   isOpen: boolean
   onClose: () => void
   isDarkMode: boolean
   cartItems: CartItem[]
+  authUser: AuthUser | null
   onOrderSuccess: (order: OrderDetails) => void
 }
 
@@ -20,15 +22,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onClose,
   isDarkMode,
   cartItems,
+  authUser,
   onOrderSuccess
 }) => {
-  if (!isOpen) return null
-
   // Form State
-  const [customerName, setCustomerName] = useState('')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [email, setEmail] = useState('')
-  const [address, setAddress] = useState('')
+  const [customerName, setCustomerName] = useState(authUser?.name ?? '')
+  const [phoneNumber, setPhoneNumber] = useState(authUser?.phone ?? '')
+  const [email, setEmail] = useState(authUser?.email ?? '')
+  const [address, setAddress] = useState(authUser?.address ?? '')
   const [city, setCity] = useState('')
   const [postalCode, setPostalCode] = useState('')
   const [notes, setNotes] = useState('')
@@ -47,6 +48,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [formErrors, setFormErrors] = useState<string[]>([])
   const [completedOrder, setCompletedOrder] = useState<OrderDetails | null>(null)
   const [copiedMessage, setCopiedMessage] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen || !authUser) return
+    setCustomerName(authUser.name)
+    setPhoneNumber(authUser.phone)
+    setEmail(authUser.email)
+    setAddress(authUser.address)
+  }, [authUser, isOpen])
+
+  if (!isOpen) return null
 
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const isFreeDelivery = subtotal >= 1500
@@ -76,8 +87,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setFormErrors([])
   }
 
-  // Open Razorpay Popup after validation
-  const handleInitiateRazorpay = () => {
+  const validateCurrentCheckout = () => {
     const validation = validateCheckoutForm({
       customerName,
       phoneNumber,
@@ -90,10 +100,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     if (!validation.isValid) {
       setFormErrors(validation.errors)
-      return
+      return false
     }
 
     setFormErrors([])
+    return true
+  }
+
+  // Open the payment popup after validating checkout details.
+  const handleInitiateRazorpay = () => {
+    if (!validateCurrentCheckout()) return
     setIsRazorpayPopupOpen(true)
   }
 
@@ -418,15 +434,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <label className="block text-[11px] font-medium tracking-wide uppercase text-[#88746E] dark:text-[#BCAAA4] mb-1">
                         Phone Number *
                       </label>
-                      <input
-                        type="tel"
-                        value={phoneNumber}
-                        onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="E.g. 9876543210"
-                        className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
-                          isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
-                        }`}
-                      />
+                      <div className="relative">
+                        <input
+                          type="tel"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          placeholder="E.g. 9876543210"
+                          aria-describedby="checkout-phone-status"
+                          className={`w-full rounded-xl border py-2.5 pl-3.5 pr-10 text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
+                            isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
+                          }`}
+                        />
+                        {normalizeValidPhoneNumber(phoneNumber) && (
+                          <CheckCircle2
+                            aria-label="Valid phone number format"
+                            className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-emerald-600 dark:text-emerald-400"
+                          />
+                        )}
+                      </div>
+                      <p id="checkout-phone-status" className="mt-1.5 text-[11px] text-[#88746E] dark:text-[#BCAAA4]">
+                        {normalizeValidPhoneNumber(phoneNumber) ? 'Valid phone number format.' : 'Enter a valid phone number.'}
+                      </p>
                     </div>
 
                     <div className="sm:col-span-2">

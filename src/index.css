@@ -5,16 +5,34 @@
     --font-serif: 'Playfair Display', 'Cormorant Garamond', serif;
     --font-editorial: 'Cormorant Garamond', Georgia, serif;
     --font-sans: 'Plus Jakarta Sans', sans-serif;
+    --theme-ease: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   html {
     scroll-behavior: smooth;
     font-family: var(--font-sans);
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
-    transition: background-color 0.4s ease, color 0.4s ease;
+    transition: background-color 1400ms var(--theme-ease), color 1400ms var(--theme-ease);
   }
+}
+
+.theme-surface {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 1400ms;
+  transition-timing-function: var(--theme-ease);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 1400ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .font-serif-title {
@@ -46,4 +64,34 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(180, 140, 140, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+
+  .aurel-theme-transition,
+  .aurel-theme-transition .theme-surface {
+    transition-duration: 1400ms !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 1400ms !important;
+  }
 }

@@ -1,5 +1,5 @@
-import React from 'react'
-import { motion } from 'motion/react'
+import React, { useState } from 'react'
+import { motion, MotionConfig } from 'motion/react'
 import { ArrowUpRight } from 'lucide-react'
 import { ProductCategory } from '../types'
 
@@ -12,6 +12,8 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   isDarkMode,
   onSelectCategory
 }) => {
+  const [hoveredCategory, setHoveredCategory] = useState<ProductCategory | null>(null)
+
   const topCategories = [
     {
       id: 'magazines' as ProductCategory,
@@ -83,7 +85,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   ]
 
   return (
-    <section className={`py-20 sm:py-28 transition-colors duration-500 ${
+    <section className={`theme-surface py-20 sm:py-28 ${
       isDarkMode ? 'bg-[#151312] text-[#F3EBE6]' : 'bg-[#FAF7F2] text-[#2C2422]'
     }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -102,22 +104,28 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
         </div>
 
         {/* Top 2 Large Visual Cards */}
+        <MotionConfig reducedMotion="never">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
           {topCategories.map((cat, idx) => (
             <motion.div
               key={cat.id}
               initial={{ opacity: 0, y: 25 }}
               whileInView={{ opacity: 1, y: 0 }}
+              whileHover={{ y: -3 }}
+              onHoverStart={() => setHoveredCategory(cat.id)}
+              onHoverEnd={() => setHoveredCategory(null)}
               viewport={{ once: true }}
-              transition={{ duration: 0.7, delay: idx * 0.15, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.42, delay: idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
               onClick={() => onSelectCategory(cat.id)}
               className={`${cat.cols} relative group rounded-3xl overflow-hidden cursor-pointer aspect-[16/10] sm:aspect-[16/9] shadow-md hover:shadow-2xl transition-all duration-500`}
             >
-              <img
+              <motion.img
                 src={cat.imageUrl}
                 alt={cat.title}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+                animate={{ scale: hoveredCategory === cat.id ? 1.045 : 1 }}
+                transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                className="h-full w-full object-cover"
               />
 
               {/* Editorial Gradient Scrim */}
@@ -154,16 +162,21 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
               key={cat.id}
               initial={{ opacity: 0, y: 25 }}
               whileInView={{ opacity: 1, y: 0 }}
+              whileHover={{ y: -3 }}
+              onHoverStart={() => setHoveredCategory(cat.id)}
+              onHoverEnd={() => setHoveredCategory(null)}
               viewport={{ once: true }}
-              transition={{ duration: 0.7, delay: 0.2 + idx * 0.15, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.42, delay: 0.16 + idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
               onClick={() => onSelectCategory(cat.id)}
               className={`${cat.cols} relative group rounded-3xl overflow-hidden cursor-pointer aspect-[4/3] sm:aspect-[1/1] shadow-md hover:shadow-2xl transition-all duration-500`}
             >
-              <img
+              <motion.img
                 src={cat.imageUrl}
                 alt={cat.title}
                 referrerPolicy="no-referrer"
-                className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+                animate={{ scale: hoveredCategory === cat.id ? 1.045 : 1 }}
+                transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                className="h-full w-full object-cover"
               />
 
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/10 transition-opacity duration-300 group-hover:opacity-90" />
@@ -190,6 +203,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
             </motion.div>
           ))}
         </div>
+        </MotionConfig>
 
       </div>
     </section>

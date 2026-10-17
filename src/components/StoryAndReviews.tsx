@@ -107,7 +107,7 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: i * 0.1 }}
+                transition={{ duration: 0.4, delay: i * 0.05, ease: [0.22, 1, 0.36, 1] }}
                 className={`p-6 sm:p-8 rounded-3xl border text-center transition-all duration-300 ${
                   isDarkMode 
                     ? 'bg-[#201A19] border-[#382B28]' 

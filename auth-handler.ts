@@ -1,0 +1,737 @@
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { isValidAccountEmail, normalizeValidPhoneNumber } from './src/utils/accountValidation'
+
+interface AuthRequest extends IncomingMessage {
+  body?: unknown
+}
+
+interface AccountRecord {
+  id: string
+  name: string
+  username: string
+  email: string
+  phone: string
+  address: string
+  gender: string
+  email_verified: boolean
+  created_at: string
+  password_salt: string
+  password_hash: string
+}
+
+interface PublicAccount {
+  id: string
+  name: string
+  username: string
+  email: string
+  phone: string
+  address: string
+  gender: string
+  createdAt: string
+}
+
+interface SupabaseErrorBody {
+  code?: string | number
+  error_code?: string
+  message?: string
+  msg?: string
+  error?: string
+}
+
+class AccountServiceError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code?: string | number,
+    readonly providerMessage?: string
+  ) {
+    super('Account database request failed.')
+  }
+}
+
+class AccountConfigurationError extends Error {}
+
+class AuthProviderError extends Error {
+  constructor(readonly status: number, readonly code?: string | number, readonly providerMessage?: string) {
+    super('Supabase Auth request failed.')
+  }
+}
+
+const safeProviderMessage = (value: unknown): string | undefined => {
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  return value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
+    .replace(/\b(?:sbp_|sb_secret_|eyJ)[A-Za-z0-9._-]{12,}\b/g, '[redacted]')
+    .slice(0, 400)
+}
+
+const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000
+const allowedGenders = new Set(['Woman', 'Man', 'Non-binary', 'Another identity', 'Prefer not to say'])
+
+const sendJson = (res: ServerResponse, status: number, payload: unknown) => {
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json')
+  res.setHeader('Cache-Control', 'no-store')
+  res.end(JSON.stringify(payload))
+}
+
+const getSupabaseConfig = () => {
+  const supabaseUrl = process.env.SUPABASE_URL
+    ?.trim()
+    .replace(/\/+$/, '')
+    .replace(/\/rest\/v1$/i, '')
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new AccountConfigurationError('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.')
+  }
+  return { supabaseUrl, serviceRoleKey }
+}
+
+const getSupabaseAuthKey = () => {
+  const { serviceRoleKey } = getSupabaseConfig()
+  return process.env.SUPABASE_PUBLISHABLE_KEY?.trim()
+    || process.env.SUPABASE_ANON_KEY?.trim()
+    || serviceRoleKey
+}
+
+const getSupabaseAppUrl = () =>
+  process.env.APP_URL?.trim().replace(/\/+$/, '')
+  || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+
+const supabaseAuthRequest = async <T>(endpoint: string, body: unknown): Promise<T> => {
+  const { supabaseUrl } = getSupabaseConfig()
+  const url = new URL(`${supabaseUrl}/auth/v1/${endpoint}`)
+  if (endpoint === 'signup') url.searchParams.set('redirect_to', getSupabaseAppUrl())
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      apikey: getSupabaseAuthKey(),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  })
+  const responseText = await response.text()
+  let payload: (T & SupabaseErrorBody) | undefined
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText) as T & SupabaseErrorBody
+    } catch {
+      throw new AuthProviderError(response.status, undefined, safeProviderMessage(responseText))
+    }
+  }
+  if (!response.ok) {
+    const providerMessage = safeProviderMessage(payload?.message ?? payload?.msg ?? payload?.error)
+    throw new AuthProviderError(
+      response.status,
+      payload?.error_code ?? payload?.code,
+      providerMessage
+    )
+  }
+  return payload as T
+}
+
+interface SupabaseAdminUser {
+  id: string
+  email?: string
+  email_confirmed_at?: string | null
+  user_metadata?: Record<string, unknown>
+}
+
+const findSupabaseAuthUserByEmail = async (email: string): Promise<SupabaseAdminUser | undefined> => {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const url = new URL(`${supabaseUrl}/auth/v1/admin/users`)
+  const perPage = 50
+  url.searchParams.set('per_page', String(perPage))
+  for (let page = 1; ; page += 1) {
+    url.searchParams.set('page', String(page))
+    const response = await fetch(url, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`
+      }
+    })
+    const responseText = await response.text()
+    let payload: { users?: SupabaseAdminUser[] } | SupabaseErrorBody | undefined
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText) as typeof payload
+      } catch {
+        throw new AuthProviderError(response.status, undefined, safeProviderMessage(responseText))
+      }
+    }
+    if (!response.ok) {
+      const errorBody = payload as SupabaseErrorBody | undefined
+      throw new AuthProviderError(
+        response.status,
+        errorBody?.error_code ?? errorBody?.code,
+        safeProviderMessage(errorBody?.message ?? errorBody?.msg ?? errorBody?.error)
+      )
+    }
+    const users = (payload as { users?: SupabaseAdminUser[] } | undefined)?.users
+    if (!Array.isArray(users)) throw new AuthProviderError(response.status)
+    const matchingUser = users.find(user => user.email?.trim().toLowerCase() === email)
+    if (matchingUser) return matchingUser
+    if (users.length < perPage) return undefined
+  }
+}
+
+const matchesPendingSignup = (
+  user: SupabaseAdminUser,
+  details: { name: string; username: string; phone: string; address: string; gender: string }
+): boolean => {
+  const metadata = user.user_metadata
+  const normalized = (value: unknown) =>
+    typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').toLowerCase() : ''
+  return Boolean(
+    !user.email_confirmed_at
+    && metadata
+    && normalized(metadata.name) === normalized(details.name)
+    && normalized(metadata.username) === normalized(details.username)
+    && normalizeValidPhoneNumber(String(metadata.phone ?? '')) === details.phone
+    && normalized(metadata.address) === normalized(details.address)
+    && normalized(metadata.gender) === normalized(details.gender)
+  )
+}
+
+const supabaseRequest = async <T>(table: string, query: URLSearchParams, init: RequestInit = {}): Promise<T> => {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const url = `${supabaseUrl}/rest/v1/${table}?${query.toString()}`
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+      ...init.headers
+    }
+  })
+  const responseText = await response.text()
+  let payload: T | SupabaseErrorBody | undefined
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText) as T | SupabaseErrorBody
+    } catch {
+      throw new AccountServiceError(response.status, undefined, safeProviderMessage(responseText))
+    }
+  }
+  if (!response.ok) {
+    const errorBody = payload as SupabaseErrorBody | undefined
+    throw new AccountServiceError(
+      response.status,
+      errorBody?.code,
+      safeProviderMessage(errorBody?.message ?? errorBody?.msg ?? errorBody?.error)
+    )
+  }
+  return payload as T
+}
+
+const derivePasswordHash = (password: string, salt: string): Promise<Buffer> =>
+  new Promise((resolve, reject) => {
+    scrypt(password, salt, 64, (error, key) => {
+      if (error) reject(error)
+      else resolve(key)
+    })
+  })
+
+const publicAccount = (account: AccountRecord): PublicAccount => ({
+  id: account.id,
+  name: account.name,
+  username: account.username,
+  email: account.email,
+  phone: account.phone,
+  address: account.address,
+  gender: account.gender,
+  createdAt: account.created_at
+})
+
+const getVerifiedAuthUser = async (accessToken: string) => {
+  const { supabaseUrl } = getSupabaseConfig()
+  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: {
+      apikey: getSupabaseAuthKey(),
+      Authorization: `Bearer ${accessToken}`
+    }
+  })
+  const responseText = await response.text()
+  let payload: { id?: string; email?: string; email_confirmed_at?: string | null } | SupabaseErrorBody | undefined
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText) as typeof payload
+    } catch {
+      throw new AuthProviderError(response.status)
+    }
+  }
+  if (!response.ok) {
+    const errorBody = payload as SupabaseErrorBody | undefined
+    throw new AuthProviderError(response.status, errorBody?.code)
+  }
+  return payload as { id?: string; email?: string; email_confirmed_at?: string | null }
+}
+
+const setSessionCookie = async (res: ServerResponse, userId: string) => {
+  const token = randomBytes(32).toString('hex')
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS).toISOString()
+  await supabaseRequest('aurel_sessions', new URLSearchParams(), {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ token_hash: tokenHash, user_id: userId, expires_at: expiresAt })
+  })
+  const secure = process.env.NODE_ENV === 'production' || process.env.VERCEL ? '; Secure' : ''
+  res.setHeader('Set-Cookie', `aurel_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_DURATION_MS / 1000}${secure}`)
+}
+
+const readSessionToken = (req: AuthRequest): string | undefined => {
+  const cookie = req.headers.cookie?.split(';').map(part => part.trim()).find(part => part.startsWith('aurel_session='))
+  const token = cookie?.slice('aurel_session='.length)
+  return token && /^[a-f0-9]{64}$/.test(token) ? token : undefined
+}
+
+const getSessionAccount = async (req: AuthRequest): Promise<AccountRecord | undefined> => {
+  const token = readSessionToken(req)
+  if (!token) return undefined
+
+  const tokenHash = createHash('sha256').update(token).digest('hex')
+  const sessions = await supabaseRequest<Array<{ user_id: string; expires_at: string }>>(
+    'aurel_sessions',
+    new URLSearchParams({ token_hash: `eq.${tokenHash}`, select: 'user_id,expires_at', limit: '1' })
+  )
+  const session = sessions[0]
+  if (!session) return undefined
+  if (Date.parse(session.expires_at) <= Date.now()) {
+    await supabaseRequest('aurel_sessions', new URLSearchParams({ token_hash: `eq.${tokenHash}` }), { method: 'DELETE' })
+    return undefined
+  }
+
+  const accounts = await supabaseRequest<AccountRecord[]>(
+    'aurel_users',
+    new URLSearchParams({ id: `eq.${session.user_id}`, select: '*', limit: '1' })
+  )
+  return accounts[0]
+}
+
+const validEmail = (value: unknown): value is string =>
+  typeof value === 'string' && isValidAccountEmail(value)
+
+const validPassword = (value: unknown): value is string =>
+  typeof value === 'string' && value.length >= 8 && value.length <= 128 && /[A-Za-z]/.test(value) && /\d/.test(value)
+
+const createPendingAccount = async (
+  userId: string,
+  details: { name: string; username: string; email: string; phone: string; address: string; gender: string },
+  password: string
+): Promise<AccountRecord> => {
+  const passwordSalt = randomBytes(16).toString('hex')
+  const passwordHash = (await derivePasswordHash(password, passwordSalt)).toString('hex')
+  const accounts = await supabaseRequest<AccountRecord[]>(
+    'aurel_users',
+    new URLSearchParams({ select: '*' }),
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        id: userId,
+        ...details,
+        password_salt: passwordSalt,
+        password_hash: passwordHash,
+        email_verified: false
+      })
+    }
+  )
+  if (!accounts[0]) throw new Error('Supabase did not return the pending account.')
+  return accounts[0]
+}
+
+const setAccountEmailVerified = async (accountId: string, emailVerified: boolean): Promise<AccountRecord> => {
+  const accounts = await supabaseRequest<AccountRecord[]>(
+    'aurel_users',
+    new URLSearchParams({ id: `eq.${accountId}`, select: '*' }),
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ email_verified: emailVerified })
+    }
+  )
+  if (!accounts[0]) throw new Error('Supabase did not update the account verification state.')
+  return accounts[0]
+}
+
+const sendSignupConfirmation = async (email: string): Promise<boolean> => {
+  try {
+    await supabaseAuthRequest('resend', { type: 'signup', email })
+    return true
+  } catch (error) {
+    if (!(error instanceof AuthProviderError)) throw error
+    console.error('Supabase confirmation email resend failed:', {
+      status: error.status,
+      code: error.code,
+      message: error.providerMessage
+    })
+    return false
+  }
+}
+
+const readBody = (req: AuthRequest): Record<string, unknown> =>
+  req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+    ? req.body as Record<string, unknown>
+    : {}
+
+const handleFailure = (res: ServerResponse, error: unknown, fallbackMessage: string) => {
+  if (error instanceof AccountConfigurationError) {
+    console.error(error.message)
+    sendJson(res, 503, { error: 'Account storage is not configured. Add the Supabase server environment variables.' })
+    return
+  }
+  if (error instanceof AccountServiceError && error.code === '23505') {
+    sendJson(res, 409, { error: 'That email or username is already in use.' })
+    return
+  }
+  if (error instanceof AccountServiceError && error.code === 'PGRST204') {
+    console.error('Supabase account table schema is out of date:', {
+      status: error.status,
+      code: error.code,
+      message: error.providerMessage
+    })
+    sendJson(res, 503, {
+      error: 'AUREL’s Supabase account table is missing a column required for signup. In Supabase SQL Editor, run the latest supabase/schema.sql, then run NOTIFY pgrst, \'reload schema\';. If Supabase already created an unverified user for this email, retry signup after the schema is updated to finish saving the profile and resend the confirmation email.'
+    })
+    return
+  }
+  if (error instanceof AuthProviderError) {
+    console.error('Supabase email verification request failed:', {
+      status: error.status,
+      code: error.code,
+      message: error.providerMessage
+    })
+    if (error.status === 429) {
+      sendJson(res, 429, { error: 'Too many email attempts. Wait a few minutes and try again.' })
+      return
+    }
+    if (error.status === 400) {
+      sendJson(res, 400, { error: 'The confirmation link is invalid or expired. Request a new confirmation email and try again.' })
+      return
+    }
+    if (error.status === 422) {
+      sendJson(res, 409, { error: 'This email may already have an account. Try signing in instead.' })
+      return
+    }
+    if (error.status >= 500) {
+      sendJson(res, 503, { error: 'Supabase could not send the confirmation email. Check its SMTP settings and Authentication logs, then try resending.' })
+      return
+    }
+  }
+  if (error instanceof AccountServiceError && error.status >= 400 && error.status < 500) {
+    console.error('Supabase account request rejected:', {
+      status: error.status,
+      code: error.code,
+      message: error.providerMessage
+    })
+  } else {
+    console.error('Account request failed:', error)
+  }
+  sendJson(res, 500, { error: fallbackMessage })
+}
+
+export async function signupHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const body = readBody(req)
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : ''
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  const phoneInput = typeof body.phone === 'string' ? body.phone.trim() : ''
+  const phone = normalizeValidPhoneNumber(phoneInput)
+  const address = typeof body.address === 'string' ? body.address.trim() : ''
+  const gender = typeof body.gender === 'string' ? body.gender : ''
+  const password = body.password
+
+  if (name.length < 2 || name.length > 80) return sendJson(res, 400, { error: 'Enter a name between 2 and 80 characters.' })
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) return sendJson(res, 400, { error: 'Username must be 3 to 24 letters, numbers, or underscores.' })
+  if (!validEmail(email)) return sendJson(res, 400, { error: 'Enter a valid email address.' })
+  if (!validPassword(password)) return sendJson(res, 400, { error: 'Password must be 8 to 128 characters and include a letter and a number.' })
+  if (!phone) return sendJson(res, 400, { error: 'Enter a valid phone number, including its country code if it is not an Indian number.' })
+  if (address.length < 5 || address.length > 240) return sendJson(res, 400, { error: 'Address must be between 5 and 240 characters.' })
+  if (!allowedGenders.has(gender)) return sendJson(res, 400, { error: 'Select a valid gender option.' })
+
+  const signupDetails = { name, username, email, phone, address, gender }
+  const recoverPendingAuthUser = async (): Promise<'recovered' | 'not-found' | 'details-mismatch' | 'already-verified'> => {
+    const authUser = await findSupabaseAuthUserByEmail(email)
+    if (!authUser?.id) return 'not-found'
+    if (authUser.email_confirmed_at) return 'already-verified'
+    if (!matchesPendingSignup(authUser, signupDetails)) return 'details-mismatch'
+
+    const existingProfiles = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${authUser.id}`, select: '*', limit: '1' })
+    )
+    const existingProfile = existingProfiles[0]
+    if (existingProfile && (
+      existingProfile.name !== name
+      || existingProfile.username !== username
+      || existingProfile.phone !== phone
+      || existingProfile.address !== address
+      || existingProfile.gender !== gender
+    )) return 'details-mismatch'
+    if (!existingProfile) {
+      await createPendingAccount(authUser.id, signupDetails, password)
+    } else if (existingProfile.email_verified) {
+      await setAccountEmailVerified(existingProfile.id, false)
+    }
+
+    const emailSent = await sendSignupConfirmation(email)
+    sendJson(res, 200, {
+      verificationRequired: true,
+      email,
+      emailSent,
+      message: emailSent
+        ? 'A confirmation email has been sent. Check your inbox and spam folder.'
+        : 'Your signup is saved and waiting for email confirmation, but Supabase could not send the email yet. Check the Supabase Auth email settings, then select Resend confirmation email.'
+    })
+    return 'recovered'
+  }
+
+  try {
+    const existingProfiles = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ email: `eq.${email}`, select: '*', limit: '1' })
+    )
+    if (existingProfiles[0]) {
+      const existingProfile = existingProfiles[0]
+      const authUser = await findSupabaseAuthUserByEmail(email)
+      if (!authUser) {
+        return sendJson(res, 409, {
+          error: 'Supabase has no Auth user for this email, so no confirmation email can be sent. A separate old AUREL profile still occupies the email. No account data was changed. In Supabase SQL Editor, remove only the orphaned profile for this email, then retry signup.'
+        })
+      } else {
+        if (authUser.id !== existingProfile.id) {
+          return sendJson(res, 409, { error: 'This email is associated with a different Supabase account. Please contact support before trying again.' })
+        }
+        if (authUser.email_confirmed_at) {
+          if (!existingProfile.email_verified) {
+            await setAccountEmailVerified(existingProfile.id, true)
+          }
+          return sendJson(res, 409, { error: 'This email already has an account. Sign in instead.' })
+        }
+        const matchesExistingSignup = existingProfile.name === name
+          && existingProfile.username === username
+          && existingProfile.phone === phone
+          && existingProfile.address === address
+          && existingProfile.gender === gender
+        if (!matchesExistingSignup) {
+          return sendJson(res, 409, { error: 'A signup for this email is already waiting for confirmation. Use the original signup details or resend its confirmation email.' })
+        }
+        if (existingProfile.email_verified) {
+          await setAccountEmailVerified(existingProfile.id, false)
+        }
+        const emailSent = await sendSignupConfirmation(email)
+        return sendJson(res, 200, {
+          verificationRequired: true,
+          email,
+          emailSent,
+          message: emailSent
+            ? 'A confirmation email has been sent. Check your inbox and spam folder.'
+            : 'Your signup is saved and waiting for email confirmation, but Supabase could not send the email yet. Check the Supabase Auth email settings, then select Resend confirmation email.'
+        })
+      }
+    }
+
+    const authResult = await supabaseAuthRequest<{
+      id?: string
+      email?: string
+      identities?: unknown[]
+      email_confirmed_at?: string | null
+      access_token?: string
+      user?: { id: string; email?: string; identities?: unknown[]; email_confirmed_at?: string | null }
+      session?: unknown
+    }>('signup', {
+      email,
+      password,
+      data: { name, username, phone, address, gender }
+    })
+
+    const authUser = authResult.user ?? (authResult.id ? authResult : undefined)
+    const authSession = authResult.session ?? (authResult.access_token ? authResult : undefined)
+    if (authSession) {
+      return sendJson(res, 503, { error: 'Email confirmation is disabled for this Supabase project. Enable email confirmations before signing up.' })
+    }
+    if (authUser?.id && authUser.identities?.length === 0) {
+      const recovery = await recoverPendingAuthUser()
+      if (recovery === 'recovered') return
+      if (recovery === 'details-mismatch') {
+        return sendJson(res, 409, { error: 'An unverified signup already exists for this email, but its saved details differ. Use the original signup details or contact support.' })
+      }
+      if (recovery === 'already-verified') {
+        return sendJson(res, 409, { error: 'This email already has an account. Sign in instead.' })
+      }
+      return sendJson(res, 503, {
+        error: 'Supabase accepted the signup request but did not return a recoverable pending account. No AUREL profile was created. Please try again shortly or check Supabase Authentication users.'
+      })
+    }
+    if (!authUser?.id) {
+      console.error('Supabase signup response did not contain a user identifier.', {
+        hasUserObject: Boolean(authResult.user),
+        hasTopLevelId: typeof authResult.id === 'string',
+        hasIdentities: Array.isArray(authResult.identities),
+        hasSession: Boolean(authSession)
+      })
+      return sendJson(res, 502, {
+        error: 'Supabase accepted the signup request but did not return a user ID. Check Supabase Authentication → Users and Logs before retrying, so you do not create another pending signup.'
+      })
+    }
+
+    await createPendingAccount(authUser.id, signupDetails, password)
+    sendJson(res, 200, {
+      verificationRequired: true,
+      email,
+      emailSent: true,
+      message: 'A confirmation email has been sent. Check your inbox and spam folder.'
+    })
+  } catch (error) {
+    if (error instanceof AuthProviderError && (error.status >= 500 || error.status === 422 || error.status === 409)) {
+      console.error('Supabase signup failed:', {
+        status: error.status,
+        code: error.code,
+        message: error.providerMessage
+      })
+      try {
+        const recovery = await recoverPendingAuthUser()
+        if (recovery === 'recovered') return
+        if (recovery === 'details-mismatch') {
+          return sendJson(res, 409, { error: 'An unverified signup already exists for this email, but its saved details differ. Use the original signup details or contact support.' })
+        }
+        if (recovery === 'already-verified') {
+          return sendJson(res, 409, { error: 'This email already has an account. Sign in instead.' })
+        }
+      } catch (recoveryError) {
+        console.error('Unable to recover the pending Supabase signup:', recoveryError)
+        return sendJson(res, 503, { error: 'Supabase returned a signup error and AUREL could not check whether a pending account already exists. Please try again shortly.' })
+      }
+      if (error.status >= 500) {
+        sendJson(res, 503, {
+          error: 'Supabase could not complete signup or send the confirmation email. Check Supabase Dashboard → Authentication → Logs. If you are using Supabase’s built-in email sender, it only sends to addresses belonging to your Supabase organization team and has a very low sending limit. Add your test email to the organization team, or configure custom SMTP to send to other addresses.'
+        })
+        return
+      }
+      sendJson(res, 503, {
+        error: 'Supabase rejected signup, but AUREL could not confirm whether a matching account exists. No AUREL profile was changed. Please try again shortly or contact support.'
+      })
+      return
+    }
+    handleFailure(res, error, 'Unable to create your account right now.')
+  }
+}
+
+export async function verifySignupHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const body = readBody(req)
+  const accessToken = typeof body.accessToken === 'string' ? body.accessToken : ''
+  if (accessToken.length < 20) return sendJson(res, 400, { error: 'Open the confirmation link from your email to verify your account.' })
+
+  try {
+    const user = await getVerifiedAuthUser(accessToken)
+    const verifiedEmail = user?.email?.trim().toLowerCase()
+    if (!user?.id || !verifiedEmail || !user.email_confirmed_at) {
+      return sendJson(res, 400, { error: 'We could not verify that email. Open the confirmation link and try again.' })
+    }
+
+    const accounts = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${user.id}`, email: `eq.${verifiedEmail}`, select: '*', limit: '1' })
+    )
+    const account = accounts[0]
+    if (!account) return sendJson(res, 404, { error: 'Signup details were not found. Please start signup again.' })
+
+    const verifiedAccounts = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${account.id}`, email_verified: 'eq.false', select: '*' }),
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ email_verified: true })
+      }
+    )
+    const verifiedAccount = verifiedAccounts[0]
+    if (!verifiedAccount) return sendJson(res, 409, { error: 'This account has already been verified. Please sign in.' })
+    await setSessionCookie(res, verifiedAccount.id)
+    sendJson(res, 200, { user: publicAccount(verifiedAccount) })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to verify your email right now.')
+  }
+}
+
+export async function resendSignupVerificationHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const body = readBody(req)
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  if (!validEmail(email)) return sendJson(res, 400, { error: 'Enter a valid email address.' })
+
+  try {
+    const pendingAccounts = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ email: `eq.${email}`, email_verified: 'eq.false', select: 'id', limit: '1' })
+    )
+    if (!pendingAccounts[0]) return sendJson(res, 404, { error: 'No pending signup was found for this email. Start signup again.' })
+    const sent = await sendSignupConfirmation(email)
+    if (!sent) {
+      return sendJson(res, 503, { error: 'Your signup is still waiting for email verification, but Supabase could not send the confirmation email. Check its SMTP settings and try again.' })
+    }
+    sendJson(res, 200, { sent: true })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to resend the verification email right now.')
+  }
+}
+
+export async function loginHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const body = readBody(req)
+  const emailInput = body.email
+  const password = body.password
+  if (!validEmail(emailInput) || typeof password !== 'string' || password.length === 0 || password.length > 128) {
+    return sendJson(res, 400, { error: 'Enter a valid email address and password.' })
+  }
+
+  try {
+    const email = emailInput.trim().toLowerCase()
+    const accounts = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ email: `eq.${email}`, email_verified: 'eq.true', select: '*', limit: '1' })
+    )
+    const account = accounts[0]
+    if (!account) {
+      await derivePasswordHash(password, 'aurel-invalid-login-salt')
+      return sendJson(res, 401, { error: 'Email or password is incorrect.' })
+    }
+
+    const submittedHash = await derivePasswordHash(password, account.password_salt)
+    const savedHash = Buffer.from(account.password_hash, 'hex')
+    if (submittedHash.length !== savedHash.length || !timingSafeEqual(submittedHash, savedHash)) {
+      return sendJson(res, 401, { error: 'Email or password is incorrect.' })
+    }
+
+    await setSessionCookie(res, account.id)
+    sendJson(res, 200, { user: publicAccount(account) })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to sign in right now.')
+  }
+}
+
+export async function sessionHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  if (!readSessionToken(req)) return sendJson(res, 401, { error: 'Not signed in.' })
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Not signed in.' })
+    sendJson(res, 200, { user: publicAccount(account) })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to load your account.')
+  }
+}
+
+export async function logoutHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const token = readSessionToken(req)
+  if (token) {
+    try {
+      const tokenHash = createHash('sha256').update(token).digest('hex')
+      await supabaseRequest('aurel_sessions', new URLSearchParams({ token_hash: `eq.${tokenHash}` }), { method: 'DELETE' })
+    } catch (error) {
+      return handleFailure(res, error, 'Unable to sign out right now.')
+    }
+  }
+  const secure = process.env.NODE_ENV === 'production' || process.env.VERCEL ? '; Secure' : ''
+  res.setHeader('Set-Cookie', `aurel_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`)
+  sendJson(res, 200, { success: true })
+}

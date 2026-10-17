@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { Star, Heart, Plus, ChevronDown, Check, SlidersHorizontal, ArrowLeft } from 'lucide-react'
 import { Product, ProductCategory, SortOption } from '../types'
 import { PRODUCTS } from '../data/products'
@@ -12,6 +12,8 @@ interface ProductCatalogProps {
   onQuickAdd: (product: Product, e: React.MouseEvent) => void
   wishlist: string[]
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
+  searchQuery: string
+  isAuthenticated: boolean
 }
 
 export const ProductCatalog: React.FC<ProductCatalogProps> = ({
@@ -21,7 +23,9 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   onSelectProduct,
   onQuickAdd,
   wishlist,
-  onToggleWishlist
+  onToggleWishlist,
+  searchQuery = '',
+  isAuthenticated
 }) => {
   const [currentSort, setCurrentSort] = useState<SortOption>('recommended')
   const [isSortOpen, setIsSortOpen] = useState(false)
@@ -78,6 +82,14 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   // Filtered & Sorted products
   const processedProducts = useMemo(() => {
     let list = PRODUCTS.filter(p => {
+      const normalizedQuery = searchQuery.trim().toLowerCase()
+      if (normalizedQuery && ![
+        p.name,
+        p.category.replaceAll('-', ' '),
+        p.subCategory?.replaceAll('-', ' '),
+        p.tagline,
+        p.description
+      ].some(value => value?.toLowerCase().includes(normalizedQuery))) return false
       if (activeCategory === 'all') return true
       if (activeCategory === 'hair-accessories') {
         if (selectedHairSubCategory === 'all') return p.category === 'hair-accessories'
@@ -101,7 +113,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
       default:
         return list
     }
-  }, [activeCategory, currentSort, selectedHairSubCategory])
+  }, [activeCategory, currentSort, searchQuery, selectedHairSubCategory])
 
   const handleQuickAddClick = (product: Product, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -113,7 +125,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   }
 
   return (
-    <section id="collection-grid" className={`py-20 transition-colors duration-500 ${
+    <section id="collection-grid" className={`theme-surface py-20 ${
       isDarkMode ? 'bg-[#181615] text-[#F3EBE6]' : 'bg-[#FAF7F2] text-[#2C2422]'
     }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -270,15 +282,18 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
         )}
 
         {/* Product Grid */}
-        <motion.div 
-          layout
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8"
-        >
-          <AnimatePresence mode="popLayout">
+        <MotionConfig reducedMotion="never">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={`${activeCategory}-${selectedHairSubCategory}-${currentSort}`}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
+            className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3"
+          >
             {processedProducts.length === 0 && activeCategory === 'hair-accessories' && (
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
+              <div
                 className={`col-span-full rounded-3xl border p-8 text-center ${
                   isDarkMode ? 'border-[#362A27] bg-[#1F1918]' : 'border-[#F0DDD6] bg-[#FFF9F7]'
                 }`}
@@ -291,22 +306,32 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                       ? 'Hair Clips are coming soon.'
                       : 'This hair subcollection is being curated and will be added here soon.'}
                 </p>
-              </motion.div>
+              </div>
             )}
-            {processedProducts.map((product) => {
+            {processedProducts.map((product, index) => {
               const isWishlisted = wishlist.includes(product.id)
               const isQuickAdded = addedAnimationId === product.id
 
               return (
                 <motion.div
                   key={product.id}
-                  layout
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ duration: 0.4 }}
                   onClick={() => onSelectProduct(product)}
-                  className={`group rounded-3xl overflow-hidden cursor-pointer border transition-all duration-500 flex flex-col justify-between ${
+                  initial={{ opacity: 0, y: 34, scale: 0.94, rotateX: -5 }}
+                  whileInView={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
+                  whileHover={{
+                    y: -5,
+                    scale: 1.015,
+                    transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] }
+                  }}
+                  exit={{ opacity: 0, y: -8 }}
+                  viewport={{ once: true, amount: 0.12 }}
+                  style={{ transformPerspective: 1000, transformOrigin: 'center top' }}
+                  transition={{
+                    duration: 0.78,
+                    delay: (index % 3) * 0.09,
+                    ease: [0.22, 1, 0.36, 1]
+                  }}
+                  className={`group flex cursor-pointer flex-col justify-between overflow-hidden rounded-3xl border transition-[border-color,box-shadow] duration-300 ease-out ${
                     isDarkMode
                       ? 'bg-[#1F1918] border-[#362A27] hover:border-[#B36D6D]/60 hover:shadow-xl hover:shadow-black/40'
                       : 'bg-[#FFFFFF] border-[#EAD7CF] hover:border-[#B36D6D]/60 hover:shadow-xl hover:shadow-[#B36D6D]/10'
@@ -314,30 +339,35 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                 >
                   {/* Image Container with Smooth Zoom */}
                   <div className="relative aspect-4/3 w-full overflow-hidden bg-[#F6ECE8]">
-                    <img
+                    <motion.img
                       src={product.imageUrl}
                       alt={product.name}
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+                      whileHover={{ scale: 1.04 }}
+                      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                      className="h-full w-full object-cover will-change-transform"
                     />
 
                     {/* Subtle Scrim */}
                     <div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
 
                     {/* Wishlist Heart Button */}
-                    <button
-                      onClick={(e) => onToggleWishlist(product.id, e)}
-                      aria-label="Save to favorites"
-                      className="absolute top-4 right-4 p-2.5 rounded-full bg-white/85 dark:bg-[#1D1716]/85 backdrop-blur-md shadow-md transition-all duration-200 hover:scale-110"
-                    >
-                      <Heart
-                        className={`w-4 h-4 transition-colors ${
-                          isWishlisted
-                            ? 'text-[#B36D6D] fill-[#B36D6D]'
-                            : 'text-[#8E7A74] hover:text-[#B36D6D]'
-                        }`}
-                      />
-                    </button>
+                    {isAuthenticated && (
+                      <button
+                        onClick={(e) => onToggleWishlist(product.id, e)}
+                        aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+                        aria-pressed={isWishlisted}
+                        className="absolute right-4 top-4 rounded-full bg-white/85 p-2.5 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-110 dark:bg-[#1D1716]/85"
+                      >
+                        <Heart
+                          className={`h-4 w-4 transition-colors ${
+                            isWishlisted
+                              ? 'fill-[#B36D6D] text-[#B36D6D]'
+                              : 'text-[#8E7A74] hover:text-[#B36D6D]'
+                          }`}
+                        />
+                      </button>
+                    )}
 
                     {/* Available finishes indicator */}
                     {product.availableFinishes && (
@@ -387,8 +417,8 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                       </div>
 
                       <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
                         onClick={(e) => handleQuickAddClick(product, e)}
                         aria-label="Add to bag"
                         className={`px-4 py-2 rounded-full text-xs font-medium tracking-wider uppercase transition-all duration-300 flex items-center gap-1.5 ${
@@ -414,8 +444,9 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                 </motion.div>
               )
             })}
-          </AnimatePresence>
-        </motion.div>
+          </motion.div>
+        </AnimatePresence>
+        </MotionConfig>
 
       </div>
     </section>

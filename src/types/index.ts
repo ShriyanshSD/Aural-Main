@@ -78,6 +78,17 @@ export interface OrderDetails {
   status: 'paid' | 'pending'
 }
 
+export interface AuthUser {
+  id: string
+  name: string
+  username: string
+  email: string
+  phone: string
+  address: string
+  gender: string
+  createdAt: string
+}
+
 export interface SecurityScanReport {
   vulnerability: string
   severity: 'low' | 'medium' | 'high'

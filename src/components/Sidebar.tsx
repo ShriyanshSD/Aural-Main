@@ -1,7 +1,9 @@
 import React from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { X, Sparkles, BookOpen, Gift, Flower2, Heart, Layers, ArrowRight } from 'lucide-react'
+import { motion, AnimatePresence, MotionConfig } from 'motion/react'
+import { X, Sparkles, BookOpen, Gift, Flower2, Heart, Layers, ArrowRight, UserRound, LogOut } from 'lucide-react'
 import { ProductCategory } from '../types'
+import { AuthUser } from '../types'
+import { AuthMode } from './AuthModal'
 
 interface SidebarProps {
   isOpen: boolean
@@ -13,6 +15,9 @@ interface SidebarProps {
   onOpenConcierge: () => void
   onOpenChatbot: () => void
   activeCategory: ProductCategory
+  user: AuthUser | null
+  onOpenAuth: (mode: AuthMode) => void
+  onLogout: () => void
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -24,7 +29,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenStory,
   onOpenConcierge,
   onOpenChatbot,
-  activeCategory
+  activeCategory,
+  user,
+  onOpenAuth,
+  onLogout
 }) => {
   const menuCategories = [
     {
@@ -100,6 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ]
 
   return (
+    <MotionConfig reducedMotion="never">
     <AnimatePresence>
       {isOpen && (
         <>
@@ -108,18 +117,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
             onClick={onClose}
             className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
           />
 
           {/* Fluid Sliding Panel */}
           <motion.aside
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-            className={`fixed top-0 bottom-0 left-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-y-auto transition-colors duration-500 ${
+            initial={{ x: '-100%', opacity: 0.96 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '-100%', opacity: 0.98 }}
+            transition={{
+              x: { duration: 0.82, ease: [0.22, 1, 0.36, 1] },
+              opacity: { duration: 0.48, ease: 'easeOut' }
+            }}
+            className={`theme-surface fixed top-0 bottom-0 left-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-y-auto will-change-transform ${
               isDarkMode 
                 ? 'bg-[#1C1817] text-[#F5ECE8] border-r border-[#342A27]' 
                 : 'bg-[#FAF6F2] text-[#2C2422] border-r border-[#E8D6CF]'
@@ -150,6 +162,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <X className="w-5 h-5" />
               </motion.button>
+            </div>
+
+            <div className={`border-b px-6 py-4 sm:px-8 ${
+              isDarkMode ? 'border-[#342A27] bg-[#211B19]' : 'border-[#E8D6CF] bg-[#F5EAE5]'
+            }`}>
+              {user ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="rounded-full bg-[#B36D6D]/15 p-2 text-[#B36D6D]"><UserRound className="h-4 w-4" /></span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{user.name}</p>
+                      <p className="truncate text-xs text-[#8E7973] dark:text-[#A79690]">{user.email}</p>
+                    </div>
+                  </div>
+                  <button onClick={onLogout} aria-label="Sign out" className="rounded-full p-2 text-[#B36D6D] hover:bg-[#B36D6D]/10">
+                    <LogOut className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <p className="mb-3 font-serif-title text-base">Your AUREL account</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => { onOpenAuth('login'); onClose() }} className="flex-1 rounded-full border border-[#B36D6D] px-3 py-2 text-xs font-semibold text-[#B36D6D] hover:bg-[#B36D6D]/10">
+                      Log in
+                    </button>
+                    <button onClick={() => { onOpenAuth('signup'); onClose() }} className="flex-1 rounded-full bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white hover:bg-[#9E5B5B]">
+                      Sign up
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Content List */}
@@ -298,5 +341,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </>
       )}
     </AnimatePresence>
+    </MotionConfig>
   )
 }

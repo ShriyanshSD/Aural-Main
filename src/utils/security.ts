@@ -1,3 +1,5 @@
+import { normalizeValidPhoneNumber } from './accountValidation'
+
 /**
  * Security validation and sanitization utility for AUREL e commerce platform
  * Ensures XSS prevention and robust input verification
@@ -33,8 +35,7 @@ export function sanitizeInput(input: string): string {
  * Validates phone numbers (supports Indian and international digits 10 to 15 digits)
  */
 export function isValidPhoneNumber(phone: string): boolean {
-  const cleanPhone = phone.replace(/[\s+()]/g, '')
-  return /^\d{10,14}$/.test(cleanPhone)
+  return normalizeValidPhoneNumber(phone) !== null
 }
 
 /**
