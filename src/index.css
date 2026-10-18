@@ -35,50 +35,6 @@
   transition-timing-function: var(--theme-ease);
 }
 
-html.dark .owner-dashboard {
-  background-color: #181615;
-  color: #f3ebe6;
-}
-
-.owner-dashboard,
-.owner-dashboard [class~="bg-white"],
-.owner-dashboard [class*="bg-white/"],
-.owner-dashboard [class*="bg-[#fff"],
-.owner-dashboard [class*="bg-[#f"],
-.owner-dashboard [class*="border-[#e"],
-.owner-dashboard [class*="border-[#f"] {
-  transition-property: background-color, border-color, color;
-  transition-duration: 850ms;
-  transition-timing-function: var(--theme-ease);
-}
-
-html.dark .owner-dashboard [class~="bg-white"],
-html.dark .owner-dashboard [class*="bg-white/"],
-html.dark .owner-dashboard [class*="bg-[#fff"],
-html.dark .owner-dashboard [class*="bg-[#f"] {
-  background-color: #211d1b !important;
-}
-
-html.dark .owner-dashboard [class*="hover:bg-[#f"]:hover {
-  background-color: #302925 !important;
-}
-
-html.dark .owner-dashboard [class*="border-[#e"],
-html.dark .owner-dashboard [class*="border-[#f"] {
-  border-color: #403733 !important;
-}
-
-html.dark .owner-dashboard [class*="text-[#2"],
-html.dark .owner-dashboard [class*="text-[#3"] {
-  color: #f3ebe6 !important;
-}
-
-html.dark .owner-dashboard [class*="text-[#7"],
-html.dark .owner-dashboard [class*="text-[#8"],
-html.dark .owner-dashboard [class*="text-[#9"] {
-  color: #b8aaa4 !important;
-}
-
 ::view-transition-group(root) {
   animation-duration: 900ms;
 }

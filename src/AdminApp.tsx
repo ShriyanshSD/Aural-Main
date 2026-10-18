@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { flushSync } from 'react-dom'
 import {
   ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, Check, ChevronDown, CircleAlert, ImagePlus,
-  LayoutDashboard, LoaderCircle, LogOut, Moon, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
-  Store, Sun, Trash2, Users, X
+  LayoutDashboard, LoaderCircle, LogOut, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
+  Store, Trash2, Users, X
 } from 'lucide-react'
 import type { Product } from './types'
 
@@ -140,7 +139,6 @@ function usePagination<T>(items: T[], pageSize = 15) {
 
 export default function AdminApp() {
   const [section, setSection] = useState<Section>(() => sectionFromPath(window.location.pathname))
-  const [isDarkMode, setIsDarkMode] = useState(false)
   const [ownerEmail, setOwnerEmail] = useState('')
   const [signedIn, setSignedIn] = useState(false)
   const [authReady, setAuthReady] = useState(false)
@@ -159,26 +157,6 @@ export default function AdminApp() {
   const [productDraft, setProductDraft] = useState<AdminProduct | null>(null)
   const [categoryDraft, setCategoryDraft] = useState<AdminCategory | null>(null)
   const [customerDraft, setCustomerDraft] = useState<AdminCustomer | null>(null)
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode)
-  }, [isDarkMode])
-
-  const toggleTheme = () => {
-    const nextTheme = !isDarkMode
-    const applyTheme = () => {
-      document.documentElement.classList.toggle('dark', nextTheme)
-      setIsDarkMode(nextTheme)
-    }
-    const transitionDocument = document as Document & {
-      startViewTransition?: (callback: () => void) => unknown
-    }
-    if (transitionDocument.startViewTransition) {
-      transitionDocument.startViewTransition(() => flushSync(applyTheme))
-    } else {
-      applyTheme()
-    }
-  }
 
   const navigateSection = (target: Section) => {
     window.history.pushState(null, '', `/admin/${target}`)
@@ -355,16 +333,6 @@ export default function AdminApp() {
           <div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#aa7771]">Aurel Studio / {currentTitle}</p><h1 className="mt-1 font-serif-title text-xl sm:text-2xl">{currentTitle}</h1></div>
           <div className="flex items-center gap-3">
             <span className="hidden max-w-48 truncate text-xs text-[#897770] sm:block">{ownerEmail}</span>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
-              aria-pressed={isDarkMode}
-              title={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
-              className="rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] transition-colors hover:bg-[#faf6f3] dark:border-[#493936] dark:text-[#e5d5ce] dark:hover:bg-white/10"
-            >
-              {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
             <button onClick={() => void logout()} title="Sign out" className="rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] hover:bg-[#faf6f3] lg:hidden"><LogOut className="h-4 w-4" /></button>
           </div>
         </header>
