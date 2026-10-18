@@ -3,6 +3,7 @@ create table if not exists public.aurel_users (
   name varchar(80) not null,
   username varchar(24) not null unique,
   email varchar(254) not null unique,
+  pending_email varchar(254),
   phone varchar(20) not null,
   address varchar(240) not null,
   gender varchar(32) not null,
@@ -15,6 +16,13 @@ create table if not exists public.aurel_users (
 
 alter table public.aurel_users
   add column if not exists email_verified boolean not null default false;
+
+alter table public.aurel_users
+  add column if not exists pending_email varchar(254);
+
+create unique index if not exists aurel_users_pending_email_unique
+  on public.aurel_users (lower(pending_email))
+  where pending_email is not null;
 
 alter table public.aurel_users
   alter column email_verified set default false;

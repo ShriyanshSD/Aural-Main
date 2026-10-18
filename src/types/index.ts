@@ -84,6 +84,7 @@ export interface AuthUser {
   name: string
   username: string
   email: string
+  pendingEmail?: string
   emailVerified: boolean
   phone: string
   address: string

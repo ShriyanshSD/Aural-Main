@@ -18,6 +18,7 @@ interface AccountRecord {
   name: string
   username: string
   email: string
+  pending_email: string | null
   phone: string
   address: string
   gender: string
@@ -36,6 +37,7 @@ interface PublicAccount {
   name: string
   username: string
   email: string
+  pendingEmail: string
   emailVerified: boolean
   phone: string
   address: string
@@ -285,6 +287,7 @@ const publicAccount = (account: AccountRecord): PublicAccount => ({
   name: account.name,
   username: account.username,
   email: account.email,
+  pendingEmail: account.pending_email ?? '',
   emailVerified: Boolean(account.email_verified),
   phone: account.phone,
   address: account.address,
@@ -297,11 +300,33 @@ const publicAccount = (account: AccountRecord): PublicAccount => ({
 })
 
 const reconcileEmailVerification = async (account: AccountRecord): Promise<AccountRecord> => {
-  if (account.email_verified) return account
+  if (!account.pending_email && account.email_verified) return account
   const authUser = await getSupabaseAuthUserById(account.id)
+  const authEmail = authUser.email?.trim().toLowerCase()
+  if (
+    account.pending_email
+    && authUser.email_confirmed_at
+    && authEmail === account.pending_email.trim().toLowerCase()
+  ) {
+    const updatedAccounts = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({
+        id: `eq.${account.id}`,
+        pending_email: `eq.${account.pending_email}`,
+        select: '*'
+      }),
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ email: account.pending_email, pending_email: null, email_verified: true })
+      }
+    )
+    return updatedAccounts[0] ?? account
+  }
+  if (account.email_verified) return account
   if (
     !authUser.email_confirmed_at
-    || authUser.email?.trim().toLowerCase() !== account.email.trim().toLowerCase()
+    || authEmail !== account.email.trim().toLowerCase()
   ) {
     return account
   }
@@ -838,11 +863,19 @@ export async function requestEmailChangeHandler(req: AuthRequest, res: ServerRes
       return sendJson(res, 401, { error: 'Your current password is incorrect.' })
     }
 
-    const conflicts = await supabaseRequest<Array<{ id: string }>>(
-      'aurel_users',
-      new URLSearchParams({ email: `eq.${email}`, select: 'id', limit: '1' })
-    )
-    if (conflicts.length) return sendJson(res, 409, { error: 'That email address is already connected to an account.' })
+    const [emailConflicts, pendingEmailConflicts] = await Promise.all([
+      supabaseRequest<Array<{ id: string }>>(
+        'aurel_users',
+        new URLSearchParams({ email: `eq.${email}`, id: `neq.${account.id}`, select: 'id', limit: '1' })
+      ),
+      supabaseRequest<Array<{ id: string }>>(
+        'aurel_users',
+        new URLSearchParams({ pending_email: `eq.${email}`, id: `neq.${account.id}`, select: 'id', limit: '1' })
+      )
+    ])
+    if (emailConflicts.length || pendingEmailConflicts.length) {
+      return sendJson(res, 409, { error: 'That email address is already connected to another account or awaiting verification.' })
+    }
 
     let authSession: { access_token?: string }
     try {
@@ -860,16 +893,43 @@ export async function requestEmailChangeHandler(req: AuthRequest, res: ServerRes
       return sendJson(res, 502, { error: 'Supabase did not start a secure email-change session. Please try again.' })
     }
 
+    const pendingAccounts = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${account.id}`, select: '*' }),
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ pending_email: email })
+      }
+    )
+    if (!pendingAccounts[0]) return sendJson(res, 404, { error: 'Your profile could not be found.' })
+
+    const restorePendingEmail = () => supabaseRequest(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${account.id}` }),
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ pending_email: account.pending_email ?? null })
+      }
+    )
+
     const { supabaseUrl } = getSupabaseConfig()
-    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      method: 'PUT',
-      headers: {
-        apikey: getSupabaseAuthKey(),
+    let response: Response
+    try {
+      response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          apikey: getSupabaseAuthKey(),
         Authorization: `Bearer ${authSession.access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ email })
-    })
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email })
+      })
+    } catch (error) {
+      await restorePendingEmail()
+      throw error
+    }
     if (!response.ok) {
       const responseText = await response.text()
       let providerMessage: string | undefined
@@ -883,6 +943,7 @@ export async function requestEmailChangeHandler(req: AuthRequest, res: ServerRes
         status: response.status,
         message: providerMessage
       })
+      await restorePendingEmail()
       return sendJson(res, response.status === 429 ? 429 : 400, {
         error: response.status === 429
           ? 'Too many email changes were requested. Wait a few minutes and try again.'
@@ -890,8 +951,9 @@ export async function requestEmailChangeHandler(req: AuthRequest, res: ServerRes
       })
     }
     return sendJson(res, 200, {
+      user: publicAccount(pendingAccounts[0]),
       email,
-      message: 'A verification email has been requested. Your current email remains active until you confirm the new address.'
+      message: `A verification link was sent to ${email}. It will remain unverified and your current email will stay active until you confirm the new address.`
     })
   } catch (error) {
     handleFailure(res, error, 'Unable to request an email change right now.')
@@ -920,16 +982,26 @@ export async function confirmEmailChangeHandler(req: AuthRequest, res: ServerRes
       return sendJson(res, 400, { error: 'We could not verify the new email address. Open the latest confirmation link and try again.' })
     }
 
+    const profiles = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${verifiedUser.id}`, select: '*', limit: '1' })
+    )
+    const profile = profiles[0]
+    if (!profile) return sendJson(res, 404, { error: 'Your profile could not be found.' })
+    if (!profile.pending_email || profile.pending_email.trim().toLowerCase() !== email) {
+      return sendJson(res, 409, { error: 'This confirmation does not match the email currently awaiting verification. Request a new email change link and use the latest message.' })
+    }
+
     const updated = await supabaseRequest<AccountRecord[]>(
       'aurel_users',
-      new URLSearchParams({ id: `eq.${verifiedUser.id}`, select: '*' }),
+      new URLSearchParams({ id: `eq.${verifiedUser.id}`, pending_email: `eq.${email}`, select: '*' }),
       {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ email, email_verified: true })
+        body: JSON.stringify({ email, pending_email: null, email_verified: true })
       }
     )
-    if (!updated[0]) return sendJson(res, 404, { error: 'Your profile could not be found.' })
+    if (!updated[0]) return sendJson(res, 409, { error: 'Your pending email change has changed. Request a new confirmation link and use the latest message.' })
     return sendJson(res, 200, { user: publicAccount(updated[0]) })
   } catch (error) {
     if (error instanceof AccountServiceError && error.code === '23505') {
@@ -1211,7 +1283,20 @@ export async function loginHandler(req: AuthRequest, res: ServerResponse): Promi
       'aurel_users',
       new URLSearchParams({ email: `eq.${email}`, select: '*', limit: '1' })
     )
-    const account = accounts[0]
+    let account = accounts[0]
+    if (!account) {
+      const pendingAccounts = await supabaseRequest<AccountRecord[]>(
+        'aurel_users',
+        new URLSearchParams({ pending_email: `eq.${email}`, select: '*', limit: '1' })
+      )
+      const pendingAccount = pendingAccounts[0]
+      if (pendingAccount) {
+        const reconciledAccount = await reconcileEmailVerification(pendingAccount)
+        if (reconciledAccount.email.trim().toLowerCase() === email && reconciledAccount.email_verified) {
+          account = reconciledAccount
+        }
+      }
+    }
     if (!account) {
       await derivePasswordHash(password, 'aurel-invalid-login-salt')
       return sendJson(res, 401, { error: 'Email or password is incorrect.' })
@@ -1224,6 +1309,9 @@ export async function loginHandler(req: AuthRequest, res: ServerResponse): Promi
     }
 
     const verifiedAccount = await reconcileEmailVerification(account)
+    if (verifiedAccount.email.trim().toLowerCase() !== email) {
+      return sendJson(res, 401, { error: 'Email or password is incorrect.' })
+    }
     if (!verifiedAccount.email_verified) {
       return sendJson(res, 403, { error: 'Verify your email address before signing in. Open the confirmation link sent to your inbox.' })
     }

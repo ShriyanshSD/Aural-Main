@@ -56,10 +56,10 @@ npm run build
 ## Supabase Account Setup
 
 1. Create a Supabase project and open its SQL Editor.
-2. Run the SQL in [`supabase/schema.sql`](./supabase/schema.sql) to create or update the private account, session, chat-history, and order-history tables. Run it again after app updates that change the schema, it is safe to rerun. After schema updates, refresh PostgREST's schema cache by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
+2. Run the SQL in [`supabase/schema.sql`](./supabase/schema.sql) to create or update the private account, pending email-change, session, chat-history, and order-history tables. Run it again after app updates that change the schema, it is safe to rerun. After schema updates, refresh PostgREST's schema cache by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
 3. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the local server environment. Add the same variables to Vercel Project Settings under Environment Variables for each deployment environment.
 4. Keep the service role key server-side only. Do not use a `VITE_` prefix or expose it to the browser.
-5. In Supabase, enable email confirmations under **Authentication → Sign In / Providers → Email**. Under **Authentication → URL Configuration**, set the Site URL to your app URL and allow that URL as a redirect. For local development use `http://localhost:3000`. Set `APP_URL` to your custom domain in production if needed.
+5. In Supabase, enable email confirmations under **Authentication → Sign In / Providers → Email**. Under **Authentication → URL Configuration**, set the Site URL to your app URL and allow that URL as a redirect. For local development use `http://localhost:3000`. Set `APP_URL` to your custom domain in production if needed. For email changes confirmed with a link sent to the new address only, turn off **Secure email change** in the Supabase Auth settings; when enabled, Supabase requires confirmation from both the current and new addresses.
 6. For link-based signup confirmation, open **Authentication → Email Templates → Confirm signup** and keep `{{ .ConfirmationURL }}` in the email body, for example `<a href="{{ .ConfirmationURL }}">Confirm email address</a>`. Do not use `{{ .Token }}` for the signup flow. If your Supabase project requires custom SMTP before saving template changes, configure an SMTP email provider first.
 
 `SUPABASE_PUBLISHABLE_KEY` is optional. If it is not set, the server uses the service role key for its server-side Auth requests.

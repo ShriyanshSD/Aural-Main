@@ -229,10 +229,11 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: newEmail, password: emailPassword })
       })
-      const data = await readApiResponse<{ message?: string; error?: string }>(response, 'Requesting an email change')
-      if (!response.ok || !data.message) throw new Error(data.error || 'Unable to request an email change.')
+      const data = await readApiResponse<{ message?: string; user?: AuthUser; error?: string }>(response, 'Requesting an email change')
+      if (!response.ok || !data.message || !data.user) throw new Error(data.error || 'Unable to request an email change.')
+      onProfileUpdated(data.user)
       setEmailPassword('')
-      setNewEmail('')
+      setNewEmail(data.user.pendingEmail || '')
       setIsEditingEmail(false)
       setNotice(data.message)
     } catch (changeError) {
@@ -575,15 +576,25 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                             <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold ${user.emailVerified ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
                               <ShieldCheck className="h-3.5 w-3.5" /> {user.emailVerified ? 'Verified email' : 'Verification needed'}
                             </span>
+                            {user.pendingEmail && (
+                              <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2.5">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">New email awaiting verification</p>
+                                <p className="mt-1 break-all text-xs font-medium">{user.pendingEmail}</p>
+                                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                                  <ShieldCheck className="h-3 w-3" /> Unverified
+                                </span>
+                                <p className="mt-1 text-[10px] leading-relaxed text-[#8E7973] dark:text-[#A79690]">Your current email remains active until you confirm this address from its verification email.</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                         {!isEditingEmail && (
-                          <button type="button" onClick={() => { setNewEmail(user.email); setIsEditingEmail(true); setError(''); setNotice('') }} className="rounded-xl border border-[#B36D6D]/35 px-4 py-2.5 text-xs font-semibold text-[#B36D6D] transition-colors hover:bg-[#B36D6D]/10">Change email</button>
+                          <button type="button" onClick={() => { setNewEmail(user.pendingEmail || user.email); setIsEditingEmail(true); setError(''); setNotice('') }} className="rounded-xl border border-[#B36D6D]/35 px-4 py-2.5 text-xs font-semibold text-[#B36D6D] transition-colors hover:bg-[#B36D6D]/10">{user.pendingEmail ? 'Resend or change' : 'Change email'}</button>
                         )}
                       </div>
                     {isEditingEmail && (
                       <form onSubmit={requestEmailChange} className={`mt-3 space-y-3 rounded-2xl border p-4 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
-                        <p className="text-xs leading-relaxed text-[#8E7973] dark:text-[#A79690]">A verification link will be sent to your new address. Your current email stays active until you confirm the change.</p>
+                        <p className="text-xs leading-relaxed text-[#8E7973] dark:text-[#A79690]">The new address will stay marked unverified until you open its confirmation link. Your current verified email remains active until then.</p>
                         <label className="block space-y-1.5 text-xs font-medium">New email address
                           <input className={inputClass} type="email" value={newEmail} onChange={event => setNewEmail(event.target.value)} autoComplete="email" maxLength={254} required />
                         </label>
@@ -593,7 +604,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         <div className="flex justify-end gap-2">
                           <button type="button" onClick={() => { setIsEditingEmail(false); setEmailPassword('') }} className={`rounded-full border px-4 py-2 text-xs font-semibold ${inset}`}>Cancel</button>
                           <button type="submit" disabled={isChangingEmail || newEmail.trim().toLowerCase() === user.email.toLowerCase()} className="flex items-center gap-2 rounded-full bg-[#B36D6D] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60">
-                            {isChangingEmail && <LoaderCircle className="h-4 w-4 animate-spin" />} Send verification link
+                            {isChangingEmail && <LoaderCircle className="h-4 w-4 animate-spin" />} {user.pendingEmail ? 'Send or resend verification link' : 'Send verification link'}
                           </button>
                         </div>
                       </form>
