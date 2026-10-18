@@ -339,8 +339,7 @@ export const Navigation: React.FC<NavigationProps> = ({
                   isDarkMode ? 'text-[#E5D7D0] hover:bg-white/5' : 'text-[#6B524C] hover:bg-[#F6EAE5]'
                 }`}
               >
-                <span className="hidden sm:inline">Sign in</span>
-                <span className="sm:hidden">Log in</span>
+                Log in
               </button>
               <button
                 onClick={() => onOpenAuth('signup')}

@@ -15,6 +15,7 @@ import {
   verifySignupHandler
 } from '../auth-handler.js'
 import { chatHandler } from '../chat-handler.js'
+import { indiaCitiesHandler, indiaStatesHandler } from '../locations-handler.js'
 
 type ApiRequest = IncomingMessage & {
   body?: unknown
@@ -25,6 +26,8 @@ type ApiHandler = (req: ApiRequest, res: ServerResponse) => void | Promise<void>
 const routes: Record<string, ApiHandler> = {
   '/api/chat': chatHandler,
   '/api/chat/history': chatHistoryHandler,
+  '/api/locations/states': indiaStatesHandler,
+  '/api/locations/cities': indiaCitiesHandler,
   '/api/auth/signup': signupHandler,
   '/api/auth/verify': verifySignupHandler,
   '/api/auth/resend-verification': resendSignupVerificationHandler,

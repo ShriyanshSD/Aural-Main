@@ -4,6 +4,8 @@
   "rewrites": [
     { "source": "/api/chat", "destination": "/api/index?route=/api/chat" },
     { "source": "/api/chat/history", "destination": "/api/index?route=/api/chat/history" },
+    { "source": "/api/locations/states", "destination": "/api/index?route=/api/locations/states" },
+    { "source": "/api/locations/cities", "destination": "/api/index?route=/api/locations/cities" },
     { "source": "/api/auth/signup", "destination": "/api/index?route=/api/auth/signup" },
     { "source": "/api/auth/verify", "destination": "/api/index?route=/api/auth/verify" },
     { "source": "/api/auth/resend-verification", "destination": "/api/index?route=/api/auth/resend-verification" },

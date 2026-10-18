@@ -19,6 +19,7 @@ import {
   signupHandler,
   verifySignupHandler
 } from './auth-handler'
+import { indiaCitiesHandler, indiaStatesHandler } from './locations-handler'
 
 dotenv.config()
 
@@ -50,6 +51,8 @@ app.post('/api/auth/resend-verification', (req, res) => resendSignupVerification
 app.post('/api/auth/login', (req, res) => loginHandler(req, res))
 app.get('/api/auth/me', (req, res) => sessionHandler(req, res))
 app.all('/api/auth/profile', (req, res) => profileHandler(req, res))
+app.get('/api/locations/states', (req, res) => indiaStatesHandler(req, res))
+app.get('/api/locations/cities', (req, res) => indiaCitiesHandler(req, res))
 app.post('/api/auth/change-email', (req, res) => requestEmailChangeHandler(req, res))
 app.all('/api/auth/orders', (req, res) => accountOrdersHandler(req, res))
 app.post('/api/auth/change-password', (req, res) => changePasswordHandler(req, res))

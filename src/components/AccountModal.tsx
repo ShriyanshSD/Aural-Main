@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowLeft, CalendarDays, Check, CircleHelp, Heart, LoaderCircle, Lock,
@@ -23,6 +23,11 @@ interface AccountModalProps {
 }
 
 const genders = ['Woman', 'Man', 'Non-binary', 'Another identity', 'Prefer not to say']
+
+interface IndiaStateOption {
+  name: string
+  code: string
+}
 
 const readApiResponse = async <T,>(response: Response, action: string): Promise<T> => {
   const responseText = await response.text()
@@ -58,6 +63,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [dateOfBirth, setDateOfBirth] = useState(user.dateOfBirth ?? '')
   const [city, setCity] = useState(user.city ?? '')
   const [state, setState] = useState(user.state ?? '')
+  const [stateOptions, setStateOptions] = useState<IndiaStateOption[]>([])
+  const [cityOptions, setCityOptions] = useState<string[]>([])
+  const [isLoadingStates, setIsLoadingStates] = useState(false)
+  const [isLoadingCities, setIsLoadingCities] = useState(false)
   const [postalCode, setPostalCode] = useState(user.postalCode ?? '')
   const [newEmail, setNewEmail] = useState('')
   const [emailPassword, setEmailPassword] = useState('')
@@ -76,6 +85,54 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [orders, setOrders] = useState<AccountOrder[]>([])
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const selectedState = useMemo(
+    () => stateOptions.find(option => option.name.toLowerCase() === state.toLowerCase()),
+    [stateOptions, state]
+  )
+
+  useEffect(() => {
+    if (!isEditing) return
+    let isCurrent = true
+    setIsLoadingStates(true)
+    fetch('/api/locations/states', { cache: 'no-store' })
+      .then(async response => {
+        const data = await readApiResponse<{ states?: IndiaStateOption[]; error?: string }>(response, 'Loading Indian states')
+        if (!response.ok || !Array.isArray(data.states)) throw new Error(data.error || 'Unable to load Indian states.')
+        if (isCurrent) setStateOptions(data.states)
+      })
+      .catch(locationError => {
+        console.error('Unable to load Indian states:', locationError)
+        if (isCurrent) setError(locationError instanceof Error ? locationError.message : 'Unable to load Indian states.')
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoadingStates(false)
+      })
+    return () => { isCurrent = false }
+  }, [isEditing])
+
+  useEffect(() => {
+    if (!isEditing || !selectedState) {
+      setCityOptions([])
+      return
+    }
+    let isCurrent = true
+    setCityOptions([])
+    setIsLoadingCities(true)
+    fetch(`/api/locations/cities?stateCode=${encodeURIComponent(selectedState.code)}`, { cache: 'no-store' })
+      .then(async response => {
+        const data = await readApiResponse<{ cities?: string[]; error?: string }>(response, 'Loading cities')
+        if (!response.ok || !Array.isArray(data.cities)) throw new Error(data.error || 'Unable to load cities.')
+        if (isCurrent) setCityOptions(data.cities)
+      })
+      .catch(locationError => {
+        console.error('Unable to load cities:', locationError)
+        if (isCurrent) setError(locationError instanceof Error ? locationError.message : 'Unable to load cities.')
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoadingCities(false)
+      })
+    return () => { isCurrent = false }
+  }, [isEditing, selectedState])
 
   useEffect(() => {
     if (!isOpen) return
@@ -354,11 +411,36 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         <label className="space-y-1.5 text-xs font-medium sm:col-span-2">Full default address
                           <textarea className={`${inputClass} min-h-20 resize-y`} value={address} onChange={event => setAddress(event.target.value)} minLength={5} maxLength={240} autoComplete="street-address" required />
                         </label>
-                        <label className="space-y-1.5 text-xs font-medium">City
-                          <input className={inputClass} value={city} onChange={event => setCity(event.target.value)} maxLength={100} autoComplete="address-level2" />
-                        </label>
                         <label className="space-y-1.5 text-xs font-medium">State
-                          <input className={inputClass} value={state} onChange={event => setState(event.target.value)} maxLength={100} autoComplete="address-level1" />
+                          <select
+                            className={inputClass}
+                            value={selectedState?.code ?? ''}
+                            onChange={event => {
+                              const nextState = stateOptions.find(option => option.code === event.target.value)
+                              setState(nextState?.name ?? '')
+                              setCity('')
+                              setError('')
+                            }}
+                            autoComplete="address-level1"
+                            required
+                            disabled={isLoadingStates && stateOptions.length === 0}
+                          >
+                            <option value="" disabled>{isLoadingStates && stateOptions.length === 0 ? 'Loading states...' : 'Select a state or union territory'}</option>
+                            {stateOptions.map(option => <option key={option.code} value={option.code}>{option.name}</option>)}
+                          </select>
+                        </label>
+                        <label className="space-y-1.5 text-xs font-medium">City
+                          <select
+                            className={inputClass}
+                            value={city}
+                            onChange={event => setCity(event.target.value)}
+                            autoComplete="address-level2"
+                            disabled={!selectedState || isLoadingCities}
+                          >
+                            <option value="">{!selectedState ? 'Select a state first' : isLoadingCities ? 'Loading cities...' : 'Select a city'}</option>
+                            {city && !cityOptions.includes(city) && <option value={city}>{city}</option>}
+                            {cityOptions.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
                         </label>
                         <label className="space-y-1.5 text-xs font-medium sm:col-span-2">Pincode
                           <input className={inputClass} value={postalCode} onChange={event => setPostalCode(event.target.value)} maxLength={8} pattern="\d{5,8}" autoComplete="postal-code" />
@@ -411,8 +493,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         <p className="break-words text-sm font-medium leading-relaxed">{user.address}</p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {[
-                            ['City', user.city],
                             ['State', user.state],
+                            ['City', user.city],
                             ['Pincode', user.postalCode]
                           ].map(([label, detail]) => (
                             <span key={label} className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
