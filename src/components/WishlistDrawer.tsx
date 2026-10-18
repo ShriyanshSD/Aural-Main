@@ -102,6 +102,8 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
                       src={product.imageUrl}
                       alt={product.name}
                       referrerPolicy="no-referrer"
+                      loading="lazy"
+                      decoding="async"
                       className="h-20 w-20 shrink-0 rounded-xl object-cover"
                     />
                     <div className="min-w-0 flex-1">

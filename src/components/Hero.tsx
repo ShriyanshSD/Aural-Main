@@ -166,6 +166,8 @@ export const Hero: React.FC<HeroProps> = ({
                 src="https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=1200&q=80"
                 alt="AUREL bespoke memory magazine opened on a limestone table with florals"
                 referrerPolicy="no-referrer"
+                fetchPriority="high"
+                decoding="async"
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
               />
 

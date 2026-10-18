@@ -134,6 +134,8 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                         src={box.imageUrl}
                         alt={box.name}
                         referrerPolicy="no-referrer"
+                        loading="lazy"
+                        decoding="async"
                         className="w-16 h-16 rounded-xl object-cover shrink-0"
                       />
                       <div className="flex-1 min-w-0">
@@ -186,6 +188,8 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                         src={item.imageUrl}
                         alt={item.name}
                         referrerPolicy="no-referrer"
+                        loading="lazy"
+                        decoding="async"
                         className="w-16 h-16 rounded-xl object-cover shrink-0"
                       />
                       <div className="flex-1 min-w-0">
@@ -281,6 +285,8 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                   src={selectedBox.imageUrl}
                   alt={selectedBox.name}
                   referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                   className="w-14 h-14 rounded-xl object-cover shrink-0"
                 />
                 <div className="flex-1">

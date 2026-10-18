@@ -6,25 +6,64 @@
 import React, { useState, useEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
+import { Sparkles } from 'lucide-react'
 import { Navigation } from './components/Navigation'
-import { Sidebar } from './components/Sidebar'
 import { Hero } from './components/Hero'
-import { MomentsSection } from './components/MomentsSection'
-import { CategoryGrid } from './components/CategoryGrid'
-import { ProductCatalog } from './components/ProductCatalog'
-import { MagazineShowcase } from './components/MagazineShowcase'
-import { CustomGiftBuilder } from './components/CustomGiftBuilder'
-import { ProductDetailModal } from './components/ProductDetailModal'
-import { CartDrawer } from './components/CartDrawer'
-import { WishlistDrawer } from './components/WishlistDrawer'
-import { CheckoutModal } from './components/CheckoutModal'
-import { AuthModal, AuthMode } from './components/AuthModal'
-import { AccountModal } from './components/AccountModal'
-import { ChatbotModal } from './components/ChatbotModal'
-import { StoryAndReviews } from './components/StoryAndReviews'
-import { Footer } from './components/Footer'
+import type { AuthMode } from './components/AuthModal'
 import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser } from './types'
 import { PRODUCTS } from './data/products'
+
+const Sidebar = React.lazy(() => import('./components/Sidebar').then(module => ({ default: module.Sidebar })))
+const MomentsSection = React.lazy(() => import('./components/MomentsSection').then(module => ({ default: module.MomentsSection })))
+const CategoryGrid = React.lazy(() => import('./components/CategoryGrid').then(module => ({ default: module.CategoryGrid })))
+const ProductCatalog = React.lazy(() => import('./components/ProductCatalog').then(module => ({ default: module.ProductCatalog })))
+const MagazineShowcase = React.lazy(() => import('./components/MagazineShowcase').then(module => ({ default: module.MagazineShowcase })))
+const CustomGiftBuilder = React.lazy(() => import('./components/CustomGiftBuilder').then(module => ({ default: module.CustomGiftBuilder })))
+const ProductDetailModal = React.lazy(() => import('./components/ProductDetailModal').then(module => ({ default: module.ProductDetailModal })))
+const CartDrawer = React.lazy(() => import('./components/CartDrawer').then(module => ({ default: module.CartDrawer })))
+const WishlistDrawer = React.lazy(() => import('./components/WishlistDrawer').then(module => ({ default: module.WishlistDrawer })))
+const CheckoutModal = React.lazy(() => import('./components/CheckoutModal').then(module => ({ default: module.CheckoutModal })))
+const AuthModal = React.lazy(() => import('./components/AuthModal').then(module => ({ default: module.AuthModal })))
+const AccountModal = React.lazy(() => import('./components/AccountModal').then(module => ({ default: module.AccountModal })))
+const ChatbotModal = React.lazy(() => import('./components/ChatbotModal').then(module => ({ default: module.ChatbotModal })))
+const StoryAndReviews = React.lazy(() => import('./components/StoryAndReviews').then(module => ({ default: module.StoryAndReviews })))
+const Footer = React.lazy(() => import('./components/Footer').then(module => ({ default: module.Footer })))
+
+const LazyViewport: React.FC<{ children: React.ReactNode; minHeight: number; id?: string }> = ({ children, minHeight, id }) => {
+  const [isVisible, setIsVisible] = React.useState(false)
+  const containerRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    if (!('IntersectionObserver' in window)) {
+      setIsVisible(true)
+      return
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        setIsVisible(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: '600px 0px' })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
+
+  return (
+    <div id={id} ref={containerRef} style={{ minHeight }}>
+      {isVisible && <React.Suspense fallback={null}>{children}</React.Suspense>}
+    </div>
+  )
+}
+
+const DeferredMount: React.FC<{ active: boolean; children: React.ReactNode }> = ({ active, children }) => {
+  const [hasBeenActivated, setHasBeenActivated] = React.useState(active)
+  React.useEffect(() => {
+    if (active) setHasBeenActivated(true)
+  }, [active])
+  return hasBeenActivated ? <React.Suspense fallback={null}>{children}</React.Suspense> : null
+}
 
 type AppTab = 'home' | 'shop' | 'builder' | 'story' | 'contact'
 
@@ -529,7 +568,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Fluid Sidebar Menu */}
-      <Sidebar
+      <DeferredMount active={isSidebarOpen}><Sidebar
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         isDarkMode={isDarkMode}
@@ -557,7 +596,7 @@ export default function App() {
           setIsAuthOpen(true)
         }}
         onLogout={() => { void handleLogout() }}
-      />
+      /></DeferredMount>
 
       {/* Main Content Area with Faded Page Transitions */}
       <AnimatePresence mode="wait">
@@ -569,11 +608,11 @@ export default function App() {
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
           >
-            <CustomGiftBuilder
+            <React.Suspense fallback={null}><CustomGiftBuilder
               isDarkMode={isDarkMode}
               onClose={() => setActiveTab('home')}
               onAddCustomHamperToBag={handleAddCustomHamperToBag}
-            />
+            /></React.Suspense>
           </motion.div>
         ) : (
           <motion.main
@@ -596,48 +635,49 @@ export default function App() {
                 />
 
                 {/* Moments Section */}
-                <MomentsSection
-                  isDarkMode={isDarkMode}
-                  onSelectMoment={handleSelectCategory}
-                />
+                <LazyViewport minHeight={300}>
+                  <MomentsSection isDarkMode={isDarkMode} onSelectMoment={handleSelectCategory} />
+                </LazyViewport>
 
                 {/* Visual Categories Grid */}
-                <CategoryGrid
-                  isDarkMode={isDarkMode}
-                  onSelectCategory={handleSelectCategory}
-                />
+                <LazyViewport minHeight={520}>
+                  <CategoryGrid isDarkMode={isDarkMode} onSelectCategory={handleSelectCategory} />
+                </LazyViewport>
               </>
             )}
 
             {/* Product Catalog with Sort & Filter Controls */}
-            <ProductCatalog
-              isDarkMode={isDarkMode}
-              activeCategory={activeCategory}
-              onSelectCategory={setActiveCategory}
-              onSelectProduct={(prod) => setSelectedProduct(prod)}
-              onQuickAdd={handleQuickAdd}
-              wishlist={wishlist}
-              onToggleWishlist={handleToggleWishlist}
-              searchQuery={searchQuery}
-              isAuthenticated={Boolean(authUser)}
-            />
+            <LazyViewport id="collection-grid" minHeight={720}>
+              <ProductCatalog
+                isDarkMode={isDarkMode}
+                activeCategory={activeCategory}
+                onSelectCategory={setActiveCategory}
+                onSelectProduct={prod => setSelectedProduct(prod)}
+                onQuickAdd={handleQuickAdd}
+                wishlist={wishlist}
+                onToggleWishlist={handleToggleWishlist}
+                searchQuery={searchQuery}
+                isAuthenticated={Boolean(authUser)}
+              />
+            </LazyViewport>
 
             {activeCategory !== 'hair-accessories' && (
               <>
                 {/* Magazine Feature Section with Live Preview */}
-                <MagazineShowcase
-                  isDarkMode={isDarkMode}
-                  onCustomizeMagazine={handleCustomizeMagazine}
-                />
+                <LazyViewport minHeight={620}>
+                  <MagazineShowcase isDarkMode={isDarkMode} onCustomizeMagazine={handleCustomizeMagazine} />
+                </LazyViewport>
 
                 {/* Trust, Story, Testimonials & Concierge Support */}
-                <StoryAndReviews
-                  isDarkMode={isDarkMode}
-                  onExploreGifts={() => {
-                    const el = document.getElementById('collection-grid')
-                    if (el) el.scrollIntoView({ behavior: 'smooth' })
-                  }}
-                />
+                <LazyViewport minHeight={760}>
+                  <StoryAndReviews
+                    isDarkMode={isDarkMode}
+                    onExploreGifts={() => {
+                      const el = document.getElementById('collection-grid')
+                      if (el) el.scrollIntoView({ behavior: 'smooth' })
+                    }}
+                  />
+                </LazyViewport>
               </>
             )}
           </motion.main>
@@ -645,7 +685,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Product Detail Modal */}
-      <ProductDetailModal
+      <DeferredMount active={Boolean(selectedProduct)}><ProductDetailModal
         product={selectedProduct}
         isDarkMode={isDarkMode}
         onClose={() => setSelectedProduct(null)}
@@ -653,9 +693,9 @@ export default function App() {
         isWishlisted={selectedProduct ? wishlist.includes(selectedProduct.id) : false}
         onToggleWishlist={handleToggleWishlist}
         isAuthenticated={Boolean(authUser)}
-      />
+      /></DeferredMount>
 
-      <WishlistDrawer
+      <DeferredMount active={isWishlistOpen && Boolean(authUser)}><WishlistDrawer
         isOpen={isWishlistOpen && Boolean(authUser)}
         isDarkMode={isDarkMode}
         products={PRODUCTS.filter(product => wishlist.includes(product.id))}
@@ -666,10 +706,10 @@ export default function App() {
           setIsWishlistOpen(false)
           setIsBagOpen(true)
         }}
-      />
+      /></DeferredMount>
 
       {/* Sliding Cart Drawer */}
-      <CartDrawer
+      <DeferredMount active={isBagOpen}><CartDrawer
         isOpen={isBagOpen}
         onClose={() => setIsBagOpen(false)}
         isDarkMode={isDarkMode}
@@ -684,19 +724,19 @@ export default function App() {
           const el = document.getElementById('collection-grid')
           if (el) el.scrollIntoView({ behavior: 'smooth' })
         }}
-      />
+      /></DeferredMount>
 
       {/* Razorpay and WhatsApp Checkout Modal */}
-      <CheckoutModal
+      <DeferredMount active={isCheckoutOpen}><CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         isDarkMode={isDarkMode}
         cartItems={cartItems}
         authUser={authUser}
         onOrderSuccess={handleOrderSuccess}
-      />
+      /></DeferredMount>
 
-      <AuthModal
+      <DeferredMount active={isAuthOpen}><AuthModal
         isOpen={isAuthOpen}
         mode={authMode}
         isDarkMode={isDarkMode}
@@ -725,10 +765,10 @@ export default function App() {
           setAuthNotice('')
           setIsAuthOpen(false)
         }}
-      />
+      /></DeferredMount>
 
-      {authUser && (
-        <AccountModal
+      <DeferredMount active={Boolean(authUser && isProfileOpen)}>
+        {authUser && <AccountModal
           isOpen={isProfileOpen}
           initialSection={accountInitialSection}
           user={authUser}
@@ -745,39 +785,55 @@ export default function App() {
           }}
           onLogout={() => { void handleLogout() }}
           onAccountDeleted={handleAccountDeleted}
-        />
-      )}
+        />}
+      </DeferredMount>
 
-      {/* AUREL Assistant */}
-      <ChatbotModal
+      <motion.button
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.92 }}
+        onClick={() => setIsChatbotOpen(true)}
+        aria-label="Open AUREL Assistant"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2.5 rounded-full bg-[#B36D6D] p-4 text-white shadow-xl transition-all hover:bg-[#9E5B5B] hover:shadow-2xl"
+      >
+        <span className="relative flex h-3 w-3">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-200 opacity-75" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-white" />
+        </span>
+        <Sparkles className="h-5 w-5 text-white" />
+        <span className="hidden font-sans-body text-xs font-semibold uppercase tracking-wider sm:inline">AUREL Assistant</span>
+      </motion.button>
+      <DeferredMount active={isChatbotOpen}><ChatbotModal
         isOpen={isChatbotOpen}
         onClose={() => setIsChatbotOpen(false)}
         onOpen={() => setIsChatbotOpen(true)}
+        showLauncher={false}
         isDarkMode={isDarkMode}
         user={authUser}
         isAuthLoaded={isAuthLoaded}
         onNavigateToBuilder={() => setActiveTab('builder')}
-      />
+      /></DeferredMount>
 
       {/* Footer */}
-      <Footer
-        isDarkMode={isDarkMode}
-        onSelectCategory={handleSelectCategory}
-        onOpenStory={() => {
-          setActiveTab('home')
-          setTimeout(() => {
-            const el = document.getElementById('our-story')
-            if (el) el.scrollIntoView({ behavior: 'smooth' })
-          }, 100)
-        }}
-        onOpenConcierge={() => {
-          setActiveTab('home')
-          setTimeout(() => {
-            const el = document.getElementById('concierge')
-            if (el) el.scrollIntoView({ behavior: 'smooth' })
-          }, 100)
-        }}
-      />
+      <LazyViewport minHeight={360}>
+        <Footer
+          isDarkMode={isDarkMode}
+          onSelectCategory={handleSelectCategory}
+          onOpenStory={() => {
+            setActiveTab('home')
+            setTimeout(() => {
+              const el = document.getElementById('our-story')
+              if (el) el.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
+          }}
+          onOpenConcierge={() => {
+            setActiveTab('home')
+            setTimeout(() => {
+              const el = document.getElementById('concierge')
+              if (el) el.scrollIntoView({ behavior: 'smooth' })
+            }, 100)
+          }}
+        />
+      </LazyViewport>
 
     </div>
     </MotionConfig>

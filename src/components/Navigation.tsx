@@ -228,6 +228,8 @@ export const Navigation: React.FC<NavigationProps> = ({
                           <img
                             src={product.imageUrl}
                             alt=""
+                            loading="lazy"
+                            decoding="async"
                             className="h-10 w-10 shrink-0 rounded-lg object-cover"
                           />
                           <span className="min-w-0">

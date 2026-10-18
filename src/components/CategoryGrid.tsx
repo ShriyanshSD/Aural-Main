@@ -123,6 +123,8 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
                 src={cat.imageUrl}
                 alt={cat.title}
                 referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
                 animate={{ scale: hoveredCategory === cat.id ? 1.045 : 1 }}
                 transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
                 className="h-full w-full object-cover"
@@ -174,6 +176,8 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
                 src={cat.imageUrl}
                 alt={cat.title}
                 referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
                 animate={{ scale: hoveredCategory === cat.id ? 1.045 : 1 }}
                 transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
                 className="h-full w-full object-cover"

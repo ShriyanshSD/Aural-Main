@@ -125,7 +125,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   }
 
   return (
-    <section id="collection-grid" className={`theme-surface py-20 ${
+    <section className={`theme-surface py-20 ${
       isDarkMode ? 'bg-[#181615] text-[#F3EBE6]' : 'bg-[#FAF7F2] text-[#2C2422]'
     }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -136,6 +136,8 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
               src={categoryLanding.imageUrl}
               alt=""
               aria-hidden="true"
+              loading="lazy"
+              decoding="async"
               className="absolute inset-0 -z-20 h-full w-full object-cover"
             />
             <div className="absolute inset-0 -z-10 bg-linear-to-r from-[#211716]/85 via-[#211716]/55 to-[#211716]/10" />
@@ -343,6 +345,8 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                       src={product.imageUrl}
                       alt={product.name}
                       referrerPolicy="no-referrer"
+                      loading="lazy"
+                      decoding="async"
                       whileHover={{ scale: 1.04 }}
                       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
                       className="h-full w-full object-cover will-change-transform"

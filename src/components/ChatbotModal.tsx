@@ -12,6 +12,7 @@ export interface ChatMessage {
 
 interface ChatbotModalProps {
   isOpen: boolean
+  showLauncher?: boolean
   onClose: () => void
   onOpen: () => void
   isDarkMode: boolean
@@ -29,6 +30,7 @@ const welcomeMessage = (): ChatMessage => ({
 
 export const ChatbotModal: React.FC<ChatbotModalProps> = ({
   isOpen,
+  showLauncher = true,
   onClose,
   onOpen,
   isDarkMode,
@@ -204,7 +206,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
   return (
     <>
       {/* Floating AUREL Assistant button */}
-      <motion.button
+      {showLauncher && <motion.button
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.92 }}
         onClick={onOpen}
@@ -219,7 +221,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
         <span className="hidden sm:inline font-sans-body text-xs font-semibold tracking-wider uppercase">
           AUREL Assistant
         </span>
-      </motion.button>
+      </motion.button>}
 
       {/* Expandable Chatbot Drawer / Modal */}
       <AnimatePresence>
