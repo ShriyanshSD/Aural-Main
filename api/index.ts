@@ -49,9 +49,10 @@ export default function handler(req: ApiRequest, res: ServerResponse) {
   const pathname = requestedRoute
     ?? new URL(req.url ?? '/', 'http://localhost').searchParams.get('route')
     ?? new URL(req.url ?? '/', 'http://localhost').pathname
-  if (pathname === '/api/catalog') return publicCatalogHandler(req, res)
-  if (pathname.startsWith('/api/admin/')) return adminApiHandler(req, res)
-  const route = routes[pathname.replace(/\/+$/, '') || '/']
+  const normalizedPath = pathname.replace(/\/+$/, '') || '/'
+  if (normalizedPath === '/api/catalog') return publicCatalogHandler(req, res)
+  if (normalizedPath === '/api/admin' || normalizedPath.startsWith('/api/admin/')) return adminApiHandler(req, res)
+  const route = routes[normalizedPath]
   if (!route) {
     res.statusCode = 404
     res.setHeader('Content-Type', 'application/json')

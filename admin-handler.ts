@@ -17,6 +17,17 @@ interface AdminSession {
   expires_at: string
 }
 
+interface DeletionAuthUser {
+  id: string
+  email?: string
+}
+
+class AdminAuthRequestError extends Error {
+  constructor(readonly status: number) {
+    super('Supabase Auth could not complete the customer deletion request.')
+  }
+}
+
 interface AuthTokens {
   access_token?: string
   refresh_token?: string
@@ -146,6 +157,38 @@ const requestAuth = async <T>(path: string, body?: unknown, accessToken?: string
   const payload = await response.json().catch(() => ({})) as T
   if (!response.ok) throw new AdminIdentityError(response.status)
   return payload
+}
+
+const getDeletionAuthUser = async (userId: string): Promise<DeletionAuthUser | undefined> => {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
+  })
+  if (response.status === 404) return undefined
+  if (!response.ok) throw new AdminAuthRequestError(response.status)
+
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    throw new AdminAuthRequestError(response.status)
+  }
+  if (!payload || typeof payload !== 'object' || !('id' in payload) || payload.id !== userId) {
+    throw new AdminAuthRequestError(response.status)
+  }
+  return {
+    id: userId,
+    email: 'email' in payload && typeof payload.email === 'string' ? payload.email : undefined
+  }
+}
+
+const deleteAuthUser = async (userId: string): Promise<void> => {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
+  })
+  if (!response.ok && response.status !== 404) throw new AdminAuthRequestError(response.status)
 }
 
 const upsertSession = async (tokenHash: string, userId: string, tokens: AuthTokens) => {
@@ -689,7 +732,119 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     }
     return sendJson(res, 200, { customers })
   }
-  const customerActionMatch = path.match(/^\/api\/admin\/customers\/([a-f0-9-]{36})(?:\/(disable|enable))?$/i)
+  const customerDeleteMatch = path.match(/^\/api\/admin\/customers\/([^/]+)\/delete$/)
+  if (customerDeleteMatch) {
+    if (method !== 'POST') {
+      res.setHeader('Allow', 'POST')
+      return sendJson(res, 405, { error: 'Use POST to permanently delete a customer.' })
+    }
+    const customerId = customerDeleteMatch[1]
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(customerId)) {
+      return sendJson(res, 400, { error: 'The customer ID is invalid.' })
+    }
+
+    let authUser: DeletionAuthUser | undefined
+    try {
+      authUser = await getDeletionAuthUser(customerId)
+    } catch (error) {
+      if (!(error instanceof AdminAuthRequestError)) throw error
+      console.error('Could not verify the target customer in Supabase Auth:', error.status)
+      const status = error.status === 429 ? 429 : [401, 403].includes(error.status) ? 503 : 502
+      return sendJson(res, status, { error: 'The customer identity could not be verified. No account deletion was confirmed.' })
+    }
+
+    const customer = await supabaseRequest<Array<{ id: string; email: string; pending_email: string | null }>>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${customerId}`, select: 'id,email,pending_email', limit: '1' })
+    )
+    if (customer[0]?.id === session.user_id) {
+      return sendJson(res, 403, { error: 'You cannot delete your own owner account.' })
+    }
+    const adminSessions = await supabaseRequest<Array<{ user_id: string }>>(
+      'aurel_admin_sessions',
+      new URLSearchParams({ user_id: `eq.${customerId}`, select: 'user_id', limit: '1' })
+    )
+    if (adminSessions.length) {
+      return sendJson(res, 403, { error: 'An owner account cannot be deleted from customer management.' })
+    }
+
+    const allowedEmails = getAdminEmails()
+    const targetEmails = [
+      customer[0]?.email,
+      customer[0]?.pending_email,
+      authUser?.email
+    ].filter((email): email is string => typeof email === 'string' && email.length > 0)
+    if (targetEmails.some(email => allowedEmails.has(email.trim().toLowerCase()))) {
+      return sendJson(res, 403, { error: 'An allowlisted owner account cannot be deleted from customer management.' })
+    }
+
+    if (!authUser && !customer[0]) {
+      const [orphanSessions, orphanChats, orphanOrders] = await Promise.all([
+        supabaseRequest<Array<{ token_hash: string }>>('aurel_sessions', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'token_hash', limit: '1' })),
+        supabaseRequest<Array<{ id: number }>>('aurel_chat_messages', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'id', limit: '1' })),
+        supabaseRequest<Array<{ id: number }>>('aurel_orders', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'id', limit: '1' }))
+      ])
+      if (![orphanSessions, orphanChats, orphanOrders].some(rows => rows.length > 0)) {
+        return sendJson(res, 404, { error: 'Customer was not found or has already been deleted.' })
+      }
+    }
+
+    const confirmationAddress = customer[0]?.email ?? authUser?.email
+    if (customer[0] || authUser) {
+      const confirmationEmail = parseBody(req).confirmEmail
+      if (typeof confirmationEmail !== 'string'
+        || !confirmationAddress
+        || confirmationEmail.trim().toLowerCase() !== confirmationAddress.trim().toLowerCase()) {
+        return sendJson(res, 400, { error: 'Enter the customer’s current email address to confirm permanent deletion.' })
+      }
+    }
+
+    try {
+      if (authUser) {
+        await deleteAuthUser(customerId)
+      } else {
+        await supabaseRequest('rpc/aurel_admin_cleanup_orphaned_customer', new URLSearchParams(), {
+          method: 'POST',
+          body: JSON.stringify({ p_user_id: customerId })
+        })
+      }
+
+      const remainingAuthUser = await getDeletionAuthUser(customerId)
+      if (remainingAuthUser) {
+        return sendJson(res, 502, { error: 'Supabase Auth still reports this account. Deletion is incomplete; retry after checking the Auth service.' })
+      }
+      await supabaseRequest('rpc/aurel_admin_cleanup_orphaned_customer', new URLSearchParams(), {
+        method: 'POST',
+        body: JSON.stringify({ p_user_id: customerId })
+      })
+      const [profiles, sessions, chats, orders, adminSessionRows] = await Promise.all([
+        supabaseRequest<Array<{ id: string }>>('aurel_users', new URLSearchParams({ id: `eq.${customerId}`, select: 'id', limit: '1' })),
+        supabaseRequest<Array<{ token_hash: string }>>('aurel_sessions', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'token_hash', limit: '1' })),
+        supabaseRequest<Array<{ id: number }>>('aurel_chat_messages', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'id', limit: '1' })),
+        supabaseRequest<Array<{ id: number }>>('aurel_orders', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'id', limit: '1' })),
+        supabaseRequest<Array<{ user_id: string }>>('aurel_admin_sessions', new URLSearchParams({ user_id: `eq.${customerId}`, select: 'user_id', limit: '1' }))
+      ])
+      if ([profiles, sessions, chats, orders, adminSessionRows].some(rows => rows.length > 0)) {
+        console.error('Customer deletion verification found linked records.')
+        return sendJson(res, 500, { error: 'Deletion could not be fully verified. Do not treat this account as deleted; retry or inspect the server logs.' })
+      }
+      return sendJson(res, 200, { success: true, alreadyDeleted: !authUser && !customer[0] })
+    } catch (error) {
+      if (error instanceof AdminAuthRequestError) {
+        console.error('Supabase Auth did not confirm customer deletion:', error.status)
+        const status = error.status === 429 ? 429 : [401, 403].includes(error.status) ? 503 : 502
+        return sendJson(res, status, {
+          error: 'Supabase Auth did not confirm deletion. The request is incomplete; retry it after checking the Auth service.'
+        })
+      }
+      console.error('Customer deletion workflow failed before completion.')
+      return sendJson(res, 500, {
+        error: 'Customer deletion could not be fully verified. The request is incomplete; retry it or inspect the server logs.'
+      })
+    }
+  }
+
+  const customerActionMatch = path.match(/^\/api\/admin\/customers\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\/(disable|enable))?$/i)
   if (customerActionMatch && method === 'PATCH' && !customerActionMatch[2]) {
     const body = parseBody(req)
     const update: Record<string, unknown> = {}
@@ -766,7 +921,6 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     })
     return sendJson(res, 200, { success: true })
   }
-
   if (path === '/api/admin/settings' && method === 'GET') {
     const rows = await supabaseRequest<Array<{ settings: Partial<StoreSettings> }>>(
       'aurel_store_settings',

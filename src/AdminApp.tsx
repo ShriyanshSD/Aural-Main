@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { flushSync } from 'react-dom'
 import {
   ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, Check, ChevronDown, CircleAlert, ImagePlus,
-  LayoutDashboard, LoaderCircle, LogOut, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
-  Store, Trash2, Users, X
+  LayoutDashboard, LoaderCircle, LogOut, Moon, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
+  Store, Sun, Trash2, Users, X
 } from 'lucide-react'
 import type { Product } from './types'
 
@@ -139,6 +140,7 @@ function usePagination<T>(items: T[], pageSize = 15) {
 
 export default function AdminApp() {
   const [section, setSection] = useState<Section>(() => sectionFromPath(window.location.pathname))
+  const [isDarkMode, setIsDarkMode] = useState(false)
   const [ownerEmail, setOwnerEmail] = useState('')
   const [signedIn, setSignedIn] = useState(false)
   const [authReady, setAuthReady] = useState(false)
@@ -157,6 +159,26 @@ export default function AdminApp() {
   const [productDraft, setProductDraft] = useState<AdminProduct | null>(null)
   const [categoryDraft, setCategoryDraft] = useState<AdminCategory | null>(null)
   const [customerDraft, setCustomerDraft] = useState<AdminCustomer | null>(null)
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode)
+  }, [isDarkMode])
+
+  const toggleTheme = () => {
+    const nextTheme = !isDarkMode
+    const applyTheme = () => {
+      document.documentElement.classList.toggle('dark', nextTheme)
+      setIsDarkMode(nextTheme)
+    }
+    const transitionDocument = document as Document & {
+      startViewTransition?: (callback: () => void) => unknown
+    }
+    if (transitionDocument.startViewTransition) {
+      transitionDocument.startViewTransition(() => flushSync(applyTheme))
+    } else {
+      applyTheme()
+    }
+  }
 
   const navigateSection = (target: Section) => {
     window.history.pushState(null, '', `/admin/${target}`)
@@ -309,7 +331,7 @@ export default function AdminApp() {
 
   const currentTitle = sections.find(item => item.id === section)?.label ?? 'Overview'
   return (
-    <div className="min-h-screen bg-[#f7f5f2] text-[#322825]">
+    <div className="owner-dashboard min-h-screen bg-[#f7f5f2] text-[#322825]">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#eee6e1] bg-white lg:flex">
         <a href="/" className="flex h-20 items-center gap-3 border-b border-[#f1ebe7] px-6">
           <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#a45f60] text-white"><Store className="h-5 w-5" /></span>
@@ -333,6 +355,16 @@ export default function AdminApp() {
           <div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#aa7771]">Aurel Studio / {currentTitle}</p><h1 className="mt-1 font-serif-title text-xl sm:text-2xl">{currentTitle}</h1></div>
           <div className="flex items-center gap-3">
             <span className="hidden max-w-48 truncate text-xs text-[#897770] sm:block">{ownerEmail}</span>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+              aria-pressed={isDarkMode}
+              title={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+              className="rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] transition-colors hover:bg-[#faf6f3] dark:border-[#493936] dark:text-[#e5d5ce] dark:hover:bg-white/10"
+            >
+              {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
             <button onClick={() => void logout()} title="Sign out" className="rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] hover:bg-[#faf6f3] lg:hidden"><LogOut className="h-4 w-4" /></button>
           </div>
         </header>
@@ -376,6 +408,19 @@ export default function AdminApp() {
             const action = customer.account_status === 'active' ? 'disable' : 'enable'
             if (action === 'disable' && !window.confirm(`Disable ${customer.name}'s account? Their order history will remain intact.`)) return
             void runAction(async () => { await api(`/api/admin/customers/${customer.id}/${action}`, { method: 'POST', body: '{}' }) }, `Customer account ${action === 'disable' ? 'disabled' : 'enabled'}.`)
+          }} onDelete={customer => {
+            const confirmed = window.confirm(
+              `Permanently delete ${customer.name} (${customer.email})?\n\nTheir login, profile, saved chat history, and sessions will be deleted. Financial order history will be retained without its customer link, contact or delivery details, or personal gift messages. This cannot be undone.`
+            )
+            if (!confirmed) return
+            const confirmationEmail = window.prompt(`Type ${customer.email} to permanently delete this customer.`)
+            if (confirmationEmail === null) return
+            void runAction(async () => {
+              await api(`/api/admin/customers/${customer.id}/delete`, {
+                method: 'POST',
+                body: JSON.stringify({ confirmEmail: confirmationEmail })
+              })
+            }, `Customer ${customer.email} was deleted. Financial order history was retained with personal details removed.`)
           }} />}
           {section === 'settings' && <SettingsPage settings={settings} setSettings={setSettings} onSave={() => {
             void runAction(async () => { await api('/api/admin/settings', { method: 'PATCH', body: JSON.stringify(settings) }) }, 'Store settings saved.')
@@ -529,12 +574,12 @@ function OrdersPage({ orders, search, setSearch, onUpdate }: { orders: AdminOrde
     <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{orders.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Order</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Fulfillment</th><th className="px-5 py-3">Placed</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(order => <tr key={order.id}><td className="px-5 py-4 font-semibold">{order.order_id}</td><td className="px-5 py-4"><p>{String(order.order_data.customerName ?? 'Customer')}</p><p className="mt-1 text-xs text-[#9a8881]">{String(order.order_data.email ?? '')}</p></td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${order.order_data.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabel(String(order.order_data.status ?? 'pending'))}</span></td><td className="px-5 py-4 font-medium">{money(order.order_data.total)}</td><td className="px-5 py-4"><select value={order.fulfillment_status ?? 'unfulfilled'} onChange={event => onUpdate(order, event.target.value as Fulfillment)} className="rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2 text-xs outline-none focus:border-[#a45f60]">{fulfillmentStatuses.map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(order.created_at)}</td></tr>)}</tbody></table></div><TablePager page={page} pageCount={pageCount} total={orders.length} onChange={setPage} /></> : <EmptyState text="No matching orders found." />}</div>
   </section>
 }
-function CustomersPage({ customers, search, setSearch, onEdit, onToggleStatus }: { customers: AdminCustomer[]; search: string; setSearch: (value: string) => void; onEdit: (customer: AdminCustomer) => void; onToggleStatus: (customer: AdminCustomer) => void }) {
+function CustomersPage({ customers, search, setSearch, onEdit, onToggleStatus, onDelete }: { customers: AdminCustomer[]; search: string; setSearch: (value: string) => void; onEdit: (customer: AdminCustomer) => void; onToggleStatus: (customer: AdminCustomer) => void; onDelete: (customer: AdminCustomer) => void }) {
   const { page, setPage, pageCount, visibleItems } = usePagination(customers)
   return <section>
     <PageHeading title="Customers" description="Review customer profiles and disable access without deleting order history." />
     <div className="mb-4"><SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search name, username, email or phone" /></div>
-    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{customers.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Contact</th><th className="px-5 py-3">Email status</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(customer => <tr key={customer.id}><td className="px-5 py-4"><p className="font-medium">{customer.name}</p><p className="mt-1 text-xs text-[#9a8881]">@{customer.username}</p></td><td className="px-5 py-4"><p>{customer.email}</p><p className="mt-1 text-xs text-[#9a8881]">{customer.phone}</p></td><td className="px-5 py-4">{customer.email_verified ? <span className="text-xs text-emerald-700">Verified</span> : <span className="text-xs text-amber-700">Unverified</span>}{customer.pending_email && <p className="mt-1 max-w-48 truncate text-[10px] text-amber-700" title={customer.pending_email}>Pending {customer.pending_email}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${customer.account_status === 'disabled' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{statusLabel(customer.account_status)}</span></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(customer.created_at)}</td><td className="px-5 py-4 text-right"><button onClick={() => onEdit(customer)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Details</button><button onClick={() => onToggleStatus(customer)} className="rounded-lg px-3 py-2 text-xs font-medium text-[#806b63] hover:bg-[#faf7f5]">{customer.account_status === 'disabled' ? 'Enable' : 'Disable'}</button></td></tr>)}</tbody></table></div><TablePager page={page} pageCount={pageCount} total={customers.length} onChange={setPage} /></> : <EmptyState text="No customers match your search." />}</div>
+    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{customers.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[950px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Contact</th><th className="px-5 py-3">Email status</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(customer => <tr key={customer.id}><td className="px-5 py-4"><p className="font-medium">{customer.name}</p><p className="mt-1 text-xs text-[#9a8881]">@{customer.username}</p></td><td className="px-5 py-4"><p>{customer.email}</p><p className="mt-1 text-xs text-[#9a8881]">{customer.phone}</p></td><td className="px-5 py-4">{customer.email_verified ? <span className="text-xs text-emerald-700">Verified</span> : <span className="text-xs text-amber-700">Unverified</span>}{customer.pending_email && <p className="mt-1 max-w-48 truncate text-[10px] text-amber-700" title={customer.pending_email}>Pending {customer.pending_email}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${customer.account_status === 'disabled' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{statusLabel(customer.account_status)}</span></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(customer.created_at)}</td><td className="px-5 py-4 text-right"><div className="inline-flex items-center gap-1"><button onClick={() => onEdit(customer)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Details</button><button onClick={() => onToggleStatus(customer)} className="rounded-lg px-3 py-2 text-xs font-medium text-[#806b63] hover:bg-[#faf7f5]">{customer.account_status === 'disabled' ? 'Enable' : 'Disable'}</button><button onClick={() => onDelete(customer)} className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50" aria-label={`Permanently delete ${customer.email}`}>Delete</button></div></td></tr>)}</tbody></table></div><TablePager page={page} pageCount={pageCount} total={customers.length} onChange={setPage} /></> : <EmptyState text="No customers match your search." />}</div>
   </section>
 }
 function SettingsPage({ settings, setSettings, onSave }: { settings: StoreSettings; setSettings: React.Dispatch<React.SetStateAction<StoreSettings>>; onSave: () => void }) {
