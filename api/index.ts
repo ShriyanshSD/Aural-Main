@@ -5,18 +5,21 @@ import {
   chatHistoryHandler,
   confirmEmailChangeHandler,
   deleteAccountHandler,
+  loginHandler,
   logoutHandler,
   profileHandler,
   requestEmailChangeHandler,
   resendSignupVerificationHandler,
   sessionHandler,
   signupHandler,
-  verifySignupHandler,
-  loginHandler
+  verifySignupHandler
 } from '../auth-handler.js'
 import { chatHandler } from '../chat-handler.js'
 
-type ApiRequest = IncomingMessage & { body?: unknown }
+type ApiRequest = IncomingMessage & {
+  body?: unknown
+  query?: Record<string, string | string[]>
+}
 type ApiHandler = (req: ApiRequest, res: ServerResponse) => void | Promise<void>
 
 const routes: Record<string, ApiHandler> = {
@@ -37,8 +40,12 @@ const routes: Record<string, ApiHandler> = {
 }
 
 export default function handler(req: ApiRequest, res: ServerResponse) {
-  const pathname = new URL(req.url ?? '/', 'http://localhost').pathname.replace(/\/+$/, '') || '/'
-  const route = routes[pathname]
+  const rewrittenRoute = req.query?.route
+  const requestedRoute = Array.isArray(rewrittenRoute) ? rewrittenRoute[0] : rewrittenRoute
+  const pathname = requestedRoute
+    ?? new URL(req.url ?? '/', 'http://localhost').searchParams.get('route')
+    ?? new URL(req.url ?? '/', 'http://localhost').pathname
+  const route = routes[pathname.replace(/\/+$/, '') || '/']
   if (!route) {
     res.statusCode = 404
     res.setHeader('Content-Type', 'application/json')

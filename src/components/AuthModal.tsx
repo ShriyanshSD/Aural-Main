@@ -95,16 +95,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             : { email, password }
         )
       })
-      const data = await response.json() as {
+      const responseText = await response.text()
+      let data: {
         error?: string
         user?: AuthUser
         verificationRequired?: boolean
         emailSent?: boolean
         message?: string
       }
+      try {
+        data = JSON.parse(responseText) as typeof data
+      } catch {
+        throw new Error(`Account service returned an invalid response (HTTP ${response.status}). Please try again or contact support.`)
+      }
 
       if (!response.ok) {
-        setError(data.error || 'Unable to authenticate. Please try again.')
+        setError(data.error || `Unable to authenticate (HTTP ${response.status}). Please try again.`)
         return
       }
       if (isSignup && data.verificationRequired) {
@@ -124,7 +130,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onAuthenticated(data.user)
     } catch (requestError) {
       console.error('Account authentication failed:', requestError)
-      setError('Unable to reach the account service. Please try again.')
+      setError(requestError instanceof Error
+        ? requestError.message
+        : 'Unable to reach the account service. Please try again.')
     } finally {
       submissionInProgress.current = false
       setIsSubmitting(false)

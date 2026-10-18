@@ -1,4 +1,20 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api/chat", "destination": "/api/index?route=/api/chat" },
+    { "source": "/api/chat/history", "destination": "/api/index?route=/api/chat/history" },
+    { "source": "/api/auth/signup", "destination": "/api/index?route=/api/auth/signup" },
+    { "source": "/api/auth/verify", "destination": "/api/index?route=/api/auth/verify" },
+    { "source": "/api/auth/resend-verification", "destination": "/api/index?route=/api/auth/resend-verification" },
+    { "source": "/api/auth/login", "destination": "/api/index?route=/api/auth/login" },
+    { "source": "/api/auth/me", "destination": "/api/index?route=/api/auth/me" },
+    { "source": "/api/auth/profile", "destination": "/api/index?route=/api/auth/profile" },
+    { "source": "/api/auth/change-email", "destination": "/api/index?route=/api/auth/change-email" },
+    { "source": "/api/auth/orders", "destination": "/api/index?route=/api/auth/orders" },
+    { "source": "/api/auth/change-password", "destination": "/api/index?route=/api/auth/change-password" },
+    { "source": "/api/auth/delete-account", "destination": "/api/index?route=/api/auth/delete-account" },
+    { "source": "/api/auth/confirm-email-change", "destination": "/api/index?route=/api/auth/confirm-email-change" },
+    { "source": "/api/auth/logout", "destination": "/api/index?route=/api/auth/logout" }
+  ]
 }
