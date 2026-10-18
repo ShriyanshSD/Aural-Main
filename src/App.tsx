@@ -19,6 +19,7 @@ import { CartDrawer } from './components/CartDrawer'
 import { WishlistDrawer } from './components/WishlistDrawer'
 import { CheckoutModal } from './components/CheckoutModal'
 import { AuthModal, AuthMode } from './components/AuthModal'
+import { ProfileModal } from './components/ProfileModal'
 import { ChatbotModal } from './components/ChatbotModal'
 import { StoryAndReviews } from './components/StoryAndReviews'
 import { Footer } from './components/Footer'
@@ -89,6 +90,7 @@ export default function App() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [isAuthLoaded, setIsAuthLoaded] = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [authNotice, setAuthNotice] = useState('')
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(signupResume?.resumeCheckout ?? false)
@@ -188,6 +190,7 @@ export default function App() {
     const verificationType = hashParams.get('type') ?? callbackUrl.searchParams.get('type')
     const verificationError = hashParams.get('error') ?? callbackUrl.searchParams.get('error')
     const verificationErrorCode = hashParams.get('error_code') ?? callbackUrl.searchParams.get('error_code')
+    const isEmailChange = verificationType === 'email_change'
     const clearVerificationParams = () => {
       for (const key of ['access_token', 'type', 'error', 'error_code', 'error_description', 'token_hash']) {
         callbackUrl.searchParams.delete(key)
@@ -198,20 +201,24 @@ export default function App() {
 
     if (verificationError) {
       clearVerificationParams()
-      setAuthMode('signup')
+      setAuthMode(isEmailChange ? 'login' : 'signup')
       setAuthNotice(
         verificationErrorCode === 'otp_expired'
-          ? 'This confirmation link has expired or was already used. Sign in if you already verified your email, or sign up again to request a new link.'
-          : 'The confirmation link could not be used. Sign in if you already verified your email, or request a new confirmation link.'
+          ? isEmailChange
+            ? 'This email change link has expired or was already used. Sign in with your current email address and request a new link.'
+            : 'This confirmation link has expired or was already used. Sign in if you already verified your email, or sign up again to request a new link.'
+          : isEmailChange
+            ? 'The new email address could not be verified. Sign in with your current email address and request a new link.'
+            : 'The confirmation link could not be used. Sign in if you already verified your email, or request a new confirmation link.'
       )
       setIsAuthOpen(true)
       return
     }
-    if ((!accessToken && !tokenHash) || verificationType !== 'signup') return
+    if ((!accessToken && !tokenHash) || (verificationType !== 'signup' && verificationType !== 'email_change')) return
 
     const verifyEmail = async () => {
       try {
-        const response = await fetch('/api/auth/verify', {
+        const response = await fetch(isEmailChange ? '/api/auth/confirm-email-change' : '/api/auth/verify', {
           method: 'POST',
           credentials: 'same-origin',
           cache: 'no-store',
@@ -229,6 +236,12 @@ export default function App() {
           cache: 'no-store'
         })
         const sessionData = await sessionResponse.json() as { error?: string; user?: AuthUser }
+        if (isEmailChange && (!sessionResponse.ok || !sessionData.user || sessionData.user.id !== data.user.id)) {
+          setAuthMode('login')
+          setAuthNotice('Your new email is verified. Please sign in with your updated email address.')
+          setIsAuthOpen(true)
+          return
+        }
         if (!sessionResponse.ok || !sessionData.user || sessionData.user.id !== data.user.id) {
           throw new Error(sessionData.error || 'Your email was verified, but this browser could not keep your sign-in session. Please sign in once to continue.')
         }
@@ -238,7 +251,7 @@ export default function App() {
         setIsAuthOpen(false)
       } catch (error) {
         console.error('Email confirmation link failed:', error)
-        setAuthMode('signup')
+        setAuthMode(isEmailChange ? 'login' : 'signup')
         setAuthNotice(error instanceof Error
           ? error.message
           : 'The email confirmation link could not be verified. Request a new confirmation link.')
@@ -459,6 +472,7 @@ export default function App() {
           setAuthMode(mode)
           setIsAuthOpen(true)
         }}
+        onOpenProfile={() => setIsProfileOpen(true)}
         onLogout={() => { void handleLogout() }}
       />
 
@@ -503,6 +517,7 @@ export default function App() {
         onOpenChatbot={() => setIsChatbotOpen(true)}
         activeCategory={activeCategory}
         user={authUser}
+        onOpenProfile={() => setIsProfileOpen(true)}
         onOpenAuth={(mode) => {
           setAuthMode(mode)
           setIsAuthOpen(true)
@@ -677,6 +692,16 @@ export default function App() {
           setIsAuthOpen(false)
         }}
       />
+
+      {authUser && (
+        <ProfileModal
+          isOpen={isProfileOpen}
+          user={authUser}
+          isDarkMode={isDarkMode}
+          onClose={() => setIsProfileOpen(false)}
+          onProfileUpdated={setAuthUser}
+        />
+      )}
 
       {/* AUREL Assistant */}
       <ChatbotModal

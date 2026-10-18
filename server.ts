@@ -8,6 +8,9 @@ import {
   loginHandler,
   logoutHandler,
   chatHistoryHandler,
+  confirmEmailChangeHandler,
+  profileHandler,
+  requestEmailChangeHandler,
   resendSignupVerificationHandler,
   sessionHandler,
   signupHandler,
@@ -42,6 +45,9 @@ app.post('/api/auth/verify', (req, res) => verifySignupHandler(req, res))
 app.post('/api/auth/resend-verification', (req, res) => resendSignupVerificationHandler(req, res))
 app.post('/api/auth/login', (req, res) => loginHandler(req, res))
 app.get('/api/auth/me', (req, res) => sessionHandler(req, res))
+app.all('/api/auth/profile', (req, res) => profileHandler(req, res))
+app.post('/api/auth/change-email', (req, res) => requestEmailChangeHandler(req, res))
+app.post('/api/auth/confirm-email-change', (req, res) => confirmEmailChangeHandler(req, res))
 app.post('/api/auth/logout', (req, res) => logoutHandler(req, res))
 app.all('/api/chat/history', (req, res) => chatHistoryHandler(req, res))
 

@@ -16,6 +16,7 @@ interface SidebarProps {
   onOpenChatbot: () => void
   activeCategory: ProductCategory
   user: AuthUser | null
+  onOpenProfile: () => void
   onOpenAuth: (mode: AuthMode) => void
   onLogout: () => void
 }
@@ -31,6 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenChatbot,
   activeCategory,
   user,
+  onOpenProfile,
   onOpenAuth,
   onLogout
 }) => {
@@ -172,13 +174,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="rounded-full bg-[#B36D6D]/15 p-2 text-[#B36D6D]"><UserRound className="h-4 w-4" /></span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{user.name}</p>
+                      <p className="truncate text-sm font-semibold">Hello, {user.name}</p>
                       <p className="truncate text-xs text-[#8E7973] dark:text-[#A79690]">{user.email}</p>
                     </div>
                   </div>
-                  <button onClick={onLogout} aria-label="Sign out" className="rounded-full p-2 text-[#B36D6D] hover:bg-[#B36D6D]/10">
-                    <LogOut className="h-4 w-4" />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      onClick={() => { onOpenProfile(); onClose() }}
+                      className="flex items-center gap-1.5 rounded-full bg-[#B36D6D] px-3 py-2 text-[10px] font-semibold text-white transition-colors hover:bg-[#9E5B5B]"
+                    >
+                      <UserRound className="h-3.5 w-3.5" /> My Profile
+                    </button>
+                    <button onClick={onLogout} aria-label="Sign out" className="rounded-full p-2 text-[#B36D6D] hover:bg-[#B36D6D]/10">
+                      <LogOut className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div>

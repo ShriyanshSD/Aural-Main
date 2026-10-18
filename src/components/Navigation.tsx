@@ -22,6 +22,7 @@ interface NavigationProps {
   onOpenBuilder: () => void
   user: AuthUser | null
   onOpenAuth: (mode: AuthMode) => void
+  onOpenProfile: () => void
   onLogout: () => void
 }
 
@@ -42,6 +43,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   onOpenBuilder,
   user,
   onOpenAuth,
+  onOpenProfile,
   onLogout
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -297,18 +299,21 @@ export const Navigation: React.FC<NavigationProps> = ({
                   isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-[#FFFCF9]'
                 }`}>
                   <div className="border-b border-black/5 pb-3 dark:border-white/10">
-                    <p className="font-serif-title text-lg">{user.name}</p>
+                    <p className="font-serif-title text-lg">Hello, {user.name}</p>
                     <p className="text-xs text-[#8E7973] dark:text-[#A79690]">@{user.username}</p>
                   </div>
                   <dl className="mt-3 space-y-2 text-xs">
                     <div><dt className="text-[#9A8781]">Email</dt><dd className="break-all">{user.email}</dd></div>
-                    <div><dt className="text-[#9A8781]">Phone</dt><dd>{user.phone}</dd></div>
-                    <div><dt className="text-[#9A8781]">Address</dt><dd className="break-words">{user.address}</dd></div>
-                    <div><dt className="text-[#9A8781]">Gender</dt><dd>{user.gender}</dd></div>
                   </dl>
                   <button
+                    onClick={() => { setIsProfileOpen(false); onOpenProfile() }}
+                    className="mt-3 flex w-full items-center gap-2 rounded-xl bg-[#B36D6D]/10 px-3 py-2.5 text-xs font-semibold text-[#B36D6D] transition-colors hover:bg-[#B36D6D]/15"
+                  >
+                    <UserRound className="h-4 w-4" /> My Profile
+                  </button>
+                  <button
                     onClick={() => { setIsProfileOpen(false); onLogout() }}
-                    className="mt-4 flex w-full items-center gap-2 border-t border-black/5 pt-3 text-xs font-semibold text-[#B36D6D] dark:border-white/10"
+                    className="mt-2 flex w-full items-center gap-2 border-t border-black/5 pt-3 text-xs font-semibold text-[#B36D6D] dark:border-white/10"
                   >
                     <LogOut className="h-4 w-4" /> Sign out
                   </button>

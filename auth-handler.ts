@@ -439,6 +439,168 @@ const handleFailure = (res: ServerResponse, error: unknown, fallbackMessage: str
   sendJson(res, 500, { error: fallbackMessage })
 }
 
+export async function profileHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to manage your profile.' })
+
+    if (req.method === 'GET') return sendJson(res, 200, { user: publicAccount(account) })
+    if (req.method !== 'PATCH') {
+      res.setHeader('Allow', 'GET, PATCH')
+      return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+
+    const body = readBody(req)
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    const username = typeof body.username === 'string' ? body.username.trim().toLowerCase() : ''
+    const phone = typeof body.phone === 'string' ? normalizeValidPhoneNumber(body.phone) : null
+    const address = typeof body.address === 'string' ? body.address.trim() : ''
+    const gender = typeof body.gender === 'string' ? body.gender : ''
+    if (name.length < 2 || name.length > 80) return sendJson(res, 400, { error: 'Enter a name between 2 and 80 characters.' })
+    if (!/^[a-z0-9_]{3,24}$/.test(username)) return sendJson(res, 400, { error: 'Username must be 3 to 24 letters, numbers, or underscores.' })
+    if (!phone) return sendJson(res, 400, { error: 'Enter a valid phone number, including its country code if it is not an Indian number.' })
+    if (address.length < 5 || address.length > 240) return sendJson(res, 400, { error: 'Address must be between 5 and 240 characters.' })
+    if (!allowedGenders.has(gender)) return sendJson(res, 400, { error: 'Select a valid gender option.' })
+
+    const updated = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${account.id}`, select: '*' }),
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ name, username, phone, address, gender })
+      }
+    )
+    if (!updated[0]) return sendJson(res, 404, { error: 'Your profile could not be found.' })
+    return sendJson(res, 200, { user: publicAccount(updated[0]) })
+  } catch (error) {
+    if (error instanceof AccountServiceError && error.code === '23505') {
+      return sendJson(res, 409, { error: 'That username is already in use. Choose another username.' })
+    }
+    handleFailure(res, error, 'Unable to update your profile right now.')
+  }
+}
+
+export async function requestEmailChangeHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to change your email address.' })
+    const body = readBody(req)
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+    const password = body.password
+    if (!validEmail(email)) return sendJson(res, 400, { error: 'Enter a valid email address.' })
+    if (email === account.email.toLowerCase()) return sendJson(res, 400, { error: 'Enter a different email address.' })
+    if (typeof password !== 'string' || password.length === 0 || password.length > 128) {
+      return sendJson(res, 400, { error: 'Enter your current password to verify this email change.' })
+    }
+
+    const submittedHash = await derivePasswordHash(password, account.password_salt)
+    const savedHash = Buffer.from(account.password_hash, 'hex')
+    if (submittedHash.length !== savedHash.length || !timingSafeEqual(submittedHash, savedHash)) {
+      return sendJson(res, 401, { error: 'Your current password is incorrect.' })
+    }
+
+    const conflicts = await supabaseRequest<Array<{ id: string }>>(
+      'aurel_users',
+      new URLSearchParams({ email: `eq.${email}`, select: 'id', limit: '1' })
+    )
+    if (conflicts.length) return sendJson(res, 409, { error: 'That email address is already connected to an account.' })
+
+    let authSession: { access_token?: string }
+    try {
+      authSession = await supabaseAuthRequest<{ access_token?: string }>('token?grant_type=password', {
+        email: account.email,
+        password
+      })
+    } catch (error) {
+      if (error instanceof AuthProviderError && error.status >= 400 && error.status < 500) {
+        return sendJson(res, 401, { error: 'We could not verify your current sign-in. Please sign in again, then retry the email change.' })
+      }
+      throw error
+    }
+    if (!authSession.access_token) {
+      return sendJson(res, 502, { error: 'Supabase did not start a secure email-change session. Please try again.' })
+    }
+
+    const { supabaseUrl } = getSupabaseConfig()
+    const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        apikey: getSupabaseAuthKey(),
+        Authorization: `Bearer ${authSession.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email })
+    })
+    if (!response.ok) {
+      const responseText = await response.text()
+      let providerMessage: string | undefined
+      try {
+        const providerError = JSON.parse(responseText) as SupabaseErrorBody
+        providerMessage = safeProviderMessage(providerError.message ?? providerError.msg ?? providerError.error)
+      } catch {
+        providerMessage = safeProviderMessage(responseText)
+      }
+      console.error('Supabase rejected an email change request:', {
+        status: response.status,
+        message: providerMessage
+      })
+      return sendJson(res, response.status === 429 ? 429 : 400, {
+        error: response.status === 429
+          ? 'Too many email changes were requested. Wait a few minutes and try again.'
+          : providerMessage || 'Supabase could not start email verification. Check the Auth email settings and try again.'
+      })
+    }
+    return sendJson(res, 200, {
+      email,
+      message: 'A verification email has been requested. Your current email remains active until you confirm the new address.'
+    })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to request an email change right now.')
+  }
+}
+
+export async function confirmEmailChangeHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const body = readBody(req)
+  const accessToken = typeof body.accessToken === 'string' ? body.accessToken : ''
+  const tokenHash = typeof body.tokenHash === 'string' ? body.tokenHash : ''
+  if (
+    (accessToken.length < 20 && !/^[A-Za-z0-9._~-]{20,1024}$/.test(tokenHash))
+    || (accessToken && tokenHash)
+  ) {
+    return sendJson(res, 400, { error: 'Open the email change confirmation link to verify your new address.' })
+  }
+
+  try {
+    const verifiedSession = tokenHash
+      ? await supabaseAuthRequest<{ access_token?: string }>('verify', { token_hash: tokenHash, type: 'email_change' })
+      : undefined
+    const sessionAccessToken = accessToken || verifiedSession?.access_token || ''
+    const verifiedUser = await getVerifiedAuthUser(sessionAccessToken)
+    const email = verifiedUser.email?.trim().toLowerCase()
+    if (!verifiedUser.id || !email || !verifiedUser.email_confirmed_at) {
+      return sendJson(res, 400, { error: 'We could not verify the new email address. Open the latest confirmation link and try again.' })
+    }
+
+    const updated = await supabaseRequest<AccountRecord[]>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${verifiedUser.id}`, select: '*' }),
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ email, email_verified: true })
+      }
+    )
+    if (!updated[0]) return sendJson(res, 404, { error: 'Your profile could not be found.' })
+    return sendJson(res, 200, { user: publicAccount(updated[0]) })
+  } catch (error) {
+    if (error instanceof AccountServiceError && error.code === '23505') {
+      return sendJson(res, 409, { error: 'That email address is already connected to another account.' })
+    }
+    handleFailure(res, error, 'Unable to confirm your email change right now.')
+  }
+}
+
 export async function signupHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
   const body = readBody(req)
   const name = typeof body.name === 'string' ? body.name.trim() : ''
