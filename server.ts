@@ -20,6 +20,7 @@ import {
   verifySignupHandler
 } from './auth-handler'
 import { indiaCitiesHandler, indiaStatesHandler } from './locations-handler'
+import { adminApiHandler, publicCatalogHandler } from './admin-handler'
 
 dotenv.config()
 
@@ -44,7 +45,10 @@ for (let i = 0; i < cliArgs.length; i += 1) {
 const app = express()
 const PORT = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 3000
 
+app.use('/api/admin/products/upload', express.json({ limit: '4mb' }))
 app.use(express.json())
+app.get('/api/catalog', (req, res) => publicCatalogHandler(req, res))
+app.all('/api/admin/*', (req, res) => adminApiHandler(req, res))
 app.post('/api/auth/signup', (req, res) => signupHandler(req, res))
 app.post('/api/auth/verify', (req, res) => verifySignupHandler(req, res))
 app.post('/api/auth/resend-verification', (req, res) => resendSignupVerificationHandler(req, res))

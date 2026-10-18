@@ -1,18 +1,6 @@
 export type FinishType = 'matte' | 'gloss'
 
-export type ProductCategory = 
-  | 'all'
-  | 'magazines' 
-  | 'hampers' 
-  | 'bouquets' 
-  | 'bag-charms'
-  | 'desk-buddy'
-  | 'gift-box-hampers'
-  | 'god-aasan'
-  | 'hair-accessories'
-  | 'key-chains'
-  | 'single-flowers'
-  | 'custom_builder'
+export type ProductCategory = string
 
 export type SortOption = 
   | 'recommended' 
@@ -37,6 +25,28 @@ export interface Product {
   availableFinishes?: FinishType[]
   isCustomizable?: boolean
   features: string[]
+  stockQuantity?: number | null
+  isActive?: boolean
+  isPublished?: boolean
+}
+
+export interface StoreCategory {
+  slug: string
+  name: string
+  description?: string
+  image_url?: string
+}
+
+export interface StoreSettings {
+  storeName: string
+  tagline: string
+  description: string
+  contactEmail: string
+  phone: string
+  whatsappNumber: string
+  instagramUrl: string
+  facebookUrl: string
+  deliveryNote: string
 }
 
 export interface CartItem {

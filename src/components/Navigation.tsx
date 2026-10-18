@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, Settings, X } from 'lucide-react'
-import { AuthUser, Product } from '../types'
+import { AuthUser, Product, StoreSettings } from '../types'
 import { AuthMode } from './AuthModal'
-import { PRODUCTS } from '../data/products'
 
 interface NavigationProps {
   isDarkMode: boolean
@@ -25,6 +24,8 @@ interface NavigationProps {
   onOpenProfile: () => void
   onOpenSettings: () => void
   onLogout: () => void
+  products: Product[]
+  settings: StoreSettings
 }
 
 export const Navigation: React.FC<NavigationProps> = ({
@@ -46,18 +47,20 @@ export const Navigation: React.FC<NavigationProps> = ({
   onOpenAuth,
   onOpenProfile,
   onOpenSettings,
-  onLogout
+  onLogout,
+  products,
+  settings
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     if (!query) return []
-    return PRODUCTS.filter(product =>
+    return products.filter(product =>
       [product.name, product.category.replaceAll('-', ' '), product.tagline]
         .some(value => value.toLowerCase().includes(query))
     ).slice(0, 5)
-  }, [searchQuery])
+  }, [products, searchQuery])
 
   const selectSearchResult = (product: Product) => {
     onSelectProduct(product)
@@ -92,10 +95,10 @@ export const Navigation: React.FC<NavigationProps> = ({
             className="group flex flex-col items-start text-left"
           >
             <span className="font-serif-title text-xl tracking-[0.16em] font-light transition-opacity duration-300 group-hover:opacity-80 sm:text-3xl sm:tracking-[0.25em]">
-              AUREL
+              {settings.storeName}
             </span>
             <span className="font-editorial text-[10px] tracking-widest text-[#B36D6D] uppercase hidden sm:block">
-              Made With Love For You
+              {settings.tagline}
             </span>
           </button>
         </div>

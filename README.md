@@ -93,18 +93,32 @@ The `not exists` condition prevents deleting an AUREL profile that still has a S
 
 If signup returns `PGRST204`, PostgREST cannot find a required profile-table column in its current schema cache. Re-run `supabase/schema.sql`, then run `NOTIFY pgrst, 'reload schema';`. Signup may already have created a pending Supabase Auth user before the profile insert failed; retry signup with the same signup details after the schema refresh so the app can recover that pending user and resend its confirmation link.
 
+## Owner Dashboard
+
+The private dashboard lives under `/admin` and is separate from storefront navigation. It uses the existing Supabase project and customer/order tables; it does not create a second customer or authentication system. Admin login uses Supabase Auth, while customer login continues to use the existing AUREL account flow.
+
+1. Apply [`supabase/migrations/202606220001_owner_dashboard.sql`](./supabase/migrations/202606220001_owner_dashboard.sql) in the Supabase SQL Editor **after** `supabase/schema.sql`. It adds product, category, store-setting, and short-lived admin-session tables, adds a separate order fulfillment field and customer disable flag, and creates the public-read-only product image bucket. Customer password fields are not exposed to dashboard queries.
+2. Create an owner user in Supabase Authentication (or use an existing verified Supabase Auth user), and set `ADMIN_EMAILS` on the server to a comma-separated allowlist of exact owner email addresses. Set it in `.env` for local use and in Vercel Project Settings for every environment that should have dashboard access. A regular customer is not granted owner access unless their verified Auth email is explicitly allowlisted.
+3. Keep `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_EMAILS` server-side. The dashboard uses HTTP-only admin-session cookies; service credentials and Supabase tokens are never sent to the browser.
+4. Open `/admin/login`, sign in using the allowlisted verified Supabase Auth user, and choose **Import missing seed products** on the Products page. The import is repeat-safe and only inserts missing seed rows; it does not overwrite products already managed in the database. Until the first import or product creation, the storefront keeps using its bundled catalog. Once initialized, the storefront reads active, published products and active categories from Supabase.
+5. Dashboard order edits update `fulfillment_status` only. The recorded payment status and order payload are not editable from the dashboard. Customer disablement preserves customer and order records and invalidates existing AUREL sessions.
+
+The dashboard adds API routes to the existing shared `api/index.ts` function, so it does not add one serverless function per dashboard endpoint. Apply the migration before using dashboard data or uploads; missing admin schema/configuration is reported in the owner interface. No Git commit or deployment is required to test the local implementation.
+
 ## Deploying to Vercel
 
 1. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql) before deploying. It creates the profile, session, and account chat history tables required by the APIs. Re-run it to add chat history to an existing project.
-2. In Vercel, import the repository (or connect the existing project) with the repository root as the project root. `vercel.json` builds the Vite frontend into `dist`, and Vercel deploys files under `api/` as serverless functions.
-3. Add these server-side Environment Variables in Vercel Project Settings → Environment Variables:
+2. For the owner dashboard, also run [`supabase/migrations/202606220001_owner_dashboard.sql`](./supabase/migrations/202606220001_owner_dashboard.sql) after the base schema.
+3. In Vercel, import the repository (or connect the existing project) with the repository root as the project root. `vercel.json` builds the Vite frontend into `dist`, and the rewritten API routes share the existing `api/index.ts` function.
+4. Add these server-side Environment Variables in Vercel Project Settings → Environment Variables:
    - `SUPABASE_URL` — the Supabase project URL.
    - `SUPABASE_SERVICE_ROLE_KEY` — the Supabase service-role secret. Keep it private and never expose it with a `VITE_` prefix.
    - `GEMINI_API_KEY` — required for AUREL Assistant.
    - `APP_URL` — the exact production origin, such as `https://www.example.com`, with no trailing slash. This is used as the signup confirmation redirect.
    - `SUPABASE_PUBLISHABLE_KEY` — optional; if omitted, the server uses the service-role key for server-side Auth requests.
-4. Add the variables to the Vercel environments where they are needed (Production, Preview, and/or Development). Preview deployments should use the appropriate preview origin for `APP_URL`; do not point production signups at localhost.
-5. In Supabase Authentication → URL Configuration, set the Site URL to the production origin and add the production origin, plus any preview origins you use, to the allowed redirect URLs. Confirm email signup is enabled and the confirmation email template uses `{{ .ConfirmationURL }}`.
-6. In Vercel, ensure the production branch is the intended branch (typically `main`). Pushing to that branch triggers a deployment when Git integration is enabled. After adding or changing environment variables, redeploy so the new serverless functions receive them.
+   - `ADMIN_EMAILS` — comma-separated allowlist of verified Supabase Auth owner emails; required only if enabling `/admin`.
+5. Add the variables to the Vercel environments where they are needed (Production, Preview, and/or Development). Preview deployments should use the appropriate preview origin for `APP_URL`; do not point production signups at localhost.
+6. In Supabase Authentication → URL Configuration, set the Site URL to the production origin and add the production origin, plus any preview origins you use, to the allowed redirect URLs. Confirm email signup is enabled and the confirmation email template uses `{{ .ConfirmationURL }}`.
+7. In Vercel, ensure the production branch is the intended branch (typically `main`). Pushing to that branch triggers a deployment when Git integration is enabled. After adding or changing environment variables, redeploy so the new serverless functions receive them.
 
 The local `.env` file is ignored by Git. Do not commit it or paste its secret values into source code. The `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` variables are not used by the current browser app; account requests go through the server-side API.

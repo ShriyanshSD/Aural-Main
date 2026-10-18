@@ -16,6 +16,7 @@ import {
 } from '../auth-handler.js'
 import { chatHandler } from '../chat-handler.js'
 import { indiaCitiesHandler, indiaStatesHandler } from '../locations-handler.js'
+import { adminApiHandler, publicCatalogHandler } from '../admin-handler.js'
 
 type ApiRequest = IncomingMessage & {
   body?: unknown
@@ -48,6 +49,8 @@ export default function handler(req: ApiRequest, res: ServerResponse) {
   const pathname = requestedRoute
     ?? new URL(req.url ?? '/', 'http://localhost').searchParams.get('route')
     ?? new URL(req.url ?? '/', 'http://localhost').pathname
+  if (pathname === '/api/catalog') return publicCatalogHandler(req, res)
+  if (pathname.startsWith('/api/admin/')) return adminApiHandler(req, res)
   const route = routes[pathname.replace(/\/+$/, '') || '/']
   if (!route) {
     res.statusCode = 404

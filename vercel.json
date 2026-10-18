@@ -2,6 +2,8 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/catalog", "destination": "/api/index?route=/api/catalog" },
+    { "source": "/api/admin/:path*", "destination": "/api/index?route=/api/admin/:path*" },
     { "source": "/api/chat", "destination": "/api/index?route=/api/chat" },
     { "source": "/api/chat/history", "destination": "/api/index?route=/api/chat/history" },
     { "source": "/api/locations/states", "destination": "/api/index?route=/api/locations/states" },
@@ -17,6 +19,8 @@
     { "source": "/api/auth/change-password", "destination": "/api/index?route=/api/auth/change-password" },
     { "source": "/api/auth/delete-account", "destination": "/api/index?route=/api/auth/delete-account" },
     { "source": "/api/auth/confirm-email-change", "destination": "/api/index?route=/api/auth/confirm-email-change" },
-    { "source": "/api/auth/logout", "destination": "/api/index?route=/api/auth/logout" }
+    { "source": "/api/auth/logout", "destination": "/api/index?route=/api/auth/logout" },
+    { "source": "/admin", "destination": "/index.html" },
+    { "source": "/admin/:path*", "destination": "/index.html" }
   ]
 }

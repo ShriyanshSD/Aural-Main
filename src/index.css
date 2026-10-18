@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+@layer components {
+  .form-input {
+    @apply mt-2 w-full rounded-xl border border-[#e9dfda] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/10 disabled:bg-[#f7f3f0] disabled:text-[#95857f];
+  }
+}
+
 @layer base {
   :root {
     --font-serif: 'Playfair Display', 'Cormorant Garamond', serif;

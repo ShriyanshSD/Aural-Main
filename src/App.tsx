@@ -10,9 +10,10 @@ import { Sparkles } from 'lucide-react'
 import { Navigation } from './components/Navigation'
 import { Hero } from './components/Hero'
 import type { AuthMode } from './components/AuthModal'
-import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser } from './types'
+import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser, StoreCategory, StoreSettings } from './types'
 import { PRODUCTS } from './data/products'
 
+const AdminApp = React.lazy(() => import('./AdminApp'))
 const Sidebar = React.lazy(() => import('./components/Sidebar').then(module => ({ default: module.Sidebar })))
 const MomentsSection = React.lazy(() => import('./components/MomentsSection').then(module => ({ default: module.MomentsSection })))
 const CategoryGrid = React.lazy(() => import('./components/CategoryGrid').then(module => ({ default: module.CategoryGrid })))
@@ -81,11 +82,20 @@ interface SignupResumeState {
 const signupResumeStorageKey = 'aurel_signup_resume'
 const getWishlistStorageKey = (userId: string) => `aurel_wishlist_${userId}`
 const appTabs = new Set<AppTab>(['home', 'shop', 'builder', 'story', 'contact'])
-const productCategories = new Set<ProductCategory>([
-  'all', 'magazines', 'hampers', 'bouquets', 'bag-charms', 'desk-buddy',
-  'gift-box-hampers', 'god-aasan', 'hair-accessories', 'key-chains',
-  'single-flowers', 'custom_builder'
-])
+const productCategories = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/
+const initialCategories: StoreCategory[] = [...new Set(PRODUCTS.map(product => product.category))]
+  .map(slug => ({ slug, name: slug.split('-').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ') }))
+const initialStoreSettings: StoreSettings = {
+  storeName: 'AUREL',
+  tagline: 'Made With Love For You',
+  description: 'Curated luxury memory magazines, botanical bouquets, eternal single blossoms, and thoughtful keepsakes.',
+  contactEmail: 'concierge@aurelgifts.com',
+  phone: '',
+  whatsappNumber: '',
+  instagramUrl: '',
+  facebookUrl: '',
+  deliveryNote: 'Pan India Delivery'
+}
 
 const readSignupResumeState = (): SignupResumeState | null => {
   try {
@@ -99,7 +109,7 @@ const readSignupResumeState = (): SignupResumeState | null => {
       || typeof state.activeTab !== 'string'
       || !appTabs.has(state.activeTab as AppTab)
       || typeof state.activeCategory !== 'string'
-      || !productCategories.has(state.activeCategory as ProductCategory)
+      || !productCategories.test(state.activeCategory)
       || !Array.isArray(state.cartItems)
       || !Array.isArray(state.wishlist)
       || typeof state.isDarkMode !== 'boolean'
@@ -115,7 +125,7 @@ const readSignupResumeState = (): SignupResumeState | null => {
   }
 }
 
-export default function App() {
+function StorefrontApp() {
   const [signupResume] = useState(readSignupResumeState)
   // Theme state
   const [isDarkMode, setIsDarkMode] = useState(signupResume?.isDarkMode ?? false)
@@ -123,6 +133,10 @@ export default function App() {
   // Navigation & View state
   const [activeTab, setActiveTab] = useState<AppTab>(signupResume?.activeTab ?? 'home')
   const [activeCategory, setActiveCategory] = useState<ProductCategory>(signupResume?.activeCategory ?? 'all')
+  const [catalogProducts, setCatalogProducts] = useState<Product[]>(PRODUCTS)
+  const [storeCategories, setStoreCategories] = useState<StoreCategory[]>(initialCategories)
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(initialStoreSettings)
+  const [isCatalogLoaded, setIsCatalogLoaded] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isChatbotOpen, setIsChatbotOpen] = useState(false)
@@ -138,7 +152,11 @@ export default function App() {
   // Cart & Wishlist state
   const [cartItems, setCartItems] = useState<CartItem[]>(signupResume?.cartItems ?? [])
   const [isBagOpen, setIsBagOpen] = useState(false)
-  const [cartFeedback, setCartFeedback] = useState<{ productName: string; timestamp: number } | null>(null)
+  const [cartFeedback, setCartFeedback] = useState<{
+    productName: string
+    timestamp: number
+    kind: 'added' | 'unavailable'
+  } | null>(null)
   const [wishlist, setWishlist] = useState<string[]>(signupResume?.wishlist ?? [])
   const [wishlistOwnerId, setWishlistOwnerId] = useState<string | null>(null)
   const [isWishlistOpen, setIsWishlistOpen] = useState(false)
@@ -155,6 +173,37 @@ export default function App() {
       document.documentElement.classList.remove('dark')
     }
   }, [isDarkMode])
+
+  useEffect(() => {
+    const loadCatalog = async () => {
+      try {
+        const response = await fetch('/api/catalog', { cache: 'no-store' })
+        if (!response.ok) throw new Error(`Catalog lookup failed with status ${response.status}.`)
+        const data = await response.json() as {
+          products?: Product[]
+          categories?: StoreCategory[]
+          settings?: Partial<StoreSettings>
+        }
+        if (!Array.isArray(data.products) || !Array.isArray(data.categories)) {
+          throw new Error('The catalog service returned an invalid response.')
+        }
+        setCatalogProducts(data.products)
+        setStoreCategories(data.categories)
+        setStoreSettings(current => ({ ...current, ...data.settings }))
+      } catch (error) {
+        console.error('Unable to load the database storefront catalog, using the bundled catalog:', error)
+      } finally {
+        setIsCatalogLoaded(true)
+      }
+    }
+    void loadCatalog()
+  }, [])
+
+  useEffect(() => {
+    if (activeCategory !== 'all' && !storeCategories.some(category => category.slug === activeCategory)) {
+      setActiveCategory('all')
+    }
+  }, [activeCategory, storeCategories])
 
   useEffect(() => {
     if (!signupResume) return
@@ -186,7 +235,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthLoaded) return
+    if (!isAuthLoaded || !isCatalogLoaded) return
     if (!authUser) {
       setWishlistOwnerId(null)
       setWishlist([])
@@ -199,7 +248,7 @@ export default function App() {
       const savedWishlist: unknown = serializedWishlist
         ? JSON.parse(serializedWishlist)
         : signupResume?.wishlist ?? []
-      const validProductIds = new Set(PRODUCTS.map(product => product.id))
+      const validProductIds = new Set(catalogProducts.map(product => product.id))
       setWishlist(
         Array.isArray(savedWishlist)
           ? savedWishlist.filter((id): id is string => typeof id === 'string' && validProductIds.has(id))
@@ -211,7 +260,7 @@ export default function App() {
       setWishlist([])
       setWishlistOwnerId(authUser.id)
     }
-  }, [authUser, isAuthLoaded, signupResume])
+  }, [authUser, catalogProducts, isAuthLoaded, isCatalogLoaded, signupResume])
 
   useEffect(() => {
     if (!authUser || wishlistOwnerId !== authUser.id) return
@@ -350,7 +399,15 @@ export default function App() {
     )
   }
 
-  const handleAddToCart = (item: CartItem) => {
+  const handleAddToCart = (item: CartItem): boolean => {
+    const product = catalogProducts.find(candidate => candidate.id === item.productId)
+    const currentQuantity = cartItems
+      .filter(cartItem => cartItem.productId === item.productId)
+      .reduce((total, cartItem) => total + cartItem.quantity, 0)
+    if (typeof product?.stockQuantity === 'number' && currentQuantity + item.quantity > product.stockQuantity) {
+      setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'unavailable' })
+      return false
+    }
     setCartItems(prev => {
       const existing = prev.find(
         i => i.productId === item.productId && i.finish === item.finish && i.recipientName === item.recipientName
@@ -364,11 +421,16 @@ export default function App() {
       }
       return [item, ...prev]
     })
-    setCartFeedback({ productName: item.name, timestamp: Date.now() })
+    setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'added' })
+    return true
   }
 
-  const handleQuickAdd = (product: Product, e: React.MouseEvent) => {
+  const handleQuickAdd = (product: Product, e: React.MouseEvent): boolean => {
     e.stopPropagation()
+    if (product.stockQuantity === 0) {
+      setCartFeedback({ productName: product.name, timestamp: Date.now(), kind: 'unavailable' })
+      return false
+    }
     const newItem: CartItem = {
       cartId: `${product.id}_${Date.now()}`,
       productId: product.id,
@@ -378,7 +440,7 @@ export default function App() {
       imageUrl: product.imageUrl,
       finish: product.availableFinishes ? product.availableFinishes[0] : undefined
     }
-    handleAddToCart(newItem)
+    return handleAddToCart(newItem)
   }
 
   const handleAddWishlistItemToBag = (product: Product) => {
@@ -395,6 +457,15 @@ export default function App() {
   }
 
   const handleUpdateQuantity = (cartId: string, delta: number) => {
+    const item = cartItems.find(cartItem => cartItem.cartId === cartId)
+    const product = item && catalogProducts.find(candidate => candidate.id === item.productId)
+    const currentProductQuantity = item
+      ? cartItems.filter(cartItem => cartItem.productId === item.productId).reduce((total, cartItem) => total + cartItem.quantity, 0)
+      : 0
+    if (item && typeof product?.stockQuantity === 'number' && currentProductQuantity + delta > product.stockQuantity) {
+      setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'unavailable' })
+      return
+    }
     setCartItems(prev => 
       prev.map(item => {
         if (item.cartId === cartId) {
@@ -411,7 +482,7 @@ export default function App() {
   }
 
   const handleCustomizeMagazine = (finish: FinishType, recipientName: string) => {
-    const magProduct = PRODUCTS.find(p => p.id === 'prod_bday_mag') || PRODUCTS[0]
+    const magProduct = catalogProducts.find(p => p.id === 'prod_bday_mag') || catalogProducts[0] || PRODUCTS[0]
     const customItem: CartItem = {
       cartId: `mag_${Date.now()}`,
       productId: magProduct.id,
@@ -482,6 +553,8 @@ export default function App() {
       
       {/* Top Navigation */}
       <Navigation
+        products={catalogProducts}
+        settings={storeSettings}
         isDarkMode={isDarkMode}
         onToggleTheme={handleToggleTheme}
         onOpenSidebar={() => setIsSidebarOpen(true)}
@@ -561,7 +634,9 @@ export default function App() {
                 : 'border-[#E8D4CB] bg-[#FFFCF9] text-[#2C2523]'
             }`}
           >
-            <span className="font-semibold text-[#B36D6D]">Added to bag</span>
+            <span className={`font-semibold ${cartFeedback.kind === 'added' ? 'text-[#B36D6D]' : 'text-amber-700'}`}>
+              {cartFeedback.kind === 'added' ? 'Added to bag' : 'Stock limit reached'}
+            </span>
             <span className="ml-2">{cartFeedback.productName}</span>
           </motion.div>
         )}
@@ -596,6 +671,8 @@ export default function App() {
           setIsAuthOpen(true)
         }}
         onLogout={() => { void handleLogout() }}
+        categories={storeCategories}
+        settings={storeSettings}
       /></DeferredMount>
 
       {/* Main Content Area with Faded Page Transitions */}
@@ -636,12 +713,12 @@ export default function App() {
 
                 {/* Moments Section */}
                 <LazyViewport minHeight={300}>
-                  <MomentsSection isDarkMode={isDarkMode} onSelectMoment={handleSelectCategory} />
+                  <MomentsSection isDarkMode={isDarkMode} categories={storeCategories} onSelectMoment={handleSelectCategory} />
                 </LazyViewport>
 
                 {/* Visual Categories Grid */}
                 <LazyViewport minHeight={520}>
-                  <CategoryGrid isDarkMode={isDarkMode} onSelectCategory={handleSelectCategory} />
+                  <CategoryGrid isDarkMode={isDarkMode} categories={storeCategories} onSelectCategory={handleSelectCategory} />
                 </LazyViewport>
               </>
             )}
@@ -650,6 +727,8 @@ export default function App() {
             <LazyViewport id="collection-grid" minHeight={720}>
               <ProductCatalog
                 isDarkMode={isDarkMode}
+                products={catalogProducts}
+                categories={storeCategories}
                 activeCategory={activeCategory}
                 onSelectCategory={setActiveCategory}
                 onSelectProduct={prod => setSelectedProduct(prod)}
@@ -698,7 +777,7 @@ export default function App() {
       <DeferredMount active={isWishlistOpen && Boolean(authUser)}><WishlistDrawer
         isOpen={isWishlistOpen && Boolean(authUser)}
         isDarkMode={isDarkMode}
-        products={PRODUCTS.filter(product => wishlist.includes(product.id))}
+        products={catalogProducts.filter(product => wishlist.includes(product.id))}
         onClose={() => setIsWishlistOpen(false)}
         onRemove={productId => setWishlist(current => current.filter(id => id !== productId))}
         onAddToBag={handleAddWishlistItemToBag}
@@ -717,6 +796,17 @@ export default function App() {
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveCartItem}
         onProceedToCheckout={() => {
+          const unavailableItem = cartItems.find(item => {
+            const product = catalogProducts.find(candidate => candidate.id === item.productId)
+            const totalQuantity = cartItems
+              .filter(cartItem => cartItem.productId === item.productId)
+              .reduce((total, cartItem) => total + cartItem.quantity, 0)
+            return typeof product?.stockQuantity === 'number' && totalQuantity > product.stockQuantity
+          })
+          if (unavailableItem) {
+            setCartFeedback({ productName: unavailableItem.name, timestamp: Date.now(), kind: 'unavailable' })
+            return
+          }
           setIsBagOpen(false)
           setCheckoutAfterAuth(true)
         }}
@@ -817,6 +907,7 @@ export default function App() {
       <LazyViewport minHeight={360}>
         <Footer
           isDarkMode={isDarkMode}
+          settings={storeSettings}
           onSelectCategory={handleSelectCategory}
           onOpenStory={() => {
             setActiveTab('home')
@@ -838,4 +929,11 @@ export default function App() {
     </div>
     </MotionConfig>
   )
+}
+
+export default function App() {
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+    return <React.Suspense fallback={<div className="min-h-screen bg-[#f7f3ef]" />}><AdminApp /></React.Suspense>
+  }
+  return <StorefrontApp />
 }

@@ -1,19 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { Star, Heart, Plus, ChevronDown, Check, SlidersHorizontal, ArrowLeft } from 'lucide-react'
-import { Product, ProductCategory, SortOption } from '../types'
-import { PRODUCTS } from '../data/products'
+import { Product, ProductCategory, SortOption, StoreCategory } from '../types'
 
 interface ProductCatalogProps {
   isDarkMode: boolean
   activeCategory: ProductCategory
   onSelectCategory: (category: ProductCategory) => void
   onSelectProduct: (product: Product) => void
-  onQuickAdd: (product: Product, e: React.MouseEvent) => void
+  onQuickAdd: (product: Product, e: React.MouseEvent) => boolean
   wishlist: string[]
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
   searchQuery: string
   isAuthenticated: boolean
+  products: Product[]
+  categories: StoreCategory[]
 }
 
 export const ProductCatalog: React.FC<ProductCatalogProps> = ({
@@ -25,7 +26,9 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   wishlist,
   onToggleWishlist,
   searchQuery = '',
-  isAuthenticated
+  isAuthenticated,
+  products,
+  categories
 }) => {
   const [currentSort, setCurrentSort] = useState<SortOption>('recommended')
   const [isSortOpen, setIsSortOpen] = useState(false)
@@ -38,18 +41,26 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
     }
   }, [activeCategory])
 
+  const categoryLabels: Record<string, string> = {
+    magazines: 'Custom Magazines',
+    hampers: 'Custom Hampers',
+    'gift-box-hampers': 'Gift Box Hampers',
+    'bag-charms': 'Bag Charms',
+    bouquets: 'Bouquets',
+    'single-flowers': 'Single Flowers',
+    'desk-buddy': 'Desk Buddy',
+    'god-aasan': 'God Aasan',
+    'hair-accessories': 'Hair Accessories',
+    'key-chains': 'Key Chains'
+  }
   const categoriesList: { id: ProductCategory; label: string }[] = [
     { id: 'all', label: 'All Offerings' },
-    { id: 'magazines', label: 'Custom Magazines' },
-    { id: 'hampers', label: 'Custom Hampers' },
-    { id: 'gift-box-hampers', label: 'Gift Box Hampers' },
-    { id: 'bag-charms', label: 'Bag Charms' },
-    { id: 'bouquets', label: 'Bouquets' },
-    { id: 'single-flowers', label: 'Single Flowers' },
-    { id: 'desk-buddy', label: 'Desk Buddy' },
-    { id: 'god-aasan', label: 'God Aasan' },
-    { id: 'hair-accessories', label: 'Hair Accessories' },
-    { id: 'key-chains', label: 'Key Chains' }
+    ...categories
+      .filter(category => category.slug !== 'custom_builder')
+      .map(category => ({
+        id: category.slug,
+        label: categoryLabels[category.slug] ?? category.name
+      }))
   ]
 
   const hairSubCategories: { id: 'all' | 'clutchers' | 'hairbands' | 'hairpins' | 'hair-clips' | 'latkan-clutchers'; label: string }[] = [
@@ -81,7 +92,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
 
   // Filtered & Sorted products
   const processedProducts = useMemo(() => {
-    let list = PRODUCTS.filter(p => {
+    let list = products.filter(p => {
       const normalizedQuery = searchQuery.trim().toLowerCase()
       if (normalizedQuery && ![
         p.name,
@@ -113,12 +124,12 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
       default:
         return list
     }
-  }, [activeCategory, currentSort, searchQuery, selectedHairSubCategory])
+  }, [activeCategory, currentSort, products, searchQuery, selectedHairSubCategory])
 
   const handleQuickAddClick = (product: Product, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!onQuickAdd(product, e)) return
     setAddedAnimationId(product.id)
-    onQuickAdd(product, e)
     setTimeout(() => {
       setAddedAnimationId(null)
     }, 1200)
@@ -421,11 +432,12 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                       </div>
 
                       <motion.button
+                        disabled={product.stockQuantity === 0}
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={(e) => handleQuickAddClick(product, e)}
-                        aria-label="Add to bag"
-                        className={`px-4 py-2 rounded-full text-xs font-medium tracking-wider uppercase transition-all duration-300 flex items-center gap-1.5 ${
+                        aria-label={product.stockQuantity === 0 ? 'Out of stock' : 'Add to bag'}
+                        className={`px-4 py-2 rounded-full text-xs font-medium tracking-wider uppercase transition-all duration-300 flex items-center gap-1.5 disabled:cursor-not-allowed disabled:bg-[#8d817d] ${
                           isQuickAdded
                             ? 'bg-emerald-600 text-white'
                             : 'bg-[#B36D6D] text-white hover:bg-[#9E5B5B]'
@@ -439,7 +451,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                         ) : (
                           <>
                             <Plus className="w-3.5 h-3.5" />
-                            <span>Quick Add</span>
+                            <span>{product.stockQuantity === 0 ? 'Out of stock' : 'Quick Add'}</span>
                           </>
                         )}
                       </motion.button>

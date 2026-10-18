@@ -1,18 +1,20 @@
 import React from 'react'
-import { ProductCategory } from '../types'
+import { ProductCategory, StoreSettings } from '../types'
 
 interface FooterProps {
   isDarkMode: boolean
   onSelectCategory: (category: ProductCategory) => void
   onOpenStory: () => void
   onOpenConcierge: () => void
+  settings: StoreSettings
 }
 
 export const Footer: React.FC<FooterProps> = ({
   isDarkMode,
   onSelectCategory,
   onOpenStory,
-  onOpenConcierge
+  onOpenConcierge,
+  settings
 }) => {
   return (
     <footer className={`border-t py-16 transition-colors duration-500 ${
@@ -26,16 +28,16 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Brand Info */}
           <div className="md:col-span-5 space-y-3">
             <span className="font-serif-title text-2xl sm:text-3xl tracking-[0.2em] font-light">
-              AUREL
+              {settings.storeName}
             </span>
             <p className="font-editorial text-sm text-[#B36D6D]">
-              Made With Love For You
+              {settings.tagline}
             </p>
             <p className="font-sans-body text-xs text-[#826F69] dark:text-[#A79791] max-w-sm leading-relaxed">
-              Curated luxury memory magazines, botanical bouquets, eternal single blossoms, and thoughtful keepsakes.
+              {settings.description}
             </p>
             <div className="pt-2 text-xs text-[#8E7973]">
-              Concierge: concierge@aurelgifts.com
+              Concierge: {settings.contactEmail}
             </div>
           </div>
 
@@ -97,7 +99,7 @@ export const Footer: React.FC<FooterProps> = ({
                 </button>
               </li>
               <li>
-                <span className="opacity-70">Pan India Delivery</span>
+                <span className="opacity-70">{settings.deliveryNote}</span>
               </li>
               <li>
                 <span className="opacity-70">Care Instructions</span>
@@ -112,10 +114,14 @@ export const Footer: React.FC<FooterProps> = ({
             </h4>
             <ul className="space-y-2 text-xs text-[#6F5C56] dark:text-[#C5B4AD]">
               <li>
-                <span className="hover:text-[#B36D6D] cursor-pointer">Instagram @aurel.keepsakes</span>
+                {settings.instagramUrl
+                  ? <a href={settings.instagramUrl} target="_blank" rel="noreferrer" className="hover:text-[#B36D6D]">Instagram</a>
+                  : <span className="opacity-70">Instagram @aurel.keepsakes</span>}
               </li>
               <li>
-                <span className="hover:text-[#B36D6D] cursor-pointer">Pinterest @aurelgifts</span>
+                {settings.facebookUrl
+                  ? <a href={settings.facebookUrl} target="_blank" rel="noreferrer" className="hover:text-[#B36D6D]">Facebook</a>
+                  : <span className="opacity-70">Pinterest @aurelgifts</span>}
               </li>
             </ul>
           </div>

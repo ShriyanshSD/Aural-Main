@@ -27,6 +27,7 @@ interface AccountRecord {
   state: string | null
   postal_code: string | null
   email_verified: boolean
+  account_status?: 'active' | 'disabled'
   created_at: string
   password_salt: string
   password_hash: string
@@ -93,7 +94,7 @@ const sendJson = (res: ServerResponse, status: number, payload: unknown) => {
   res.end(JSON.stringify(payload))
 }
 
-const getSupabaseConfig = () => {
+export const getSupabaseConfig = () => {
   const supabaseUrl = process.env.SUPABASE_URL
     ?.trim()
     .replace(/\/+$/, '')
@@ -105,7 +106,7 @@ const getSupabaseConfig = () => {
   return { supabaseUrl, serviceRoleKey }
 }
 
-const getSupabaseAuthKey = () => {
+export const getSupabaseAuthKey = () => {
   const { serviceRoleKey } = getSupabaseConfig()
   return process.env.SUPABASE_PUBLISHABLE_KEY?.trim()
     || process.env.SUPABASE_ANON_KEY?.trim()
@@ -242,7 +243,7 @@ const matchesPendingSignup = (
   )
 }
 
-const supabaseRequest = async <T>(table: string, query: URLSearchParams, init: RequestInit = {}): Promise<T> => {
+export const supabaseRequest = async <T>(table: string, query: URLSearchParams, init: RequestInit = {}): Promise<T> => {
   const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
   const url = `${supabaseUrl}/rest/v1/${table}?${query.toString()}`
   const response = await fetch(url, {
@@ -396,7 +397,8 @@ const getSessionAccount = async (req: AuthRequest): Promise<AccountRecord | unde
     'aurel_users',
     new URLSearchParams({ id: `eq.${session.user_id}`, select: '*', limit: '1' })
   )
-  return accounts[0]
+  const account = accounts[0]
+  return account?.account_status === 'disabled' ? undefined : account
 }
 
 const validEmail = (value: unknown): value is string =>
@@ -1306,6 +1308,9 @@ export async function loginHandler(req: AuthRequest, res: ServerResponse): Promi
     const savedHash = Buffer.from(account.password_hash, 'hex')
     if (submittedHash.length !== savedHash.length || !timingSafeEqual(submittedHash, savedHash)) {
       return sendJson(res, 401, { error: 'Email or password is incorrect.' })
+    }
+    if (account.account_status === 'disabled') {
+      return sendJson(res, 403, { error: 'This account has been disabled. Contact support for help.' })
     }
 
     const verifiedAccount = await reconcileEmailVerification(account)

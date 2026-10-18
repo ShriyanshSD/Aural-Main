@@ -1,16 +1,18 @@
 import React, { useState } from 'react'
 import { motion, MotionConfig } from 'motion/react'
 import { ArrowUpRight } from 'lucide-react'
-import { ProductCategory } from '../types'
+import { ProductCategory, StoreCategory } from '../types'
 
 interface CategoryGridProps {
   isDarkMode: boolean
   onSelectCategory: (category: ProductCategory) => void
+  categories: StoreCategory[]
 }
 
 export const CategoryGrid: React.FC<CategoryGridProps> = ({
   isDarkMode,
-  onSelectCategory
+  onSelectCategory,
+  categories
 }) => {
   const [hoveredCategory, setHoveredCategory] = useState<ProductCategory | null>(null)
 
@@ -83,6 +85,9 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
       cols: 'lg:col-span-4'
     }
   ]
+  const activeCategorySlugs = new Set(categories.map(category => category.slug))
+  const visibleTopCategories = topCategories.filter(category => activeCategorySlugs.has(category.id))
+  const visibleBottomCategories = bottomCategories.filter(category => activeCategorySlugs.has(category.id))
 
   return (
     <section className={`theme-surface py-20 sm:py-28 ${
@@ -106,7 +111,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
         {/* Top 2 Large Visual Cards */}
         <MotionConfig reducedMotion="never">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
-          {topCategories.map((cat, idx) => (
+          {visibleTopCategories.map((cat, idx) => (
             <motion.div
               key={cat.id}
               initial={{ opacity: 0, y: 25 }}
@@ -159,7 +164,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
         {/* Bottom 3 Medium Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6">
-          {bottomCategories.map((cat, idx) => (
+          {visibleBottomCategories.map((cat, idx) => (
             <motion.div
               key={cat.id}
               initial={{ opacity: 0, y: 25 }}

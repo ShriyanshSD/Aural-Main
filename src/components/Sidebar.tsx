@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { X, Sparkles, BookOpen, Gift, Flower2, Heart, Layers, ArrowRight, UserRound, LogOut } from 'lucide-react'
-import { ProductCategory } from '../types'
+import { ProductCategory, StoreCategory, StoreSettings } from '../types'
 import { AuthUser } from '../types'
 import { AuthMode } from './AuthModal'
 
@@ -19,6 +19,8 @@ interface SidebarProps {
   onOpenProfile: () => void
   onOpenAuth: (mode: AuthMode) => void
   onLogout: () => void
+  categories: StoreCategory[]
+  settings: StoreSettings
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,7 +36,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   user,
   onOpenProfile,
   onOpenAuth,
-  onLogout
+  onLogout,
+  categories,
+  settings
 }) => {
   const menuCategories = [
     {
@@ -108,6 +112,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: 'Carry'
     },
   ]
+  const existingCategoryIds = new Set(menuCategories.map(category => category.id))
+  for (const category of categories) {
+    if (category.slug !== 'custom_builder' && !existingCategoryIds.has(category.slug as ProductCategory)) {
+      menuCategories.push({
+        id: category.slug as ProductCategory,
+        label: category.name,
+        subtext: category.description || `Explore ${category.name.toLowerCase()} from AUREL`,
+        icon: Gift,
+        badge: 'New'
+      })
+    }
+  }
+  const visibleMenuCategories = menuCategories.filter(category =>
+    categories.some(storeCategory => storeCategory.slug === category.id)
+  )
 
   return (
     <MotionConfig reducedMotion="never">
@@ -143,10 +162,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="p-6 sm:p-8 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
               <div>
                 <span className="font-serif-title text-2xl tracking-[0.2em] font-light">
-                  AUREL
+                  {settings.storeName}
                 </span>
                 <p className="font-editorial text-xs text-[#B36D6D] tracking-wider mt-0.5">
-                  Made With Love For You
+                  {settings.tagline}
                 </p>
               </div>
 
@@ -246,7 +265,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Bespoke Offerings
                 </h3>
                 <div className="space-y-1.5">
-                  {menuCategories.map((cat) => {
+                  {visibleMenuCategories.map((cat) => {
                     const Icon = cat.icon
                     const isSelected = activeCategory === cat.id
 

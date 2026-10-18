@@ -1,16 +1,18 @@
 import React from 'react'
 import { motion } from 'motion/react'
 import { Sparkles, Calendar, Heart, Gift, Smile } from 'lucide-react'
-import { ProductCategory } from '../types'
+import { ProductCategory, StoreCategory } from '../types'
 
 interface MomentsSectionProps {
   isDarkMode: boolean
   onSelectMoment: (category: ProductCategory) => void
+  categories: StoreCategory[]
 }
 
 export const MomentsSection: React.FC<MomentsSectionProps> = ({
   isDarkMode,
-  onSelectMoment
+  onSelectMoment,
+  categories
 }) => {
   const moments = [
     {
@@ -46,6 +48,8 @@ export const MomentsSection: React.FC<MomentsSectionProps> = ({
       accent: 'A thoughtful surprise'
     }
   ]
+  const activeCategorySlugs = new Set(categories.map(category => category.slug))
+  const visibleMoments = moments.filter(moment => activeCategorySlugs.has(moment.category))
 
   return (
     <section className={`py-20 sm:py-28 transition-colors duration-500 border-t ${
@@ -90,7 +94,7 @@ export const MomentsSection: React.FC<MomentsSectionProps> = ({
 
           {/* Right Column: Animated Moment Cards */}
           <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {moments.map((moment, index) => {
+            {visibleMoments.map((moment, index) => {
               const Icon = moment.icon
               return (
                 <motion.div

@@ -7,7 +7,7 @@ interface ProductDetailModalProps {
   product: Product | null
   isDarkMode: boolean
   onClose: () => void
-  onAddToCart: (item: CartItem) => void
+  onAddToCart: (item: CartItem) => boolean
   isWishlisted: boolean
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
   isAuthenticated: boolean
@@ -49,7 +49,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       customMessage: customMessage.trim() || undefined
     }
 
-    onAddToCart(cartItem)
+    if (!onAddToCart(cartItem)) return
     setIsAddedFeedback(true)
     setTimeout(() => {
       setIsAddedFeedback(false)
@@ -300,7 +300,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     {quantity}
                   </span>
                   <button
-                    onClick={() => setQuantity(quantity + 1)}
+                    onClick={() => setQuantity(product.stockQuantity === null || product.stockQuantity === undefined
+                      ? quantity + 1
+                      : Math.min(product.stockQuantity, quantity + 1))}
+                    disabled={product.stockQuantity === 0 || (product.stockQuantity !== null && product.stockQuantity !== undefined && quantity >= product.stockQuantity)}
                     className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
                     aria-label="Increase quantity"
                   >
@@ -309,18 +312,19 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
 
                 <motion.button
+                  disabled={product.stockQuantity === 0}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={handleAdd}
                   className={`flex-1 py-3.5 rounded-full text-xs font-medium tracking-wider uppercase shadow-md transition-all flex items-center justify-center gap-2 ${
                     isAddedFeedback
                       ? 'bg-emerald-600 text-white'
-                      : 'bg-[#B36D6D] hover:bg-[#9E5B5B] text-white'
+                      : 'bg-[#B36D6D] hover:bg-[#9E5B5B] text-white disabled:cursor-not-allowed disabled:bg-[#8d817d]'
                   }`}
                 >
                   <ShoppingBag className="w-4 h-4" />
                   <span>
-                    {isAddedFeedback ? 'Added to Bag' : `Add to Bag · ₹${(product.price * quantity).toLocaleString('en-IN')}`}
+                    {isAddedFeedback ? 'Added to Bag' : product.stockQuantity === 0 ? 'Out of stock' : `Add to Bag · ₹${(product.price * quantity).toLocaleString('en-IN')}`}
                   </span>
                 </motion.button>
               </div>
