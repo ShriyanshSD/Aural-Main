@@ -181,13 +181,23 @@ export default function App() {
   }, [authUser, wishlist, wishlistOwnerId])
 
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.slice(1))
-    const accessToken = hashParams.get('access_token')
-    const verificationType = hashParams.get('type')
-    const verificationError = hashParams.get('error')
-    const verificationErrorCode = hashParams.get('error_code')
+    const callbackUrl = new URL(window.location.href)
+    const hashParams = new URLSearchParams(callbackUrl.hash.slice(1))
+    const accessToken = hashParams.get('access_token') ?? callbackUrl.searchParams.get('access_token')
+    const tokenHash = hashParams.get('token_hash') ?? callbackUrl.searchParams.get('token_hash')
+    const verificationType = hashParams.get('type') ?? callbackUrl.searchParams.get('type')
+    const verificationError = hashParams.get('error') ?? callbackUrl.searchParams.get('error')
+    const verificationErrorCode = hashParams.get('error_code') ?? callbackUrl.searchParams.get('error_code')
+    const clearVerificationParams = () => {
+      for (const key of ['access_token', 'type', 'error', 'error_code', 'error_description', 'token_hash']) {
+        callbackUrl.searchParams.delete(key)
+      }
+      callbackUrl.hash = ''
+      window.history.replaceState(null, '', `${callbackUrl.pathname}${callbackUrl.search}`)
+    }
+
     if (verificationError) {
-      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+      clearVerificationParams()
       setAuthMode('signup')
       setAuthNotice(
         verificationErrorCode === 'otp_expired'
@@ -197,21 +207,33 @@ export default function App() {
       setIsAuthOpen(true)
       return
     }
-    if (!accessToken || verificationType !== 'signup') return
+    if ((!accessToken && !tokenHash) || verificationType !== 'signup') return
 
     const verifyEmail = async () => {
       try {
         const response = await fetch('/api/auth/verify', {
           method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ accessToken })
+          body: JSON.stringify(accessToken ? { accessToken } : { tokenHash })
         })
-        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+        clearVerificationParams()
         const data = await response.json() as { error?: string; user?: AuthUser }
         if (!response.ok || !data.user) {
           throw new Error(data.error || 'The email confirmation link could not be verified.')
         }
-        setAuthUser(data.user)
+
+        const sessionResponse = await fetch('/api/auth/me', {
+          credentials: 'same-origin',
+          cache: 'no-store'
+        })
+        const sessionData = await sessionResponse.json() as { error?: string; user?: AuthUser }
+        if (!sessionResponse.ok || !sessionData.user || sessionData.user.id !== data.user.id) {
+          throw new Error(sessionData.error || 'Your email was verified, but this browser could not keep your sign-in session. Please sign in once to continue.')
+        }
+
+        setAuthUser(sessionData.user)
         setAuthNotice('')
         setIsAuthOpen(false)
       } catch (error) {

@@ -629,10 +629,23 @@ export async function signupHandler(req: AuthRequest, res: ServerResponse): Prom
 export async function verifySignupHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
   const body = readBody(req)
   const accessToken = typeof body.accessToken === 'string' ? body.accessToken : ''
-  if (accessToken.length < 20) return sendJson(res, 400, { error: 'Open the confirmation link from your email to verify your account.' })
+  const tokenHash = typeof body.tokenHash === 'string' ? body.tokenHash : ''
+  if (
+    (accessToken.length < 20 && !/^[A-Za-z0-9._~-]{20,1024}$/.test(tokenHash))
+    || (accessToken && tokenHash)
+  ) {
+    return sendJson(res, 400, { error: 'Open the confirmation link from your email to verify your account.' })
+  }
 
   try {
-    const user = await getVerifiedAuthUser(accessToken)
+    const verifiedSession = tokenHash
+      ? await supabaseAuthRequest<{ access_token?: string }>('verify', { token_hash: tokenHash, type: 'signup' })
+      : undefined
+    const sessionAccessToken = accessToken || verifiedSession?.access_token || ''
+    if (sessionAccessToken.length < 20) {
+      return sendJson(res, 400, { error: 'The confirmation link did not include a valid verification token.' })
+    }
+    const user = await getVerifiedAuthUser(sessionAccessToken)
     const verifiedEmail = user?.email?.trim().toLowerCase()
     if (!user?.id || !verifiedEmail || !user.email_confirmed_at) {
       return sendJson(res, 400, { error: 'We could not verify that email. Open the confirmation link and try again.' })
