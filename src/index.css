@@ -19,20 +19,42 @@
   }
 
   body {
-    transition: background-color 1400ms var(--theme-ease), color 1400ms var(--theme-ease);
+    transition: background-color 700ms var(--theme-ease), color 700ms var(--theme-ease);
   }
 }
 
 .theme-surface {
-  transition-property: background-color, border-color, color, box-shadow;
-  transition-duration: 1400ms;
+  transition-property: background-color, border-color, color;
+  transition-duration: 700ms;
   transition-timing-function: var(--theme-ease);
+}
+
+::view-transition-group(root) {
+  animation-duration: 700ms;
 }
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 1400ms;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: 700ms;
+  animation-timing-function: var(--theme-ease);
+}
+
+::view-transition-old(root) {
+  animation-name: theme-crossfade-out;
+}
+
+::view-transition-new(root) {
+  animation-name: theme-crossfade-in;
+}
+
+@keyframes theme-crossfade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes theme-crossfade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .font-serif-title {
@@ -85,13 +107,20 @@
     animation-duration: 0.01ms !important;
   }
 
-  .aurel-theme-transition,
-  .aurel-theme-transition .theme-surface {
-    transition-duration: 1400ms !important;
+  ::view-transition-group(root) {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  body,
+  .theme-surface {
+    transition-duration: 650ms;
   }
 
+  ::view-transition-group(root),
   ::view-transition-old(root),
   ::view-transition-new(root) {
-    animation-duration: 1400ms !important;
+    animation-duration: 650ms;
   }
 }

@@ -96,6 +96,7 @@ export default function App() {
   // Cart & Wishlist state
   const [cartItems, setCartItems] = useState<CartItem[]>(signupResume?.cartItems ?? [])
   const [isBagOpen, setIsBagOpen] = useState(false)
+  const [cartFeedback, setCartFeedback] = useState<{ productName: string; timestamp: number } | null>(null)
   const [wishlist, setWishlist] = useState<string[]>(signupResume?.wishlist ?? [])
   const [wishlistOwnerId, setWishlistOwnerId] = useState<string | null>(null)
   const [isWishlistOpen, setIsWishlistOpen] = useState(false)
@@ -117,6 +118,12 @@ export default function App() {
     if (!signupResume) return
     requestAnimationFrame(() => window.scrollTo({ top: signupResume.scrollY, behavior: 'auto' }))
   }, [signupResume])
+
+  useEffect(() => {
+    if (!cartFeedback) return
+    const timeoutId = window.setTimeout(() => setCartFeedback(null), 2600)
+    return () => window.clearTimeout(timeoutId)
+  }, [cartFeedback])
 
   useEffect(() => {
     const loadAccount = async () => {
@@ -282,7 +289,7 @@ export default function App() {
       }
       return [item, ...prev]
     })
-    setIsBagOpen(true)
+    setCartFeedback({ productName: item.name, timestamp: Date.now() })
   }
 
   const handleQuickAdd = (product: Product, e: React.MouseEvent) => {
@@ -432,6 +439,27 @@ export default function App() {
         }}
         onLogout={() => { void handleLogout() }}
       />
+
+      <AnimatePresence>
+        {cartFeedback && (
+          <motion.div
+            key={cartFeedback.timestamp}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            role="status"
+            aria-live="polite"
+            className={`fixed right-4 top-24 z-40 max-w-[calc(100vw-2rem)] rounded-2xl border px-4 py-3 text-sm shadow-lg ${
+              isDarkMode
+                ? 'border-[#493936] bg-[#211B19] text-[#F3EBE6]'
+                : 'border-[#E8D4CB] bg-[#FFFCF9] text-[#2C2523]'
+            }`}
+          >
+            <span className="font-semibold text-[#B36D6D]">Added to bag</span>
+            <span className="ml-2">{cartFeedback.productName}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Fluid Sidebar Menu */}
       <Sidebar

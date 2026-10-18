@@ -150,7 +150,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
       {/* Expandable Chatbot Drawer / Modal */}
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-50 pointer-events-none flex items-end sm:items-center justify-end sm:p-6">
+          <div className="fixed inset-0 z-50 pointer-events-none flex items-end justify-center sm:items-center sm:justify-end sm:p-6">
             
             {/* Backdrop on mobile */}
             <motion.div
@@ -158,7 +158,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={onClose}
-              className="fixed inset-0 bg-black/40 backdrop-blur-xs sm:hidden pointer-events-auto"
+              className="fixed inset-0 bg-black/40 sm:hidden pointer-events-auto"
             />
 
             {/* Chatbot Window */}
@@ -167,7 +167,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 30, scale: 0.95 }}
               transition={{ type: 'spring', damping: 26, stiffness: 260 }}
-              className={`pointer-events-auto w-full sm:w-[440px] h-[85vh] sm:h-[650px] max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border transition-colors duration-500 ${
+              className={`pointer-events-auto w-full sm:w-[440px] h-[85dvh] sm:h-[650px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border transition-colors duration-500 ${
                 isDarkMode 
                   ? 'bg-[#1C1817] text-[#F3EBE6] border-[#382C29]' 
                   : 'bg-[#FAF7F2] text-[#2C2422] border-[#E8D4CB]'
@@ -175,14 +175,14 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
             >
               {/* Concierge Header */}
               <div className="p-4 sm:p-5 border-b border-black/5 dark:border-white/5 flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02]">
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-[#B36D6D]/15 text-[#B36D6D] flex items-center justify-center">
                     <Sparkles className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-serif-title text-base font-medium tracking-wide flex items-center gap-2">
+                    <h3 className="font-serif-title text-base font-medium tracking-wide flex min-w-0 items-center gap-2">
                       <span>AUREL Concierge</span>
-                      <span className="text-[10px] uppercase font-semibold text-[#B36D6D] px-2 py-0.5 rounded-full bg-[#B36D6D]/10">
+                      <span className="hidden text-[10px] uppercase font-semibold text-[#B36D6D] px-2 py-0.5 rounded-full bg-[#B36D6D]/10 sm:inline">
                         Memory Stylist
                       </span>
                     </h3>
@@ -192,7 +192,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={handleClearChat}
                     title="Clear conversation"
@@ -217,7 +217,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
               </div>
 
               {/* Model Speed Option Bar */}
-              <div className="px-4 py-2 border-b border-black/5 dark:border-white/5 flex items-center justify-between text-[11px] bg-black/[0.01]">
+              <div className="px-4 py-2 border-b border-black/5 dark:border-white/5 flex flex-col items-start gap-2 text-[11px] bg-black/[0.01] sm:flex-row sm:items-center sm:justify-between">
                 <span className="text-[#8E7A74] dark:text-[#A79690]">
                   Gifting Model Mode:
                 </span>
@@ -225,30 +225,32 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedModel('gemini-3.5-flash')}
-                    className={`px-2.5 py-0.5 rounded-full transition-colors font-medium ${
+                    className={`whitespace-nowrap px-2.5 py-1 rounded-full transition-colors font-medium ${
                       selectedModel === 'gemini-3.5-flash'
                         ? 'bg-[#B36D6D] text-white'
                         : 'text-[#8E7A74] hover:text-[#B36D6D]'
                     }`}
                   >
-                    Gemini 3.5 Flash (Creative)
+                    <span className="sm:hidden">Creative</span>
+                    <span className="hidden sm:inline">Gemini 3.5 Flash (Creative)</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedModel('gemini-3.1-flash-lite')}
-                    className={`px-2.5 py-0.5 rounded-full transition-colors font-medium ${
+                    className={`whitespace-nowrap px-2.5 py-1 rounded-full transition-colors font-medium ${
                       selectedModel === 'gemini-3.1-flash-lite'
                         ? 'bg-[#B36D6D] text-white'
                         : 'text-[#8E7A74] hover:text-[#B36D6D]'
                     }`}
                   >
-                    Flash Lite (Fast)
+                    <span className="sm:hidden">Fast</span>
+                    <span className="hidden sm:inline">Flash Lite (Fast)</span>
                   </button>
                 </div>
               </div>
 
               {/* Scrollable Message Thread */}
-              <div className="flex-1 p-4 sm:p-5 overflow-y-auto space-y-4">
+              <div className="min-h-0 flex-1 p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4">
                 {messages.map((msg) => (
                   <motion.div
                     key={msg.id}
