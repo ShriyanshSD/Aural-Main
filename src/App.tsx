@@ -656,12 +656,14 @@ export default function App() {
         }}
       />
 
-      {/* Gemini AI Concierge Chatbot */}
+      {/* AUREL Assistant */}
       <ChatbotModal
         isOpen={isChatbotOpen}
         onClose={() => setIsChatbotOpen(false)}
         onOpen={() => setIsChatbotOpen(true)}
         isDarkMode={isDarkMode}
+        user={authUser}
+        isAuthLoaded={isAuthLoaded}
         onNavigateToBuilder={() => setActiveTab('builder')}
       />
 

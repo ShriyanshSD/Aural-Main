@@ -10,8 +10,8 @@ AUREL is an editorial luxury e commerce application crafted for bespoke gifting 
 
 ## Core Features and Innovations
 
-1. Gemini AI Concierge & Memory Stylist:
-Integrated multi-turn conversational AI chatbot using the modern @google/genai TypeScript SDK on the server (`server.ts`). Maintains continuous conversation history, scrollable thread, inspirational suggestion chips, and brand-tailored system instructions to advise on heartfelt dedication messages, gifts, and bespoke finishes.
+1. AUREL Assistant:
+Integrated multi-turn conversational AI using the modern @google/genai TypeScript SDK on the server (`server.ts`). Maintains a scrollable thread, inspirational suggestion chips, and brand-tailored instructions to advise on heartfelt dedication messages, gifts, and bespoke finishes. Signed-in users' messages are stored in Supabase; guest conversations remain in memory only.
 
 2. Fluid Animated Sidebar:
 A smooth sliding navigation panel with spring physics. Seamlessly lists all product categories, an interactive Mix and Match Custom Studio, brand philosophy, and concierge assistance. Navigating opens pages with faded transitions without static jumps.
@@ -95,12 +95,12 @@ If signup returns `PGRST204`, PostgREST cannot find a required profile-table col
 
 ## Deploying to Vercel
 
-1. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql) before deploying. It creates the profile and session tables required by the account API.
+1. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql) before deploying. It creates the profile, session, and account chat history tables required by the APIs. Re-run it to add chat history to an existing project.
 2. In Vercel, import the repository (or connect the existing project) with the repository root as the project root. `vercel.json` builds the Vite frontend into `dist`, and Vercel deploys files under `api/` as serverless functions.
 3. Add these server-side Environment Variables in Vercel Project Settings → Environment Variables:
    - `SUPABASE_URL` — the Supabase project URL.
    - `SUPABASE_SERVICE_ROLE_KEY` — the Supabase service-role secret. Keep it private and never expose it with a `VITE_` prefix.
-   - `GEMINI_API_KEY` — required for the AI concierge.
+   - `GEMINI_API_KEY` — required for AUREL Assistant.
    - `APP_URL` — the exact production origin, such as `https://www.example.com`, with no trailing slash. This is used as the signup confirmation redirect.
    - `SUPABASE_PUBLISHABLE_KEY` — optional; if omitted, the server uses the service-role key for server-side Auth requests.
 4. Add the variables to the Vercel environments where they are needed (Production, Preview, and/or Development). Preview deployments should use the appropriate preview origin for `APP_URL`; do not point production signups at localhost.

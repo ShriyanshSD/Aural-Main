@@ -6,6 +6,13 @@ interface AuthRequest extends IncomingMessage {
   body?: unknown
 }
 
+interface StoredChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
+}
+
 interface AccountRecord {
   id: string
   name: string
@@ -718,6 +725,85 @@ export async function sessionHandler(req: AuthRequest, res: ServerResponse): Pro
     sendJson(res, 200, { user: publicAccount(account) })
   } catch (error) {
     handleFailure(res, error, 'Unable to load your account.')
+  }
+}
+
+export async function chatHistoryHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to save chat history.' })
+
+    if (req.method === 'GET') {
+      const messages: StoredChatMessage[] = []
+      for (let offset = 0; ; offset += 500) {
+        const page = await supabaseRequest<StoredChatMessage[]>(
+          'aurel_chat_messages',
+          new URLSearchParams({
+            user_id: `eq.${account.id}`,
+            select: 'id,role,content,created_at',
+            order: 'id.asc',
+            limit: '500',
+            offset: String(offset)
+          })
+        )
+        messages.push(...page)
+        if (page.length < 500) break
+      }
+      return sendJson(res, 200, { messages })
+    }
+
+    if (req.method === 'DELETE') {
+      await supabaseRequest(
+        'aurel_chat_messages',
+        new URLSearchParams({ user_id: `eq.${account.id}` }),
+        { method: 'DELETE' }
+      )
+      return sendJson(res, 200, { success: true })
+    }
+
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'GET, POST, DELETE')
+      return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as { messages?: unknown }
+      : {}
+    const messages = body.messages
+    if (
+      !Array.isArray(messages)
+      || messages.length !== 2
+      || messages.some(message =>
+        !message
+        || typeof message !== 'object'
+        || !['user', 'assistant'].includes((message as { role?: unknown }).role as string)
+        || typeof (message as { content?: unknown }).content !== 'string'
+        || !(message as { content: string }).content.trim()
+        || (message as { content: string }).content.length > 4000
+      )
+      || (messages[0] as { role?: unknown }).role !== 'user'
+      || (messages[1] as { role?: unknown }).role !== 'assistant'
+    ) {
+      return sendJson(res, 400, { error: 'Provide a valid user message and assistant reply.' })
+    }
+
+    const rows = messages.map(message => ({
+      user_id: account.id,
+      role: (message as { role: 'user' | 'assistant' }).role,
+      content: (message as { content: string }).content.trim()
+    }))
+    const savedMessages = await supabaseRequest<StoredChatMessage[]>(
+      'aurel_chat_messages',
+      new URLSearchParams({ select: 'id,role,content,created_at' }),
+      {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(rows)
+      }
+    )
+    return sendJson(res, 201, { messages: savedMessages })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to load or save chat history right now.')
   }
 }
 

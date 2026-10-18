@@ -19,23 +19,23 @@
   }
 
   body {
-    transition: background-color 700ms var(--theme-ease), color 700ms var(--theme-ease);
+    transition: background-color 900ms var(--theme-ease), color 900ms var(--theme-ease);
   }
 }
 
 .theme-surface {
   transition-property: background-color, border-color, color;
-  transition-duration: 700ms;
+  transition-duration: 900ms;
   transition-timing-function: var(--theme-ease);
 }
 
 ::view-transition-group(root) {
-  animation-duration: 700ms;
+  animation-duration: 900ms;
 }
 
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 700ms;
+  animation-duration: 900ms;
   animation-timing-function: var(--theme-ease);
 }
 
@@ -115,12 +115,12 @@
 @media (max-width: 640px) {
   body,
   .theme-surface {
-    transition-duration: 650ms;
+    transition-duration: 850ms;
   }
 
   ::view-transition-group(root),
   ::view-transition-old(root),
   ::view-transition-new(root) {
-    animation-duration: 650ms;
+    animation-duration: 850ms;
   }
 }

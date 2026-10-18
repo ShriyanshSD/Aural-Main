@@ -21,8 +21,8 @@ Body and Controls: Plus Jakarta Sans refined sans serif font
 No generic fonts and no aerial fonts permitted.
 
 ## 4. Component Structure
-Navigation: Sticky top bar with brand wordmark, theme switch, AI Concierge button, animated bag counter, and menu button
-Sidebar: Fluid animated sliding drawer with category navigation, AI Concierge link, custom mix and match studio link, and concierge links
+Navigation: Sticky top bar with brand wordmark, theme switch, AUREL Assistant button, animated bag counter, and menu button
+Sidebar: Fluid animated sliding drawer with category navigation, AUREL Assistant link, custom mix and match studio link, and concierge links
 Hero: Motion animated headline, mouse parallax image card, and soft progress pills
 Moments Section: Emotional reason cards for birthdays, anniversaries, milestones, and just because
 Category Grid: Visual cards for custom magazines, hampers, bouquets, and single flowers
@@ -32,13 +32,13 @@ Custom Gift Builder: Interactive mix and match studio enabling custom hampers by
 Product Detail View: Faded non static page transition view with finish selectors, quantity controls, and reviews
 Cart Drawer: Slide over mini bag with free shipping indicator and itemized subtotal
 Checkout Modal: Security hardened order form with Razorpay and UPI selection, input sanitization, error feedback, and WhatsApp transmission
-Chatbot Modal: Gemini AI multi-turn conversational concierge (`server.ts` proxy endpoint `/api/chat` using `gemini-3.5-flash` or `gemini-3.1-flash-lite`)
+Chatbot Modal: AUREL Assistant multi-turn Gemini chat (`server.ts` proxy endpoint `/api/chat` using `gemini-3.5-flash` or `gemini-3.1-flash-lite`), with signed-in history stored in Supabase
 
 ## 5. Gemini Integration Architecture
 Server Side Handler (`server.ts`):
 - Uses modern `@google/genai` TypeScript SDK with `User-Agent: aistudio-build` telemetry
 - Secure proxy route: `POST /api/chat`
 - Models: `gemini-3.5-flash` (General creative consultation) and `gemini-3.1-flash-lite` (High speed responses)
-- Custom System Instruction establishing persona as AUREL Bespoke Gifting Concierge & Memory Stylist
+- Custom System Instruction establishing the AUREL Assistant gifting persona
 - Full multi-turn conversation history preserved across turns
 - Frontend never accesses raw Gemini API keys

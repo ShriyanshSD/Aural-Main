@@ -22,7 +22,7 @@ const ai = new GoogleGenAI({
   }
 })
 
-const AUREL_CONCIERGE_SYSTEM_INSTRUCTION = `You are the AUREL Bespoke Gifting Concierge and Memory Stylist for the luxury brand AUREL.
+const AUREL_ASSISTANT_SYSTEM_INSTRUCTION = `You are AUREL Assistant, a warm and thoughtful gifting assistant for the luxury brand AUREL.
 Brand tagline: "Made With Love For You"
 Core brand philosophy: AUREL helps people turn special moments into something they can hold, see, and remember.
 
@@ -62,7 +62,7 @@ export async function chatHandler(req: ChatRequest, res: ServerResponse): Promis
       model: targetModel,
       contents,
       config: {
-        systemInstruction: AUREL_CONCIERGE_SYSTEM_INSTRUCTION,
+        systemInstruction: AUREL_ASSISTANT_SYSTEM_INSTRUCTION,
         temperature: 0.7
       }
     })
@@ -74,7 +74,7 @@ export async function chatHandler(req: ChatRequest, res: ServerResponse): Promis
   } catch (error: unknown) {
     console.error('Gemini API Error:', error)
     sendJson(res, 500, {
-      error: 'Unable to communicate with concierge service at this time',
+      error: 'Unable to communicate with AUREL Assistant at this time',
       details: error instanceof Error ? error.message : 'Unknown error'
     })
   }

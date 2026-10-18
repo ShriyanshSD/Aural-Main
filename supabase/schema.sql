@@ -44,8 +44,22 @@ create table if not exists public.aurel_sessions (
 
 create index if not exists aurel_sessions_expiry_idx on public.aurel_sessions (expires_at);
 
+create table if not exists public.aurel_chat_messages (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.aurel_users(id) on delete cascade,
+  role varchar(16) not null check (role in ('user', 'assistant')),
+  content text not null check (length(content) between 1 and 4000),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists aurel_chat_messages_user_order_idx
+  on public.aurel_chat_messages (user_id, id);
+
 alter table public.aurel_users enable row level security;
 alter table public.aurel_sessions enable row level security;
+alter table public.aurel_chat_messages enable row level security;
 
 revoke all on table public.aurel_users, public.aurel_sessions from anon, authenticated;
 grant all on table public.aurel_users, public.aurel_sessions to service_role;
+revoke all on table public.aurel_chat_messages from anon, authenticated;
+grant all on table public.aurel_chat_messages to service_role;

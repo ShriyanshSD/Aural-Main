@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 import {
   loginHandler,
   logoutHandler,
+  chatHistoryHandler,
   resendSignupVerificationHandler,
   sessionHandler,
   signupHandler,
@@ -42,6 +43,7 @@ app.post('/api/auth/resend-verification', (req, res) => resendSignupVerification
 app.post('/api/auth/login', (req, res) => loginHandler(req, res))
 app.get('/api/auth/me', (req, res) => sessionHandler(req, res))
 app.post('/api/auth/logout', (req, res) => logoutHandler(req, res))
+app.all('/api/chat/history', (req, res) => chatHistoryHandler(req, res))
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -52,7 +54,7 @@ const ai = new GoogleGenAI({
   }
 })
 
-const AUREL_CONCIERGE_SYSTEM_INSTRUCTION = `You are the AUREL Bespoke Gifting Concierge and Memory Stylist for the luxury brand AUREL.
+const AUREL_ASSISTANT_SYSTEM_INSTRUCTION = `You are AUREL Assistant, a warm and thoughtful gifting assistant for the luxury brand AUREL.
 Brand tagline: "Made With Love For You"
 Core brand philosophy: AUREL helps people turn special moments into something they can hold, see, and remember.
 
@@ -82,7 +84,7 @@ app.post('/api/chat', async (req, res) => {
       model: model || 'gemini-3.8-flash',
       contents,
       config: {
-        systemInstruction: AUREL_CONCIERGE_SYSTEM_INSTRUCTION,
+        systemInstruction: AUREL_ASSISTANT_SYSTEM_INSTRUCTION,
         temperature: 0.7
       }
     })
@@ -92,7 +94,7 @@ app.post('/api/chat', async (req, res) => {
   } catch (error: any) {
     console.error('Gemini API Error:', error)
     return res.status(500).json({
-      error: 'Unable to communicate with concierge service at this time',
+      error: 'Unable to communicate with AUREL Assistant at this time',
       details: error.message || 'Unknown error'
     })
   }

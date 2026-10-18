@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { MessageSquare, X, Send, Sparkles, RefreshCw, Trash2, Bot, User, ArrowRight } from 'lucide-react'
+import { X, Send, Sparkles, RefreshCw, Trash2, User, ArrowRight } from 'lucide-react'
+import { AuthUser } from '../types'
 
 export interface ChatMessage {
   id: string
@@ -14,29 +15,36 @@ interface ChatbotModalProps {
   onClose: () => void
   onOpen: () => void
   isDarkMode: boolean
+  user: AuthUser | null
+  isAuthLoaded: boolean
   onNavigateToBuilder?: () => void
 }
+
+const welcomeMessage = (): ChatMessage => ({
+  id: 'msg_welcome',
+  role: 'assistant',
+  content: 'Welcome to AUREL. I am AUREL Assistant, here to help you find thoughtful gifts and create meaningful keepsakes. What special moment would you like to celebrate?',
+  timestamp: 'Just now'
+})
 
 export const ChatbotModal: React.FC<ChatbotModalProps> = ({
   isOpen,
   onClose,
   onOpen,
   isDarkMode,
+  user,
+  isAuthLoaded,
   onNavigateToBuilder
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg_welcome',
-      role: 'assistant',
-      content: 'Welcome to AUREL. I am your personal memory stylist and gifting concierge. Tell me who you are celebrating or what milestone you wish to commemorate, and together we will compose a gift made with love.',
-      timestamp: 'Just now'
-    }
-  ])
-
+  const [messages, setMessages] = useState<ChatMessage[]>([welcomeMessage()])
   const [inputPrompt, setInputPrompt] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-flash-lite'>('gemini-3.5-flash')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const previousUserIdRef = useRef<string | null>(user?.id ?? null)
+  const isPreparingConversation = !isAuthLoaded || isHistoryLoading
 
   const quickPrompts = [
     'Write a dedication for 1st anniversary magazine',
@@ -48,13 +56,57 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
   // Auto scroll to latest message
   useEffect(() => {
     if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
   }, [messages, isOpen, isLoading])
 
+  useEffect(() => {
+    const nextUserId = user?.id ?? null
+    if (previousUserIdRef.current !== nextUserId) {
+      setMessages([welcomeMessage()])
+      setHistoryError('')
+      previousUserIdRef.current = nextUserId
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!isOpen || !isAuthLoaded || !user) return
+
+    let cancelled = false
+    setIsHistoryLoading(true)
+    setHistoryError('')
+    fetch('/api/chat/history')
+      .then(async response => {
+        if (!response.ok) throw new Error(`Unable to load saved chat history (${response.status}).`)
+        return await response.json() as {
+          messages: Array<{ id: string | number; role: 'user' | 'assistant'; content: string; created_at: string }>
+        }
+      })
+      .then(data => {
+        if (cancelled) return
+        const savedMessages = data.messages.map(message => ({
+          id: String(message.id),
+          role: message.role,
+          content: message.content,
+          timestamp: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }))
+        setMessages(savedMessages.length ? savedMessages : [welcomeMessage()])
+      })
+      .catch(error => {
+        if (cancelled) return
+        console.error('Unable to load saved chat history:', error)
+        setHistoryError('Your saved chat history could not be loaded. You can still chat, but new messages may not be saved.')
+      })
+      .finally(() => {
+        if (!cancelled) setIsHistoryLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [isOpen, isAuthLoaded, user?.id])
+
   const handleSendMessage = async (userTextToSend?: string) => {
     const text = (userTextToSend || inputPrompt).trim()
-    if (!text || isLoading) return
+    if (!text || isLoading || isPreparingConversation) return
 
     const now = new Date()
     const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -89,25 +141,42 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
         })
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to reach AUREL concierge service')
-      }
+      if (!response.ok) throw new Error(`AUREL Assistant request failed (${response.status}).`)
 
-      const data = await response.json()
+      const data = await response.json() as { reply?: string }
       const assistantMessage: ChatMessage = {
         id: 'assistant_' + Date.now(),
         role: 'assistant',
-        content: data.reply || 'I am delighted to help you create this memory. Let me know if you would like to explore specific custom hampers or magazines.',
+        content: data.reply || 'I would be happy to help you create a meaningful keepsake. Tell me what you would like to celebrate.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
 
       setMessages(prev => [...prev, assistantMessage])
-    } catch (err: any) {
-      console.error('Chat error:', err)
+      if (user) {
+        try {
+          const saveResponse = await fetch('/api/chat/history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [userMessage, assistantMessage].map(message => ({
+                role: message.role,
+                content: message.content
+              }))
+            })
+          })
+          if (!saveResponse.ok) throw new Error(`Saving chat history failed (${saveResponse.status}).`)
+          setHistoryError('')
+        } catch (error) {
+          console.error('Unable to save chat history:', error)
+          setHistoryError('Your reply arrived, but this exchange could not be saved to your account.')
+        }
+      }
+    } catch (error) {
+      console.error('AUREL Assistant request failed:', error)
       const fallbackErrorMessage: ChatMessage = {
         id: 'err_' + Date.now(),
         role: 'assistant',
-        content: 'I apologize, our concierge desk experienced a quiet moment of connection delay. Please feel free to ask again or reach out directly to our WhatsApp concierge.',
+        content: 'I could not connect just now. Please try sending your message again in a moment.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
       setMessages(prev => [...prev, fallbackErrorMessage])
@@ -116,25 +185,30 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
     }
   }
 
-  const handleClearChat = () => {
-    setMessages([
-      {
-        id: 'msg_welcome_' + Date.now(),
-        role: 'assistant',
-        content: 'Welcome to AUREL. I am your personal memory stylist and gifting concierge. Tell me who you are celebrating, and together we will compose a gift made with love.',
-        timestamp: 'Just now'
+  const handleClearChat = async () => {
+    if (isLoading || isPreparingConversation) return
+    if (user) {
+      try {
+        const response = await fetch('/api/chat/history', { method: 'DELETE' })
+        if (!response.ok) throw new Error(`Clearing chat history failed (${response.status}).`)
+      } catch (error) {
+        console.error('Unable to clear saved chat history:', error)
+        setHistoryError('Your saved chat could not be cleared. Please try again.')
+        return
       }
-    ])
+    }
+    setHistoryError('')
+    setMessages([welcomeMessage()])
   }
 
   return (
     <>
-      {/* Floating Concierge Action Button */}
+      {/* Floating AUREL Assistant button */}
       <motion.button
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.92 }}
         onClick={onOpen}
-        aria-label="Open AUREL AI Concierge"
+        aria-label="Open AUREL Assistant"
         className="fixed bottom-6 right-6 z-40 p-4 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] text-white shadow-xl hover:shadow-2xl transition-all flex items-center gap-2.5 group"
       >
         <span className="relative flex h-3 w-3">
@@ -143,37 +217,40 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
         </span>
         <Sparkles className="w-5 h-5 text-white" />
         <span className="hidden sm:inline font-sans-body text-xs font-semibold tracking-wider uppercase">
-          Concierge Stylist
+          AUREL Assistant
         </span>
       </motion.button>
 
       {/* Expandable Chatbot Drawer / Modal */}
       <AnimatePresence>
         {isOpen && (
-          <div className="fixed inset-0 z-50 pointer-events-none flex items-end justify-center sm:items-center sm:justify-end sm:p-6">
+          <div className="fixed inset-0 z-50 isolate flex items-end justify-center pointer-events-none sm:items-center sm:justify-end sm:p-6">
             
-            {/* Backdrop on mobile */}
+            {/* Keep the backdrop behind the interactive chat panel. It does not dismiss the panel. */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={onClose}
-              className="fixed inset-0 bg-black/40 sm:hidden pointer-events-auto"
+              aria-hidden="true"
+              className="fixed inset-0 z-0 bg-black/40 pointer-events-auto"
             />
 
             {/* Chatbot Window */}
             <motion.div
-              initial={{ opacity: 0, y: 30, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 30, scale: 0.95 }}
-              transition={{ type: 'spring', damping: 26, stiffness: 260 }}
-              className={`pointer-events-auto w-full sm:w-[440px] h-[85dvh] sm:h-[650px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border transition-colors duration-500 ${
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 24 }}
+              transition={{ type: 'spring', damping: 30, stiffness: 240 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="aurel-assistant-title"
+              className={`relative z-10 pointer-events-auto w-full sm:w-[440px] h-[90dvh] sm:h-[650px] max-h-[95dvh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border transition-colors duration-500 ${
                 isDarkMode 
                   ? 'bg-[#1C1817] text-[#F3EBE6] border-[#382C29]' 
                   : 'bg-[#FAF7F2] text-[#2C2422] border-[#E8D4CB]'
               }`}
             >
-              {/* Concierge Header */}
+              {/* AUREL Assistant header */}
               <div className="p-4 sm:p-5 border-b border-black/5 dark:border-white/5 flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02]">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-[#B36D6D]/15 text-[#B36D6D] flex items-center justify-center">
@@ -181,9 +258,9 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   </div>
                   <div>
                     <h3 className="font-serif-title text-base font-medium tracking-wide flex min-w-0 items-center gap-2">
-                      <span>AUREL Concierge</span>
-                      <span className="hidden text-[10px] uppercase font-semibold text-[#B36D6D] px-2 py-0.5 rounded-full bg-[#B36D6D]/10 sm:inline">
-                        Memory Stylist
+                      <span id="aurel-assistant-title" className="truncate">AUREL Assistant</span>
+                      <span className="hidden shrink-0 text-[10px] uppercase font-semibold text-[#B36D6D] px-2 py-0.5 rounded-full bg-[#B36D6D]/10 sm:inline">
+                        Gifting Assistant
                       </span>
                     </h3>
                     <p className="font-editorial text-xs text-[#8E7973] dark:text-[#A89791]">
@@ -195,6 +272,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                 <div className="flex shrink-0 items-center gap-1">
                   <button
                     onClick={handleClearChat}
+                    disabled={isLoading || isPreparingConversation}
                     title="Clear conversation"
                     aria-label="Clear chat"
                     className={`p-2 rounded-full transition-colors ${
@@ -206,7 +284,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
 
                   <button
                     onClick={onClose}
-                    aria-label="Close concierge chat"
+                    aria-label="Close AUREL Assistant"
                     className={`p-2 rounded-full transition-colors ${
                       isDarkMode ? 'hover:bg-[#2A2321] text-[#E0D2CB]' : 'hover:bg-[#EFE2DC] text-[#4A3B37]'
                     }`}
@@ -225,6 +303,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedModel('gemini-3.5-flash')}
+                    disabled={isLoading || isPreparingConversation}
                     className={`whitespace-nowrap px-2.5 py-1 rounded-full transition-colors font-medium ${
                       selectedModel === 'gemini-3.5-flash'
                         ? 'bg-[#B36D6D] text-white'
@@ -237,6 +316,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedModel('gemini-3.1-flash-lite')}
+                    disabled={isLoading || isPreparingConversation}
                     className={`whitespace-nowrap px-2.5 py-1 rounded-full transition-colors font-medium ${
                       selectedModel === 'gemini-3.1-flash-lite'
                         ? 'bg-[#B36D6D] text-white'
@@ -250,7 +330,13 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
               </div>
 
               {/* Scrollable Message Thread */}
-              <div className="min-h-0 flex-1 p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4">
+              <div className="min-h-0 flex-1 touch-pan-y p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4">
+                {isPreparingConversation && (
+                  <div className="flex items-center gap-2 text-xs text-[#8E7A74]" role="status">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    {isAuthLoaded ? 'Loading your saved messages...' : 'Connecting your account...'}
+                  </div>
+                )}
                 {messages.map((msg) => (
                   <motion.div
                     key={msg.id}
@@ -290,6 +376,12 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   </motion.div>
                 ))}
 
+                {historyError && (
+                  <p role="status" className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300">
+                    {historyError}
+                  </p>
+                )}
+
                 {/* Typing Indicator */}
                 {isLoading && (
                   <motion.div
@@ -313,7 +405,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                   <button
                     key={i}
                     onClick={() => handleSendMessage(prompt)}
-                    disabled={isLoading}
+                    disabled={isLoading || isPreparingConversation}
                     className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors border ${
                       isDarkMode
                         ? 'border-[#382C29] bg-[#221B1A] text-[#CBB9B2] hover:border-[#B36D6D]'
@@ -326,7 +418,7 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
               </div>
 
               {/* Chat Input Bar */}
-              <div className="p-3 sm:p-4 border-t border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
+              <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4 border-t border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.02]">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
@@ -338,9 +430,11 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                     type="text"
                     value={inputPrompt}
                     onChange={(e) => setInputPrompt(e.target.value)}
-                    placeholder="Ask about anniversary gifts, dedication quotes, finishes..."
-                    disabled={isLoading}
-                    className={`flex-1 px-4 py-3 rounded-full text-xs transition-colors border focus:outline-hidden focus:border-[#B36D6D] ${
+                    placeholder="Ask AUREL Assistant..."
+                    disabled={isLoading || isPreparingConversation}
+                    enterKeyHint="send"
+                    autoComplete="off"
+                    className={`min-w-0 flex-1 px-4 py-3 rounded-full text-base sm:text-xs transition-colors border focus:outline-hidden focus:border-[#B36D6D] ${
                       isDarkMode
                         ? 'bg-[#181413] border-[#382C29] text-[#EDE0DA]'
                         : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
@@ -351,9 +445,9 @@ export const ChatbotModal: React.FC<ChatbotModalProps> = ({
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="submit"
-                    disabled={!inputPrompt.trim() || isLoading}
-                    aria-label="Send message to concierge"
-                    className="p-3 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] disabled:opacity-50 text-white shadow-md transition-all shrink-0"
+                    disabled={!inputPrompt.trim() || isLoading || isPreparingConversation}
+                    aria-label="Send message to AUREL Assistant"
+                    className="touch-manipulation p-3 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] disabled:opacity-50 text-white shadow-md transition-colors shrink-0"
                   >
                     <Send className="w-4 h-4" />
                   </motion.button>

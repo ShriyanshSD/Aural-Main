@@ -295,7 +295,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <span className="flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>AI Concierge Chatbot</span>
+                    <span>AUREL Assistant</span>
                   </span>
                   <ArrowRight className="w-3.5 h-3.5 text-[#B36D6D]" />
                 </button>
