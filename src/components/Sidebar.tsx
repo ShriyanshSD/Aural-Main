@@ -185,7 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     >
                       <UserRound className="h-3.5 w-3.5" /> My Profile
                     </button>
-                    <button onClick={onLogout} aria-label="Sign out" className="rounded-full p-2 text-[#B36D6D] hover:bg-[#B36D6D]/10">
+                    <button onClick={onLogout} aria-label="Logout" className="rounded-full p-2 text-[#B36D6D] hover:bg-[#B36D6D]/10">
                       <LogOut className="h-4 w-4" />
                     </button>
                   </div>

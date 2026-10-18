@@ -35,7 +35,7 @@ Smooth crossfade theme switcher shifting between warm ivory beige and warm obsid
 Integrated checkout popup supporting Razorpay gateway, Google Pay, PhonePe, Paytm, and cards. Upon order confirmation, the order details including customer name, phone number, delivery address, items, and exact payment timestamp are linked directly to WhatsApp.
 
 9. Customer Accounts:
-Customers can register and sign in from the top navigation or sidebar. Account profiles are stored in Supabase, passwords are stored as salted scrypt hashes, and authenticated sessions use revocable, HTTP-only cookies. Checkout requires a signed-in account.
+Customers can register and sign in from the top navigation or sidebar. Profiles include personal and default delivery details, verified email changes, password management, account deletion, and account-scoped order history. Passwords are stored as salted scrypt hashes, and authenticated sessions use revocable, HTTP-only cookies. Checkout requires a signed-in account.
 
 ## Security Protections
 
@@ -56,7 +56,7 @@ npm run build
 ## Supabase Account Setup
 
 1. Create a Supabase project and open its SQL Editor.
-2. Run the SQL in [`supabase/schema.sql`](./supabase/schema.sql) to create or update the private account and session tables. Run it again after app updates that change the schema, it is safe to rerun. After schema updates, refresh PostgREST's schema cache by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
+2. Run the SQL in [`supabase/schema.sql`](./supabase/schema.sql) to create or update the private account, session, chat-history, and order-history tables. Run it again after app updates that change the schema, it is safe to rerun. After schema updates, refresh PostgREST's schema cache by running `NOTIFY pgrst, 'reload schema';` in the SQL Editor.
 3. Set `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the local server environment. Add the same variables to Vercel Project Settings under Environment Variables for each deployment environment.
 4. Keep the service role key server-side only. Do not use a `VITE_` prefix or expose it to the browser.
 5. In Supabase, enable email confirmations under **Authentication → Sign In / Providers → Email**. Under **Authentication → URL Configuration**, set the Site URL to your app URL and allow that URL as a redirect. For local development use `http://localhost:3000`. Set `APP_URL` to your custom domain in production if needed.

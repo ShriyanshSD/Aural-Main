@@ -21,6 +21,10 @@ interface AccountRecord {
   phone: string
   address: string
   gender: string
+  date_of_birth: string | null
+  city: string | null
+  state: string | null
+  postal_code: string | null
   email_verified: boolean
   created_at: string
   password_salt: string
@@ -32,9 +36,14 @@ interface PublicAccount {
   name: string
   username: string
   email: string
+  emailVerified: boolean
   phone: string
   address: string
   gender: string
+  dateOfBirth: string
+  city: string
+  state: string
+  postalCode: string
   createdAt: string
 }
 
@@ -182,6 +191,37 @@ const findSupabaseAuthUserByEmail = async (email: string): Promise<SupabaseAdmin
   }
 }
 
+const getSupabaseAuthUserById = async (userId: string): Promise<SupabaseAdminUser> => {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`
+    }
+  })
+  const responseText = await response.text()
+  let payload: SupabaseAdminUser | SupabaseErrorBody | undefined
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText) as typeof payload
+    } catch {
+      throw new AuthProviderError(response.status, undefined, safeProviderMessage(responseText))
+    }
+  }
+  if (!response.ok) {
+    const errorBody = payload as SupabaseErrorBody | undefined
+    throw new AuthProviderError(
+      response.status,
+      errorBody?.error_code ?? errorBody?.code,
+      safeProviderMessage(errorBody?.message ?? errorBody?.msg ?? errorBody?.error)
+    )
+  }
+  if (!payload || !('id' in payload) || typeof payload.id !== 'string') {
+    throw new AuthProviderError(response.status, undefined, 'Supabase returned an invalid user record.')
+  }
+  return payload as SupabaseAdminUser
+}
+
 const matchesPendingSignup = (
   user: SupabaseAdminUser,
   details: { name: string; username: string; phone: string; address: string; gender: string }
@@ -245,11 +285,28 @@ const publicAccount = (account: AccountRecord): PublicAccount => ({
   name: account.name,
   username: account.username,
   email: account.email,
+  emailVerified: Boolean(account.email_verified),
   phone: account.phone,
   address: account.address,
   gender: account.gender,
+  dateOfBirth: account.date_of_birth ?? '',
+  city: account.city ?? '',
+  state: account.state ?? '',
+  postalCode: account.postal_code ?? '',
   createdAt: account.created_at
 })
+
+const reconcileEmailVerification = async (account: AccountRecord): Promise<AccountRecord> => {
+  if (account.email_verified) return account
+  const authUser = await getSupabaseAuthUserById(account.id)
+  if (
+    !authUser.email_confirmed_at
+    || authUser.email?.trim().toLowerCase() !== account.email.trim().toLowerCase()
+  ) {
+    return account
+  }
+  return setAccountEmailVerified(account.id, true)
+}
 
 const getVerifiedAuthUser = async (accessToken: string) => {
   const { supabaseUrl } = getSupabaseConfig()
@@ -393,14 +450,17 @@ const handleFailure = (res: ServerResponse, error: unknown, fallbackMessage: str
     sendJson(res, 409, { error: 'That email or username is already in use.' })
     return
   }
-  if (error instanceof AccountServiceError && error.code === 'PGRST204') {
-    console.error('Supabase account table schema is out of date:', {
+  if (
+    error instanceof AccountServiceError
+    && (error.code === 'PGRST204' || error.code === '42703')
+  ) {
+    console.error('Supabase account schema is out of date:', {
       status: error.status,
       code: error.code,
       message: error.providerMessage
     })
     sendJson(res, 503, {
-      error: 'AUREL’s Supabase account table is missing a column required for signup. In Supabase SQL Editor, run the latest supabase/schema.sql, then run NOTIFY pgrst, \'reload schema\';. If Supabase already created an unverified user for this email, retry signup after the schema is updated to finish saving the profile and resend the confirmation email.'
+      error: 'AUREL’s Supabase schema is missing a column required for this request. In Supabase SQL Editor, run the latest supabase/schema.sql, then run NOTIFY pgrst, \'reload schema\';.'
     })
     return
   }
@@ -441,10 +501,13 @@ const handleFailure = (res: ServerResponse, error: unknown, fallbackMessage: str
 
 export async function profileHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
   try {
-    const account = await getSessionAccount(req)
+    let account = await getSessionAccount(req)
     if (!account) return sendJson(res, 401, { error: 'Sign in to manage your profile.' })
 
-    if (req.method === 'GET') return sendJson(res, 200, { user: publicAccount(account) })
+    if (req.method === 'GET') {
+      account = await reconcileEmailVerification(account)
+      return sendJson(res, 200, { user: publicAccount(account) })
+    }
     if (req.method !== 'PATCH') {
       res.setHeader('Allow', 'GET, PATCH')
       return sendJson(res, 405, { error: 'Method not allowed.' })
@@ -456,11 +519,29 @@ export async function profileHandler(req: AuthRequest, res: ServerResponse): Pro
     const phone = typeof body.phone === 'string' ? normalizeValidPhoneNumber(body.phone) : null
     const address = typeof body.address === 'string' ? body.address.trim() : ''
     const gender = typeof body.gender === 'string' ? body.gender : ''
+    const dateOfBirth = typeof body.dateOfBirth === 'string' ? body.dateOfBirth.trim() : ''
+    const city = typeof body.city === 'string' ? body.city.trim() : ''
+    const state = typeof body.state === 'string' ? body.state.trim() : ''
+    const postalCode = typeof body.postalCode === 'string' ? body.postalCode.trim() : ''
     if (name.length < 2 || name.length > 80) return sendJson(res, 400, { error: 'Enter a name between 2 and 80 characters.' })
     if (!/^[a-z0-9_]{3,24}$/.test(username)) return sendJson(res, 400, { error: 'Username must be 3 to 24 letters, numbers, or underscores.' })
     if (!phone) return sendJson(res, 400, { error: 'Enter a valid phone number, including its country code if it is not an Indian number.' })
     if (address.length < 5 || address.length > 240) return sendJson(res, 400, { error: 'Address must be between 5 and 240 characters.' })
     if (!allowedGenders.has(gender)) return sendJson(res, 400, { error: 'Select a valid gender option.' })
+    const parsedDateOfBirth = dateOfBirth ? new Date(`${dateOfBirth}T00:00:00.000Z`) : null
+    if (dateOfBirth && (
+      !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)
+      || !parsedDateOfBirth
+      || Number.isNaN(parsedDateOfBirth.getTime())
+      || parsedDateOfBirth.toISOString().slice(0, 10) !== dateOfBirth
+      || dateOfBirth > new Date().toISOString().slice(0, 10)
+    )) {
+      return sendJson(res, 400, { error: 'Enter a valid date of birth that is not in the future.' })
+    }
+    if (city.length > 100 || state.length > 100) return sendJson(res, 400, { error: 'City and state must be 100 characters or fewer.' })
+    if (postalCode.length > 8 || (postalCode && !/^\d{5,8}$/.test(postalCode))) {
+      return sendJson(res, 400, { error: 'Enter a valid postal or PIN code.' })
+    }
 
     const updated = await supabaseRequest<AccountRecord[]>(
       'aurel_users',
@@ -468,7 +549,17 @@ export async function profileHandler(req: AuthRequest, res: ServerResponse): Pro
       {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ name, username, phone, address, gender })
+        body: JSON.stringify({
+          name,
+          username,
+          phone,
+          address,
+          gender,
+          date_of_birth: dateOfBirth || null,
+          city: city || null,
+          state: state || null,
+          postal_code: postalCode || null
+        })
       }
     )
     if (!updated[0]) return sendJson(res, 404, { error: 'Your profile could not be found.' })
@@ -478,6 +569,253 @@ export async function profileHandler(req: AuthRequest, res: ServerResponse): Pro
       return sendJson(res, 409, { error: 'That username is already in use. Choose another username.' })
     }
     handleFailure(res, error, 'Unable to update your profile right now.')
+  }
+}
+
+export async function changePasswordHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to change your password.' })
+    const body = readBody(req)
+    const currentPassword = body.currentPassword
+    const newPassword = body.newPassword
+    if (typeof currentPassword !== 'string' || currentPassword.length === 0 || currentPassword.length > 128) {
+      return sendJson(res, 400, { error: 'Enter your current password.' })
+    }
+    if (!validPassword(newPassword)) {
+      return sendJson(res, 400, { error: 'Your new password must be 8 to 128 characters and include a letter and a number.' })
+    }
+
+    const currentHash = await derivePasswordHash(currentPassword, account.password_salt)
+    const savedHash = Buffer.from(account.password_hash, 'hex')
+    if (currentHash.length !== savedHash.length || !timingSafeEqual(currentHash, savedHash)) {
+      return sendJson(res, 401, { error: 'Your current password is incorrect.' })
+    }
+
+    let authSession: { access_token?: string }
+    try {
+      authSession = await supabaseAuthRequest<{ access_token?: string }>('token?grant_type=password', {
+        email: account.email,
+        password: currentPassword
+      })
+    } catch (error) {
+      if (error instanceof AuthProviderError && error.status >= 400 && error.status < 500) {
+        return sendJson(res, 401, { error: 'Your current password could not be verified with Auth. Please sign in again.' })
+      }
+      throw error
+    }
+    if (!authSession.access_token) return sendJson(res, 502, { error: 'Could not verify your account with Auth. Please try again.' })
+
+    const { supabaseUrl } = getSupabaseConfig()
+    const updateResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        apikey: getSupabaseAuthKey(),
+        Authorization: `Bearer ${authSession.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ password: newPassword })
+    })
+    if (!updateResponse.ok) {
+      const responseText = await updateResponse.text()
+      let providerMessage: string | undefined
+      try {
+        const providerError = JSON.parse(responseText) as SupabaseErrorBody
+        providerMessage = safeProviderMessage(providerError.message ?? providerError.msg ?? providerError.error)
+      } catch {
+        providerMessage = safeProviderMessage(responseText)
+      }
+      console.error('Supabase rejected a password change:', { status: updateResponse.status, message: providerMessage })
+      return sendJson(res, updateResponse.status === 429 ? 429 : 400, {
+        error: providerMessage || 'Auth could not update your password. Please try again.'
+      })
+    }
+
+    const passwordSalt = randomBytes(16).toString('hex')
+    const passwordHash = (await derivePasswordHash(newPassword, passwordSalt)).toString('hex')
+    try {
+      const updated = await supabaseRequest<AccountRecord[]>(
+        'aurel_users',
+        new URLSearchParams({ id: `eq.${account.id}`, select: '*' }),
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({ password_salt: passwordSalt, password_hash: passwordHash })
+        }
+      )
+      if (!updated[0]) throw new AccountServiceError(404)
+    } catch (error) {
+      try {
+        const rollback = await fetch(`${supabaseUrl}/auth/v1/user`, {
+          method: 'PUT',
+          headers: {
+            apikey: getSupabaseAuthKey(),
+            Authorization: `Bearer ${authSession.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ password: currentPassword })
+        })
+        if (!rollback.ok) {
+          console.error('Unable to roll back the Auth password after profile storage failed.', { status: rollback.status })
+        }
+      } catch (rollbackError) {
+        console.error('Unable to roll back the Auth password after profile storage failed.', rollbackError)
+      }
+      try {
+        await supabaseRequest(
+          'aurel_users',
+          new URLSearchParams({ id: `eq.${account.id}` }),
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              password_salt: account.password_salt,
+              password_hash: account.password_hash
+            })
+          }
+        )
+      } catch (rollbackError) {
+        console.error('Unable to roll back the stored password after a password change failed.', rollbackError)
+      }
+      throw error
+    }
+
+    return sendJson(res, 200, { success: true, message: 'Your password has been changed.' })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to change your password right now.')
+  }
+}
+
+export async function deleteAccountHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to delete your account.' })
+    const body = readBody(req)
+    const password = body.password
+    if (typeof password !== 'string' || password.length === 0 || password.length > 128) {
+      return sendJson(res, 400, { error: 'Enter your current password to confirm account deletion.' })
+    }
+    const submittedHash = await derivePasswordHash(password, account.password_salt)
+    const savedHash = Buffer.from(account.password_hash, 'hex')
+    if (submittedHash.length !== savedHash.length || !timingSafeEqual(submittedHash, savedHash)) {
+      return sendJson(res, 401, { error: 'Your current password is incorrect.' })
+    }
+
+    try {
+      await supabaseAuthRequest<{ access_token?: string }>('token?grant_type=password', {
+        email: account.email,
+        password
+      })
+    } catch (error) {
+      if (error instanceof AuthProviderError && error.status >= 400 && error.status < 500) {
+        return sendJson(res, 401, { error: 'Your current password could not be verified with Auth. Please sign in again.' })
+      }
+      throw error
+    }
+
+    const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+    const response = await fetch(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(account.id)}`, {
+      method: 'DELETE',
+      headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
+    })
+    if (!response.ok) {
+      const responseText = await response.text()
+      let providerMessage: string | undefined
+      try {
+        const providerError = JSON.parse(responseText) as SupabaseErrorBody
+        providerMessage = safeProviderMessage(providerError.message ?? providerError.msg ?? providerError.error)
+      } catch {
+        providerMessage = safeProviderMessage(responseText)
+      }
+      console.error('Supabase rejected an account deletion:', { status: response.status, message: providerMessage })
+      return sendJson(res, response.status === 429 ? 429 : 502, {
+        error: providerMessage || 'Auth could not delete your account. No profile data was removed.'
+      })
+    }
+
+    const secure = process.env.NODE_ENV === 'production' || process.env.VERCEL ? '; Secure' : ''
+    res.setHeader('Set-Cookie', `aurel_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`)
+    return sendJson(res, 200, { success: true })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to delete your account right now.')
+  }
+}
+
+interface StoredAccountOrder {
+  order_id: string
+  order_data: Record<string, unknown>
+  created_at: string
+}
+
+export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to view your orders.' })
+
+    if (req.method === 'GET') {
+      const rows = await supabaseRequest<StoredAccountOrder[]>(
+        'aurel_orders',
+        new URLSearchParams({
+          user_id: `eq.${account.id}`,
+          select: 'order_id,order_data,created_at',
+          order: 'created_at.desc',
+          limit: '100'
+        })
+      )
+      return sendJson(res, 200, {
+        orders: rows.map(row => ({ order: row.order_data, createdAt: row.created_at }))
+      })
+    }
+
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'GET, POST')
+      return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+
+    const order = readBody(req).order
+    if (!order || typeof order !== 'object' || Array.isArray(order)) {
+      return sendJson(res, 400, { error: 'Provide a valid order.' })
+    }
+    const data = order as Record<string, unknown>
+    const items = data.items
+    if (
+      typeof data.orderId !== 'string' || !/^AUREL[A-Z0-9]{5,16}$/.test(data.orderId)
+      || typeof data.customerName !== 'string' || data.customerName.trim().length < 2 || data.customerName.length > 120
+      || typeof data.phoneNumber !== 'string' || !normalizeValidPhoneNumber(data.phoneNumber)
+      || typeof data.email !== 'string' || !isValidAccountEmail(data.email)
+      || typeof data.address !== 'string' || data.address.trim().length < 5 || data.address.length > 240
+      || typeof data.city !== 'string' || data.city.trim().length < 2 || data.city.length > 100
+      || (data.state !== undefined && (typeof data.state !== 'string' || data.state.length > 100))
+      || typeof data.postalCode !== 'string' || !/^\d{5,8}$/.test(data.postalCode)
+      || typeof data.paymentMethod !== 'string' || data.paymentMethod.length > 100
+      || typeof data.paymentTimestamp !== 'string' || !data.paymentTimestamp.trim() || data.paymentTimestamp.length > 120
+      || !Array.isArray(items) || items.length < 1 || items.length > 100
+      || !items.every(item => item && typeof item === 'object'
+        && typeof item.productId === 'string' && item.productId.length <= 120
+        && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 160
+        && typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0 && item.price <= 10000000
+        && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 99
+        && typeof item.imageUrl === 'string' && item.imageUrl.length <= 2048)
+      || typeof data.subtotal !== 'number' || !Number.isFinite(data.subtotal) || data.subtotal < 0
+      || typeof data.shipping !== 'number' || !Number.isFinite(data.shipping) || data.shipping < 0
+      || typeof data.total !== 'number' || !Number.isFinite(data.total) || data.total !== data.subtotal + data.shipping
+      || data.status !== 'paid'
+    ) {
+      return sendJson(res, 400, { error: 'The order details are incomplete or invalid.' })
+    }
+
+    const stored = await supabaseRequest<StoredAccountOrder[]>(
+      'aurel_orders',
+      new URLSearchParams({ on_conflict: 'user_id,order_id', select: 'order_id,order_data,created_at' }),
+      {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+        body: JSON.stringify({ user_id: account.id, order_id: data.orderId, order_data: data })
+      }
+    )
+    if (!stored[0]) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
+    return sendJson(res, 201, { order: stored[0].order_data, createdAt: stored[0].created_at })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to load or save your orders right now.')
   }
 }
 
@@ -871,7 +1209,7 @@ export async function loginHandler(req: AuthRequest, res: ServerResponse): Promi
     const email = emailInput.trim().toLowerCase()
     const accounts = await supabaseRequest<AccountRecord[]>(
       'aurel_users',
-      new URLSearchParams({ email: `eq.${email}`, email_verified: 'eq.true', select: '*', limit: '1' })
+      new URLSearchParams({ email: `eq.${email}`, select: '*', limit: '1' })
     )
     const account = accounts[0]
     if (!account) {
@@ -885,8 +1223,12 @@ export async function loginHandler(req: AuthRequest, res: ServerResponse): Promi
       return sendJson(res, 401, { error: 'Email or password is incorrect.' })
     }
 
+    const verifiedAccount = await reconcileEmailVerification(account)
+    if (!verifiedAccount.email_verified) {
+      return sendJson(res, 403, { error: 'Verify your email address before signing in. Open the confirmation link sent to your inbox.' })
+    }
     await setSessionCookie(res, account.id)
-    sendJson(res, 200, { user: publicAccount(account) })
+    sendJson(res, 200, { user: publicAccount(verifiedAccount) })
   } catch (error) {
     handleFailure(res, error, 'Unable to sign in right now.')
   }
@@ -897,7 +1239,8 @@ export async function sessionHandler(req: AuthRequest, res: ServerResponse): Pro
   try {
     const account = await getSessionAccount(req)
     if (!account) return sendJson(res, 401, { error: 'Not signed in.' })
-    sendJson(res, 200, { user: publicAccount(account) })
+    const verifiedAccount = await reconcileEmailVerification(account)
+    sendJson(res, 200, { user: publicAccount(verifiedAccount) })
   } catch (error) {
     handleFailure(res, error, 'Unable to load your account.')
   }

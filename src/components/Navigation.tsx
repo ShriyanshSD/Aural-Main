@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, X } from 'lucide-react'
+import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, Settings, X } from 'lucide-react'
 import { AuthUser, Product } from '../types'
 import { AuthMode } from './AuthModal'
 import { PRODUCTS } from '../data/products'
@@ -23,6 +23,7 @@ interface NavigationProps {
   user: AuthUser | null
   onOpenAuth: (mode: AuthMode) => void
   onOpenProfile: () => void
+  onOpenSettings: () => void
   onLogout: () => void
 }
 
@@ -44,6 +45,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   user,
   onOpenAuth,
   onOpenProfile,
+  onOpenSettings,
   onLogout
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -312,10 +314,16 @@ export const Navigation: React.FC<NavigationProps> = ({
                     <UserRound className="h-4 w-4" /> My Profile
                   </button>
                   <button
-                    onClick={() => { setIsProfileOpen(false); onLogout() }}
-                    className="mt-2 flex w-full items-center gap-2 border-t border-black/5 pt-3 text-xs font-semibold text-[#B36D6D] dark:border-white/10"
+                    onClick={() => { setIsProfileOpen(false); onOpenSettings() }}
+                    className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-colors hover:bg-[#B36D6D]/10"
                   >
-                    <LogOut className="h-4 w-4" /> Sign out
+                    <Settings className="h-4 w-4" /> Settings
+                  </button>
+                  <button
+                    onClick={() => { setIsProfileOpen(false); onLogout() }}
+                    className="mt-1 flex w-full items-center gap-2 border-t border-black/5 pt-3 text-xs font-semibold text-[#B36D6D] dark:border-white/10"
+                  >
+                    <LogOut className="h-4 w-4" /> Logout
                   </button>
                 </div>
               )}

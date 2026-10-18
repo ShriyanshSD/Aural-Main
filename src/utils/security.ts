@@ -14,6 +14,7 @@ export interface ValidationResult {
     email: string
     address: string
     city: string
+    state: string
     postalCode: string
     notes: string
   }
@@ -64,6 +65,7 @@ export function validateCheckoutForm(data: {
   email: string
   address: string
   city: string
+  state?: string
   postalCode: string
   notes?: string
 }): ValidationResult {
@@ -75,6 +77,7 @@ export function validateCheckoutForm(data: {
     email: sanitizeInput(data.email),
     address: sanitizeInput(data.address),
     city: sanitizeInput(data.city),
+    state: sanitizeInput(data.state || ''),
     postalCode: sanitizeInput(data.postalCode),
     notes: sanitizeInput(data.notes || '')
   }
@@ -102,6 +105,10 @@ export function validateCheckoutForm(data: {
 
   if (!sanitized.city || sanitized.city.length < 2) {
     errors.push('Error: City name not mentioned')
+  }
+
+  if (sanitized.state.length > 100) {
+    errors.push('Error: State name must be 100 characters or fewer')
   }
 
   if (!sanitized.postalCode) {

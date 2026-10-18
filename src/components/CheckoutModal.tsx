@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { X, ShieldCheck, CheckCircle2, AlertCircle, Lock, Smartphone, CreditCard, ArrowRight, Sparkles, Copy, Check, QrCode, Building2, RefreshCw } from 'lucide-react'
 import confetti from 'canvas-confetti'
 import { AuthUser, CartItem, OrderDetails } from '../types'
-import { validateCheckoutForm } from '../utils/security'
+import { sanitizeInput, validateCheckoutForm } from '../utils/security'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
 
 interface CheckoutModalProps {
@@ -12,7 +12,7 @@ interface CheckoutModalProps {
   isDarkMode: boolean
   cartItems: CartItem[]
   authUser: AuthUser | null
-  onOrderSuccess: (order: OrderDetails) => void
+  onOrderSuccess: (order: OrderDetails) => Promise<void>
 }
 
 type RazorpayPaymentTab = 'upi' | 'card' | 'netbanking'
@@ -30,8 +30,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [phoneNumber, setPhoneNumber] = useState(authUser?.phone ?? '')
   const [email, setEmail] = useState(authUser?.email ?? '')
   const [address, setAddress] = useState(authUser?.address ?? '')
-  const [city, setCity] = useState('')
-  const [postalCode, setPostalCode] = useState('')
+  const [city, setCity] = useState(authUser?.city ?? '')
+  const [state, setState] = useState(authUser?.state ?? '')
+  const [postalCode, setPostalCode] = useState(authUser?.postalCode ?? '')
   const [notes, setNotes] = useState('')
 
   // Razorpay Gateway State
@@ -55,6 +56,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setPhoneNumber(authUser.phone)
     setEmail(authUser.email)
     setAddress(authUser.address)
+    setCity(authUser.city)
+    setState(authUser.state)
+    setPostalCode(authUser.postalCode)
   }, [authUser, isOpen])
 
   if (!isOpen) return null
@@ -71,6 +75,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setEmail('ananya.sharma@example.com')
     setAddress('Penthouse 14, Lotus Villa, Silver Beach Road')
     setCity('Mumbai')
+    setState('Maharashtra')
     setPostalCode('400049')
     setNotes('Please tie with blush rose silk ribbon and add wax seal')
     setFormErrors([])
@@ -82,6 +87,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setEmail('')
     setAddress('')
     setCity('')
+    setState('')
     setPostalCode('')
     setNotes('')
     setFormErrors([])
@@ -94,6 +100,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       email,
       address,
       city,
+      state,
       postalCode,
       notes
     })
@@ -124,7 +131,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         timeStyle: 'medium'
       })
 
-      const generatedOrderId = 'AUREL' + Math.floor(100000 + Math.random() * 900000)
+      const generatedOrderId = `AUREL${crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`
       const paymentMethodLabel = razorpayTab === 'upi' 
         ? `Razorpay UPI (${selectedUpiApp}${customUpiId ? ' ' + customUpiId : ''})`
         : razorpayTab === 'card'
@@ -138,6 +145,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         email: email.trim(),
         address: address.trim(),
         city: city.trim(),
+        state: sanitizeInput(state),
         postalCode: postalCode.trim(),
         paymentMethod: paymentMethodLabel,
         paymentTimestamp: formattedTimestamp,
@@ -148,17 +156,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         status: 'paid'
       }
 
-      setIsGatewayProcessing(false)
-      setIsRazorpayPopupOpen(false)
-      setCompletedOrder(orderData)
-      onOrderSuccess(orderData)
-
-      // Celebratory confetti
-      confetti({
-        particleCount: 90,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#B36D6D', '#E8C7BE', '#FAF7F2', '#EFAFAF']
+      void onOrderSuccess(orderData).then(() => {
+        setIsGatewayProcessing(false)
+        setIsRazorpayPopupOpen(false)
+        setCompletedOrder(orderData)
+        confetti({
+          particleCount: 90,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#B36D6D', '#E8C7BE', '#FAF7F2', '#EFAFAF']
+        })
+      }).catch(error => {
+        console.error('Unable to save completed order:', error)
+        setIsGatewayProcessing(false)
+        setFormErrors([error instanceof Error ? error.message : 'Payment completed, but your order could not be saved to your account. Please contact support before retrying payment.'])
       })
     }, 1600)
   }
@@ -183,7 +194,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       `*Name:* ${order.customerName}`,
       `*Phone Number:* ${order.phoneNumber}`,
       `*Email Address:* ${order.email}`,
-      `*Delivery Address:* ${order.address}, ${order.city}, PIN ${order.postalCode}`,
+      `*Delivery Address:* ${order.address}, ${order.city}${order.state ? `, ${order.state}` : ''}, PIN ${order.postalCode}`,
       notes.trim() ? `*Special Notes:* ${notes.trim()}` : '',
       '',
       '*ITEMS ORDERED*',
@@ -297,7 +308,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className="flex justify-between text-[#8E7973]">
                     <span>Destination</span>
                     <span className="text-[#2C2422] dark:text-[#EAE0DA] font-medium truncate max-w-[240px] text-right">
-                      {completedOrder.address}, {completedOrder.city}
+                      {[completedOrder.address, completedOrder.city, completedOrder.state, completedOrder.postalCode].filter(Boolean).join(', ')}
                     </span>
                   </div>
                   <div className="flex justify-between text-[#8E7973] pt-1 border-t border-black/5 dark:border-white/5">
@@ -511,6 +522,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                         value={postalCode}
                         onChange={(e) => setPostalCode(e.target.value)}
                         placeholder="E.g. 400049"
+                        className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
+                          isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
+                        }`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium tracking-wide uppercase text-[#88746E] dark:text-[#BCAAA4] mb-1">
+                        State
+                      </label>
+                      <input
+                        type="text"
+                        value={state}
+                        onChange={(e) => setState(e.target.value)}
+                        placeholder="E.g. Maharashtra"
+                        maxLength={100}
                         className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
                           isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
                         }`}

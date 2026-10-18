@@ -7,6 +7,9 @@ import dotenv from 'dotenv'
 import {
   loginHandler,
   logoutHandler,
+  accountOrdersHandler,
+  changePasswordHandler,
+  deleteAccountHandler,
   chatHistoryHandler,
   confirmEmailChangeHandler,
   profileHandler,
@@ -23,6 +26,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const cliArgs = process.argv.slice(2)
+const isProduction = process.env.NODE_ENV === 'production' || cliArgs.includes('--preview')
 let configuredPort = Number(process.env.PORT || 3000)
 
 for (let i = 0; i < cliArgs.length; i += 1) {
@@ -47,6 +51,9 @@ app.post('/api/auth/login', (req, res) => loginHandler(req, res))
 app.get('/api/auth/me', (req, res) => sessionHandler(req, res))
 app.all('/api/auth/profile', (req, res) => profileHandler(req, res))
 app.post('/api/auth/change-email', (req, res) => requestEmailChangeHandler(req, res))
+app.all('/api/auth/orders', (req, res) => accountOrdersHandler(req, res))
+app.post('/api/auth/change-password', (req, res) => changePasswordHandler(req, res))
+app.delete('/api/auth/delete-account', (req, res) => deleteAccountHandler(req, res))
 app.post('/api/auth/confirm-email-change', (req, res) => confirmEmailChangeHandler(req, res))
 app.post('/api/auth/logout', (req, res) => logoutHandler(req, res))
 app.all('/api/chat/history', (req, res) => chatHistoryHandler(req, res))
@@ -107,7 +114,7 @@ app.post('/api/chat', async (req, res) => {
 })
 
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: {
         middlewareMode: true,

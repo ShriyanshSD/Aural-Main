@@ -68,6 +68,7 @@ export interface OrderDetails {
   email: string
   address: string
   city: string
+  state?: string
   postalCode: string
   paymentMethod: string
   paymentTimestamp: string
@@ -83,9 +84,19 @@ export interface AuthUser {
   name: string
   username: string
   email: string
+  emailVerified: boolean
   phone: string
   address: string
   gender: string
+  dateOfBirth: string
+  city: string
+  state: string
+  postalCode: string
+  createdAt: string
+}
+
+export interface AccountOrder {
+  order: OrderDetails
   createdAt: string
 }
 

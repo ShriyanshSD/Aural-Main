@@ -19,7 +19,7 @@ import { CartDrawer } from './components/CartDrawer'
 import { WishlistDrawer } from './components/WishlistDrawer'
 import { CheckoutModal } from './components/CheckoutModal'
 import { AuthModal, AuthMode } from './components/AuthModal'
-import { ProfileModal } from './components/ProfileModal'
+import { AccountModal } from './components/AccountModal'
 import { ChatbotModal } from './components/ChatbotModal'
 import { StoryAndReviews } from './components/StoryAndReviews'
 import { Footer } from './components/Footer'
@@ -91,6 +91,7 @@ export default function App() {
   const [isAuthLoaded, setIsAuthLoaded] = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [accountInitialSection, setAccountInitialSection] = useState<'profile' | 'settings'>('profile')
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [authNotice, setAuthNotice] = useState('')
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(signupResume?.resumeCheckout ?? false)
@@ -130,7 +131,7 @@ export default function App() {
   useEffect(() => {
     const loadAccount = async () => {
       try {
-        const response = await fetch('/api/auth/me')
+        const response = await fetch('/api/auth/me', { cache: 'no-store' })
         if (response.status === 401) return
         if (!response.ok) throw new Error(`Account lookup failed with status ${response.status}.`)
         const data = await response.json() as { user: AuthUser }
@@ -390,8 +391,16 @@ export default function App() {
     setActiveTab('shop')
   }
 
-  const handleOrderSuccess = (order: OrderDetails) => {
-    // Keep cart cleared upon payment completion
+  const handleOrderSuccess = async (order: OrderDetails) => {
+    if (!authUser) throw new Error('Sign in to save your order to your account.')
+    const response = await fetch('/api/auth/orders', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order })
+    })
+    const data = await response.json() as { error?: string }
+    if (!response.ok) throw new Error(data.error || 'Your order could not be saved to your account.')
     setCartItems([])
   }
 
@@ -404,6 +413,21 @@ export default function App() {
       console.error('Unable to sign out:', error)
       window.alert('Unable to sign out right now. Please try again.')
     }
+  }
+
+  const handleAccountDeleted = () => {
+    if (authUser) {
+      try {
+        window.localStorage.removeItem(getWishlistStorageKey(authUser.id))
+      } catch (error) {
+        console.error('Unable to remove the deleted account wishlist from this device:', error)
+      }
+    }
+    setAuthUser(null)
+    setWishlist([])
+    setWishlistOwnerId(null)
+    setIsWishlistOpen(false)
+    setIsProfileOpen(false)
   }
 
   return (
@@ -472,7 +496,14 @@ export default function App() {
           setAuthMode(mode)
           setIsAuthOpen(true)
         }}
-        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenProfile={() => {
+          setAccountInitialSection('profile')
+          setIsProfileOpen(true)
+        }}
+        onOpenSettings={() => {
+          setAccountInitialSection('settings')
+          setIsProfileOpen(true)
+        }}
         onLogout={() => { void handleLogout() }}
       />
 
@@ -517,7 +548,10 @@ export default function App() {
         onOpenChatbot={() => setIsChatbotOpen(true)}
         activeCategory={activeCategory}
         user={authUser}
-        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenProfile={() => {
+          setAccountInitialSection('profile')
+          setIsProfileOpen(true)
+        }}
         onOpenAuth={(mode) => {
           setAuthMode(mode)
           setIsAuthOpen(true)
@@ -694,12 +728,23 @@ export default function App() {
       />
 
       {authUser && (
-        <ProfileModal
+        <AccountModal
           isOpen={isProfileOpen}
+          initialSection={accountInitialSection}
           user={authUser}
           isDarkMode={isDarkMode}
           onClose={() => setIsProfileOpen(false)}
           onProfileUpdated={setAuthUser}
+          onOpenWishlist={() => {
+            setIsProfileOpen(false)
+            setIsWishlistOpen(true)
+          }}
+          onOpenHelp={() => {
+            setIsProfileOpen(false)
+            setIsChatbotOpen(true)
+          }}
+          onLogout={() => { void handleLogout() }}
+          onAccountDeleted={handleAccountDeleted}
         />
       )}
 

@@ -19,6 +19,12 @@ alter table public.aurel_users
 alter table public.aurel_users
   alter column email_verified set default false;
 
+alter table public.aurel_users
+  add column if not exists date_of_birth date,
+  add column if not exists city varchar(100),
+  add column if not exists state varchar(100),
+  add column if not exists postal_code varchar(12);
+
 do $$
 begin
   if not exists (
@@ -55,11 +61,26 @@ create table if not exists public.aurel_chat_messages (
 create index if not exists aurel_chat_messages_user_order_idx
   on public.aurel_chat_messages (user_id, id);
 
+create table if not exists public.aurel_orders (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references public.aurel_users(id) on delete cascade,
+  order_id varchar(32) not null,
+  order_data jsonb not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, order_id)
+);
+
+create index if not exists aurel_orders_user_created_idx
+  on public.aurel_orders (user_id, created_at desc);
+
 alter table public.aurel_users enable row level security;
 alter table public.aurel_sessions enable row level security;
 alter table public.aurel_chat_messages enable row level security;
+alter table public.aurel_orders enable row level security;
 
 revoke all on table public.aurel_users, public.aurel_sessions from anon, authenticated;
 grant all on table public.aurel_users, public.aurel_sessions to service_role;
 revoke all on table public.aurel_chat_messages from anon, authenticated;
 grant all on table public.aurel_chat_messages to service_role;
+revoke all on table public.aurel_orders from anon, authenticated;
+grant all on table public.aurel_orders to service_role;
