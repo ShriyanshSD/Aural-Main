@@ -11,7 +11,7 @@ interface ChatPayload {
   model?: string
 }
 
-type ChatRequest = IncomingMessage & { body?: ChatPayload }
+type ChatRequest = IncomingMessage & { body?: unknown }
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -45,7 +45,10 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown) {
 
 export async function chatHandler(req: ChatRequest, res: ServerResponse): Promise<void> {
   try {
-    const { messages, model } = req.body ?? {}
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? req.body as ChatPayload
+      : {}
+    const { messages, model } = body
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       sendJson(res, 400, { error: 'Messages array is required' })
