@@ -80,9 +80,59 @@ interface SignupResumeState {
 }
 
 const signupResumeStorageKey = 'aurel_signup_resume'
+const savedThemeStorageKey = 'aurel_theme'
+const savedCartStorageKey = 'aurel_cart'
 const getWishlistStorageKey = (userId: string) => `aurel_wishlist_${userId}`
 const appTabs = new Set<AppTab>(['home', 'shop', 'builder', 'story', 'contact'])
 const productCategories = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/
+const isCartItem = (value: unknown): value is CartItem => {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Partial<CartItem>
+  return typeof item.cartId === 'string'
+    && typeof item.productId === 'string'
+    && typeof item.name === 'string'
+    && typeof item.price === 'number'
+    && Number.isFinite(item.price)
+    && item.price >= 0
+    && typeof item.quantity === 'number'
+    && Number.isInteger(item.quantity)
+    && item.quantity > 0
+    && typeof item.imageUrl === 'string'
+    && (item.finish === undefined || item.finish === 'matte' || item.finish === 'gloss')
+    && (item.recipientName === undefined || typeof item.recipientName === 'string')
+    && (item.customMessage === undefined || typeof item.customMessage === 'string')
+    && (item.customComponents === undefined || (
+      Array.isArray(item.customComponents)
+      && item.customComponents.every(component => typeof component === 'string')
+    ))
+}
+
+const readSavedTheme = (): boolean | null => {
+  try {
+    const theme = window.localStorage.getItem(savedThemeStorageKey)
+    return theme === 'dark' ? true : theme === 'light' ? false : null
+  } catch (error) {
+    console.error('Unable to restore the saved theme:', error)
+    return null
+  }
+}
+
+const readSavedCart = (): CartItem[] => {
+  try {
+    const serializedCart = window.localStorage.getItem(savedCartStorageKey)
+    if (!serializedCart) return []
+    const savedCart: unknown = JSON.parse(serializedCart)
+    if (!Array.isArray(savedCart)) {
+      console.error('Unable to restore the saved bag: stored data is not a list.')
+      return []
+    }
+    return savedCart.filter(isCartItem)
+  } catch (error) {
+    console.error('Unable to restore the saved bag:', error)
+    return []
+  }
+}
+
 const initialCategories: StoreCategory[] = [...new Set(PRODUCTS.map(product => product.category))]
   .map(slug => ({ slug, name: slug.split('-').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ') }))
 const initialStoreSettings: StoreSettings = {
@@ -130,7 +180,7 @@ function StorefrontApp() {
   const scrollAnimationRef = useRef<number | null>(null)
   const originalScrollBehaviorRef = useRef<string | null>(null)
   // Theme state
-  const [isDarkMode, setIsDarkMode] = useState(signupResume?.isDarkMode ?? false)
+  const [isDarkMode, setIsDarkMode] = useState(signupResume?.isDarkMode ?? readSavedTheme() ?? false)
 
   // Navigation & View state
   const [activeTab, setActiveTab] = useState<AppTab>(signupResume?.activeTab ?? 'home')
@@ -152,7 +202,7 @@ function StorefrontApp() {
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(signupResume?.resumeCheckout ?? false)
 
   // Cart & Wishlist state
-  const [cartItems, setCartItems] = useState<CartItem[]>(signupResume?.cartItems ?? [])
+  const [cartItems, setCartItems] = useState<CartItem[]>(signupResume?.cartItems ?? readSavedCart())
   const [isBagOpen, setIsBagOpen] = useState(false)
   const [cartFeedback, setCartFeedback] = useState<{
     productName: string
@@ -175,6 +225,22 @@ function StorefrontApp() {
       document.documentElement.classList.remove('dark')
     }
   }, [isDarkMode])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(savedThemeStorageKey, isDarkMode ? 'dark' : 'light')
+    } catch (error) {
+      console.error('Unable to save the selected theme:', error)
+    }
+  }, [isDarkMode])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(savedCartStorageKey, JSON.stringify(cartItems))
+    } catch (error) {
+      console.error('Unable to save the bag:', error)
+    }
+  }, [cartItems])
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -497,6 +563,7 @@ function StorefrontApp() {
     if (addedToBag) {
       setWishlist(current => current.filter(productId => productId !== product.id))
       setIsWishlistOpen(false)
+      setIsBagOpen(true)
     }
   }
 

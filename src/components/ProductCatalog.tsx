@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { Star, Heart, Plus, ChevronDown, Check, SlidersHorizontal, ArrowLeft } from 'lucide-react'
 import { Product, ProductCategory, SortOption, StoreCategory } from '../types'
@@ -28,10 +28,139 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   products,
   categories
 }) => {
+  const categoryScrollRef = useRef<HTMLDivElement>(null)
+  const categoryTrackRef = useRef<HTMLDivElement>(null)
+  const categoryScrollTargetRef = useRef(0)
+  const categoryScrollFrameRef = useRef<number | null>(null)
+  const categoryDragRef = useRef<{ pointerId: number; startX: number; startOffset: number } | null>(null)
+  const [categoryScrollMetrics, setCategoryScrollMetrics] = useState({ thumbWidth: 0, thumbOffset: 0, maxScroll: 0 })
   const [currentSort, setCurrentSort] = useState<SortOption>('recommended')
   const [isSortOpen, setIsSortOpen] = useState(false)
   const [addedAnimationId, setAddedAnimationId] = useState<string | null>(null)
   const [selectedHairSubCategory, setSelectedHairSubCategory] = useState<'all' | 'clutchers' | 'hairbands' | 'hairpins' | 'hair-clips' | 'latkan-clutchers'>('all')
+
+  const updateCategoryScrollMetrics = () => {
+    const scroller = categoryScrollRef.current
+    const track = categoryTrackRef.current
+    if (!scroller || !track) return
+
+    const maxScroll = Math.max(0, scroller.scrollWidth - scroller.clientWidth)
+    const trackWidth = track.clientWidth
+    const thumbWidth = maxScroll > 0
+      ? Math.min(trackWidth, Math.max(36, trackWidth * scroller.clientWidth / scroller.scrollWidth))
+      : trackWidth
+    const maxThumbOffset = Math.max(0, trackWidth - thumbWidth)
+    const thumbOffset = maxScroll > 0 ? scroller.scrollLeft / maxScroll * maxThumbOffset : 0
+    const thumb = track.querySelector<HTMLButtonElement>('[role="scrollbar"]')
+    if (thumb) {
+      thumb.style.width = `${thumbWidth}px`
+      thumb.style.transform = `translateX(${thumbOffset}px)`
+      thumb.setAttribute('aria-valuemax', String(Math.round(maxScroll)))
+      thumb.setAttribute('aria-valuenow', String(Math.round(scroller.scrollLeft)))
+    }
+    track.style.opacity = maxScroll > 0 ? '1' : '0'
+    setCategoryScrollMetrics(current => (
+      current.thumbWidth === thumbWidth && current.maxScroll === maxScroll
+        ? current
+        : { thumbWidth, thumbOffset, maxScroll }
+    ))
+  }
+
+  const handleCategoryScroll = () => {
+    if (!categoryDragRef.current && categoryScrollFrameRef.current === null) {
+      categoryScrollTargetRef.current = categoryScrollRef.current?.scrollLeft ?? 0
+    }
+    updateCategoryScrollMetrics()
+  }
+
+  const handleCategoryThumbPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (categoryScrollMetrics.maxScroll <= 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    const scroller = categoryScrollRef.current
+    const track = categoryTrackRef.current
+    const maxThumbOffset = Math.max(0, (track?.clientWidth ?? 0) - categoryScrollMetrics.thumbWidth)
+    categoryDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startOffset: scroller && categoryScrollMetrics.maxScroll > 0
+        ? scroller.scrollLeft / categoryScrollMetrics.maxScroll * maxThumbOffset
+        : 0
+    }
+  }
+
+  const handleCategoryThumbPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = categoryDragRef.current
+    const track = categoryTrackRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !track) return
+
+    const maxThumbOffset = Math.max(0, track.clientWidth - categoryScrollMetrics.thumbWidth)
+    const thumbOffset = Math.max(0, Math.min(maxThumbOffset, drag.startOffset + event.clientX - drag.startX))
+    categoryScrollTargetRef.current = maxThumbOffset > 0
+      ? thumbOffset / maxThumbOffset * categoryScrollMetrics.maxScroll
+      : 0
+
+    const scroller = categoryScrollRef.current
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (scroller) scroller.scrollLeft = categoryScrollTargetRef.current
+      return
+    }
+
+    if (categoryScrollFrameRef.current !== null) return
+    const easeScroll = () => {
+      const currentScroller = categoryScrollRef.current
+      if (!currentScroller) {
+        categoryScrollFrameRef.current = null
+        return
+      }
+      const distance = categoryScrollTargetRef.current - currentScroller.scrollLeft
+      if (Math.abs(distance) < 0.5) {
+        currentScroller.scrollLeft = categoryScrollTargetRef.current
+        categoryScrollFrameRef.current = null
+        return
+      }
+      currentScroller.scrollLeft += distance * 0.08
+      categoryScrollFrameRef.current = requestAnimationFrame(easeScroll)
+    }
+    categoryScrollFrameRef.current = requestAnimationFrame(easeScroll)
+  }
+
+  const handleCategoryThumbPointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (categoryDragRef.current?.pointerId !== event.pointerId) return
+    categoryDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const handleCategoryScrollbarKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const scroller = categoryScrollRef.current
+    if (!scroller) return
+    const step = Math.max(40, scroller.clientWidth * 0.15)
+    let target: number | null = null
+    if (event.key === 'ArrowRight') target = Math.min(categoryScrollMetrics.maxScroll, scroller.scrollLeft + step)
+    if (event.key === 'ArrowLeft') target = Math.max(0, scroller.scrollLeft - step)
+    if (event.key === 'Home') target = 0
+    if (event.key === 'End') target = categoryScrollMetrics.maxScroll
+    if (target === null) return
+    event.preventDefault()
+    categoryScrollTargetRef.current = target
+    scroller.scrollTo({ left: target, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }
+
+  useEffect(() => {
+    const scroller = categoryScrollRef.current
+    if (!scroller) return
+    const resizeObserver = new ResizeObserver(updateCategoryScrollMetrics)
+    resizeObserver.observe(scroller)
+    scroller.querySelectorAll(':scope > button').forEach(button => resizeObserver.observe(button))
+    if (categoryTrackRef.current) resizeObserver.observe(categoryTrackRef.current)
+    updateCategoryScrollMetrics()
+    return () => {
+      resizeObserver.disconnect()
+      if (categoryScrollFrameRef.current !== null) cancelAnimationFrame(categoryScrollFrameRef.current)
+    }
+  }, [categories])
 
   useEffect(() => {
     if (activeCategory !== 'hair-accessories') {
@@ -207,25 +336,66 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
         <div className="flex flex-col md:flex-row items-center justify-between gap-4 pb-8 mb-8 border-b border-black/5 dark:border-white/5">
           
           {/* Category Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-none">
-            {categoriesList.map(cat => {
-              const isActive = activeCategory === cat.id
-              return (
+          <div className="min-w-0 w-full flex-1">
+            <div
+              id="category-tabs-list"
+              ref={categoryScrollRef}
+              aria-label="Product categories"
+              onScroll={handleCategoryScroll}
+              className="category-tabs-scroll flex min-w-0 w-full items-center gap-1.5 overflow-x-auto"
+            >
+              {categoriesList.map(cat => {
+                const isActive = activeCategory === cat.id
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => onSelectCategory(cat.id)}
+                    className={`shrink-0 px-4 py-2 rounded-full text-xs font-medium tracking-wide whitespace-nowrap transition-all duration-300 ${
+                      isActive
+                        ? 'bg-[#B36D6D] text-white shadow-xs'
+                        : isDarkMode
+                          ? 'bg-[#251E1D] text-[#CBB8B0] hover:bg-[#322724]'
+                          : 'bg-[#F2E5DF] text-[#5C4B45] hover:bg-[#EAD5CD]'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div
+              ref={categoryTrackRef}
+              aria-hidden={categoryScrollMetrics.maxScroll === 0}
+              className="category-scroll-track mt-3"
+              style={{ opacity: categoryScrollMetrics.maxScroll > 0 ? 1 : 0 }}
+            >
+              {categoryScrollMetrics.maxScroll > 0 && (
                 <button
-                  key={cat.id}
-                  onClick={() => onSelectCategory(cat.id)}
-                  className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide whitespace-nowrap transition-all duration-300 ${
-                    isActive
-                      ? 'bg-[#B36D6D] text-white shadow-xs'
-                      : isDarkMode
-                        ? 'bg-[#251E1D] text-[#CBB8B0] hover:bg-[#322724]'
-                        : 'bg-[#F2E5DF] text-[#5C4B45] hover:bg-[#EAD5CD]'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              )
-            })}
+                  type="button"
+                  role="scrollbar"
+                  aria-label="Scroll product categories"
+                  aria-controls="category-tabs-list"
+                  aria-orientation="horizontal"
+                  aria-valuemin={0}
+                  aria-valuemax={Math.round(categoryScrollMetrics.maxScroll)}
+                  aria-valuenow={Math.round(
+                    categoryScrollMetrics.thumbOffset
+                    / Math.max(1, (categoryTrackRef.current?.clientWidth ?? 0) - categoryScrollMetrics.thumbWidth)
+                    * categoryScrollMetrics.maxScroll
+                  )}
+                  onPointerDown={handleCategoryThumbPointerDown}
+                  onPointerMove={handleCategoryThumbPointerMove}
+                  onPointerUp={handleCategoryThumbPointerEnd}
+                  onPointerCancel={handleCategoryThumbPointerEnd}
+                  onKeyDown={handleCategoryScrollbarKeyDown}
+                  className="category-scroll-thumb"
+                  style={{
+                    width: `${categoryScrollMetrics.thumbWidth}px`,
+                    transform: `translateX(${categoryScrollMetrics.thumbOffset}px)`
+                  }}
+                />
+              )}
+            </div>
           </div>
 
           {/* Sort Dropdown */}
