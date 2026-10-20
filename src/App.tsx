@@ -485,8 +485,7 @@ function StorefrontApp() {
   }
 
   const handleAddWishlistItemToBag = (product: Product) => {
-    setIsWishlistOpen(false)
-    handleAddToCart({
+    const addedToBag = handleAddToCart({
       cartId: `${product.id}_${Date.now()}`,
       productId: product.id,
       name: product.name,
@@ -495,6 +494,10 @@ function StorefrontApp() {
       imageUrl: product.imageUrl,
       finish: product.availableFinishes ? product.availableFinishes[0] : undefined
     })
+    if (addedToBag) {
+      setWishlist(current => current.filter(productId => productId !== product.id))
+      setIsWishlistOpen(false)
+    }
   }
 
   const handleUpdateQuantity = (cartId: string, delta: number) => {
