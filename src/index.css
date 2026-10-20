@@ -389,7 +389,7 @@
 
 .top-search-control {
   width: 40px;
-  transition: width 780ms cubic-bezier(0.22, 1, 0.36, 1), border-color 300ms ease, background-color 300ms ease;
+  transition: width 700ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .top-search-control.top-search-hovered,
@@ -401,30 +401,39 @@
   width: min(14rem, 55vw);
 }
 
+.top-search-trigger {
+  position: relative;
+  justify-content: flex-start;
+  padding-left: 11px;
+}
+
 .top-search-icon {
-  transition: translate 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  flex: 0 0 16px;
+  transition: scale 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.top-search-trigger:hover .top-search-icon,
+.top-search-trigger:focus-visible .top-search-icon {
+  scale: 1.08;
 }
 
 .top-search-label {
+  position: absolute;
+  top: 50%;
+  left: 35px;
   max-width: 0;
-  margin-left: 0;
   overflow: hidden;
   opacity: 0;
   white-space: nowrap;
   font-size: 11px;
   font-weight: 500;
-  transition: max-width 700ms cubic-bezier(0.22, 1, 0.36, 1), margin-left 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 500ms ease;
-}
-
-.top-search-trigger:hover .top-search-icon,
-.top-search-trigger:focus-visible .top-search-icon {
-  translate: -6px 0;
+  translate: 0 -50%;
+  transition: max-width 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 500ms ease;
 }
 
 .top-search-trigger:hover .top-search-label,
 .top-search-trigger:focus-visible .top-search-label {
   max-width: 48px;
-  margin-left: 6px;
   opacity: 1;
 }
 
@@ -545,7 +554,7 @@
   }
 
   .top-search-control {
-    transition-duration: 780ms !important;
+    transition-duration: 700ms !important;
   }
 
   .top-search-icon,

@@ -127,33 +127,41 @@ export const Navigation: React.FC<NavigationProps> = ({
 
   const selectSearchResult = (product: Product) => {
     onSelectProduct(product)
-    onSearchChange('')
     setIsSearchOpen(false)
+    setIsSearchHovered(false)
+    onSearchChange('')
+  }
+
+  const closeSearch = () => {
+    setIsSearchOpen(false)
+    setIsSearchHovered(false)
+    onSearchChange('')
   }
 
   const renderSearchControl = () => (
     <div
       onMouseEnter={() => setIsSearchHovered(true)}
       onMouseLeave={() => setIsSearchHovered(false)}
-      onFocus={() => setIsSearchHovered(true)}
-      onBlur={() => setIsSearchHovered(false)}
-      className={`top-search-control relative flex h-10 items-center overflow-visible rounded-full border ${
+      className={`top-search-control relative flex h-10 items-center overflow-visible rounded-full ${
         isSearchOpen ? 'top-search-open' : isSearchHovered ? 'top-search-hovered' : ''
-      } ${
-        isSearchOpen
-          ? isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-white'
-          : 'border-transparent'
       }`}
     >
       <AnimatePresence initial={false}>
         {isSearchOpen && (
           <motion.form
-            initial={{ opacity: 0, width: 0 }}
-            animate={{ opacity: 1, width: '100%' }}
-            exit={{ opacity: 0, width: 0 }}
-            transition={{ duration: 0.24 }}
+            key="search-form"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0, scaleX: 0.9 }}
+            transition={{
+              opacity: { duration: 0.5, ease: [0.4, 0, 0.2, 1] },
+              scaleX: { duration: 0.55, ease: [0.4, 0, 0.2, 1] }
+            }}
+            style={{ transformOrigin: 'left center' }}
             onSubmit={event => { event.preventDefault(); onSearchSubmit() }}
-            className="absolute inset-y-0 left-0 flex items-center"
+            className={`absolute inset-0 flex items-center rounded-full ${
+              isDarkMode ? 'bg-[#211B19]' : 'bg-white'
+            }`}
           >
             <input
               autoFocus
@@ -168,7 +176,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             />
             <button
               type="button"
-              onClick={() => { setIsSearchOpen(false); onSearchChange('') }}
+              onClick={closeSearch}
               aria-label="Close product search"
               className="absolute right-2 rounded-full p-1 text-[#96827C] hover:text-[#B36D6D]"
             >
@@ -214,7 +222,10 @@ export const Navigation: React.FC<NavigationProps> = ({
         )}
       </AnimatePresence>
       {!isSearchOpen && (
-        <button
+        <motion.button
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.32, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
           type="button"
           onClick={() => setIsSearchOpen(true)}
           aria-label="Search products"
@@ -224,7 +235,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         >
           <Search className="top-search-icon h-4 w-4 shrink-0" />
           <span className="top-search-label">Search</span>
-        </button>
+        </motion.button>
       )}
     </div>
   )
@@ -432,7 +443,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             Home
             {activeTab === 'home' && (
-              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
+              <motion.div
+                layoutId="navIndicator"
+                transition={{ type: 'spring', stiffness: 180, damping: 24, mass: 1.15 }}
+                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]"
+              />
             )}
           </button>
           <button
@@ -445,7 +460,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             Collection
             {activeTab === 'shop' && (
-              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
+              <motion.div
+                layoutId="navIndicator"
+                transition={{ type: 'spring', stiffness: 180, damping: 24, mass: 1.15 }}
+                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]"
+              />
             )}
           </button>
           <button
@@ -459,7 +478,11 @@ export const Navigation: React.FC<NavigationProps> = ({
             <Sparkles className="h-3.5 w-3.5 text-[#B36D6D]" />
             Custom Gift Studio
             {activeTab === 'builder' && (
-              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
+              <motion.div
+                layoutId="navIndicator"
+                transition={{ type: 'spring', stiffness: 180, damping: 24, mass: 1.15 }}
+                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]"
+              />
             )}
           </button>
           <button
@@ -472,7 +495,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             Our Story
             {activeTab === 'story' && (
-              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
+              <motion.div
+                layoutId="navIndicator"
+                transition={{ type: 'spring', stiffness: 180, damping: 24, mass: 1.15 }}
+                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]"
+              />
             )}
           </button>
           </nav>
