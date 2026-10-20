@@ -152,87 +152,72 @@ export const Hero: React.FC<HeroProps> = ({
           </div>
 
           {/* Right Column: Hero Visual with Gentle 3D Tilt */}
-          <div className="lg:col-span-6 relative flex justify-center items-center">
-            <motion.div
-              style={{
-                rotateX: imageRotateX,
-                rotateY: imageRotateY,
-                transformPerspective: 1000
-              }}
-              transition={{ type: 'spring', damping: 25 }}
-              className="relative w-full max-w-lg aspect-[4/3] sm:aspect-[16/11] rounded-3xl overflow-hidden shadow-2xl border border-black/5 dark:border-white/10 group"
-            >
-              <img
-                src="https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=1200&q=80"
-                alt="AUREL bespoke memory magazine opened on a limestone table with florals"
-                referrerPolicy="no-referrer"
-                fetchPriority="high"
-                decoding="async"
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+          <div className="lg:col-span-6 relative flex flex-col justify-center items-center">
+            <div className="relative flex w-full justify-center items-center">
+              <div
+                aria-hidden="true"
+                className={`absolute -inset-[1.35rem] rounded-[3rem] blur-3xl transition-colors duration-700 ease-in-out ${
+                  isDarkMode ? 'bg-[#F3E6C8]/40' : 'bg-[#F2AFC4]/50'
+                }`}
               />
+              <motion.div
+                style={{
+                  rotateX: imageRotateX,
+                  rotateY: imageRotateY,
+                  transformPerspective: 1000
+                }}
+                transition={{ type: 'spring', damping: 25 }}
+                className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden shadow-2xl border border-black/5 dark:border-white/10"
+              >
+                <img
+                  src="/hero-image.png"
+                  alt="AUREL bespoke memory magazine opened on a limestone table with florals"
+                  referrerPolicy="no-referrer"
+                  fetchPriority="high"
+                  decoding="async"
+                  className="w-full h-full object-contain"
+                />
+              </motion.div>
 
-              {/* Ambient Glass Scrim */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent pointer-events-none" />
-
-              {/* Live Editorial Overlay Tag */}
-              <div className="absolute bottom-6 left-6 right-6 p-4 rounded-2xl bg-white/85 dark:bg-[#1D1716]/85 backdrop-blur-md border border-white/30 dark:border-white/10 shadow-lg flex items-center justify-between">
+              {/* Floating Keepsake Accent Badge 1 */}
+              <motion.div
+                style={{ x: floatMoveX, y: floatMoveY }}
+                className="absolute -top-4 -right-2 sm:-right-4 px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-[#251E1C]/95 backdrop-blur-md shadow-xl border border-[#E8D4CD]/60 dark:border-[#423430] hidden sm:flex items-center gap-3"
+              >
+                <span className="p-2 rounded-xl bg-[#F6ECE8] dark:bg-[#342724] text-[#B36D6D]">
+                  <Heart className="w-4 h-4 fill-current" />
+                </span>
                 <div>
-                  <span className="text-[10px] uppercase tracking-widest text-[#B36D6D] font-semibold">
-                    The Keepsake Edition
-                  </span>
-                  <h3 className="font-serif-title text-base font-medium text-[#292220] dark:text-[#F3EBE6]">
-                    Ananya and Vikram · First Anniversary
-                  </h3>
-                  <p className="text-xs text-[#7B6862] dark:text-[#A99892]">
-                    Available in Velvet Matte & Radiant Gloss
-                  </p>
-                </div>
-                <div className="text-right">
-                  <span className="text-xs font-semibold text-[#B36D6D] tabular-nums">
-                    ₹849
-                  </span>
-                  <div className="text-[10px] text-[#8E7C76] dark:text-[#9F8C86]">
-                    5.0 ★ (188 reviews)
+                  <div className="font-serif-title text-xs font-medium text-[#2C2321] dark:text-[#EFE5E0]">
+                    Handcrafted with warmth
+                  </div>
+                  <div className="text-[10px] text-[#8C7A74] dark:text-[#A4938D]">
+                    Every detail chosen with care
                   </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
 
-            {/* Floating Keepsake Accent Badge 1 */}
-            <motion.div
-              style={{ x: floatMoveX, y: floatMoveY }}
-              className="absolute -top-4 -right-2 sm:-right-4 px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-[#251E1C]/95 backdrop-blur-md shadow-xl border border-[#E8D4CD]/60 dark:border-[#423430] hidden sm:flex items-center gap-3"
-            >
-              <span className="p-2 rounded-xl bg-[#F6ECE8] dark:bg-[#342724] text-[#B36D6D]">
-                <Heart className="w-4 h-4 fill-current" />
-              </span>
-              <div>
-                <div className="font-serif-title text-xs font-medium text-[#2C2321] dark:text-[#EFE5E0]">
-                  Handcrafted with warmth
+              {/* Floating Keepsake Accent Badge 2 */}
+              <motion.div
+                style={{ x: floatMoveX, y: floatMoveY }}
+                className="absolute -bottom-4 -left-2 sm:-left-4 px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-[#251E1C]/95 backdrop-blur-md shadow-xl border border-[#E8D4CD]/60 dark:border-[#423430] hidden sm:flex items-center gap-3"
+              >
+                <span className="p-2 rounded-xl bg-[#F6ECE8] dark:bg-[#342724] text-[#B36D6D]">
+                  <Gift className="w-4 h-4" />
+                </span>
+                <div>
+                  <div className="font-serif-title text-xs font-medium text-[#2C2321] dark:text-[#EFE5E0]">
+                    Complimentary Gift Wrapping
+                  </div>
+                  <div className="text-[10px] text-[#8C7A74] dark:text-[#A4938D]">
+                    Signature blush ribbon & wax seal
+                  </div>
                 </div>
-                <div className="text-[10px] text-[#8C7A74] dark:text-[#A4938D]">
-                  Every detail chosen with care
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Floating Keepsake Accent Badge 2 */}
-            <motion.div
-              style={{ x: floatMoveX, y: floatMoveY }}
-              className="absolute -bottom-4 -left-2 sm:-left-4 px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-[#251E1C]/95 backdrop-blur-md shadow-xl border border-[#E8D4CD]/60 dark:border-[#423430] hidden sm:flex items-center gap-3"
-            >
-              <span className="p-2 rounded-xl bg-[#F6ECE8] dark:bg-[#342724] text-[#B36D6D]">
-                <Gift className="w-4 h-4" />
-              </span>
-              <div>
-                <div className="font-serif-title text-xs font-medium text-[#2C2321] dark:text-[#EFE5E0]">
-                  Complimentary Gift Wrapping
-                </div>
-                <div className="text-[10px] text-[#8C7A74] dark:text-[#A4938D]">
-                  Signature blush ribbon & wax seal
-                </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
+            <p className="mt-6 text-center font-editorial text-lg italic text-[#8E5E58] dark:text-[#D5AFA7] sm:text-xl">
+              Let all your memories be as beautiful as this one.
+            </p>
           </div>
 
         </div>

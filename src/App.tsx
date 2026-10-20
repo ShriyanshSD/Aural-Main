@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { Sparkles } from 'lucide-react'
@@ -127,6 +127,8 @@ const readSignupResumeState = (): SignupResumeState | null => {
 
 function StorefrontApp() {
   const [signupResume] = useState(readSignupResumeState)
+  const scrollAnimationRef = useRef<number | null>(null)
+  const originalScrollBehaviorRef = useRef<string | null>(null)
   // Theme state
   const [isDarkMode, setIsDarkMode] = useState(signupResume?.isDarkMode ?? false)
 
@@ -166,7 +168,7 @@ function StorefrontApp() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false)
 
   // Sync dark mode class on html/body
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isDarkMode) {
       document.documentElement.classList.add('dark')
     } else {
@@ -365,6 +367,44 @@ function StorefrontApp() {
   const totalBagCount = cartItems.reduce((acc, item) => acc + item.quantity, 0)
 
   // Handlers
+  const smoothScrollTo = (target: number | HTMLElement) => {
+    if (scrollAnimationRef.current !== null) {
+      cancelAnimationFrame(scrollAnimationRef.current)
+      scrollAnimationRef.current = null
+      document.documentElement.style.scrollBehavior = originalScrollBehaviorRef.current ?? ''
+    }
+
+    const startY = window.scrollY
+    const targetY = Math.max(0, Math.min(
+      typeof target === 'number' ? target : startY + target.getBoundingClientRect().top,
+      document.documentElement.scrollHeight - window.innerHeight
+    ))
+    const distance = targetY - startY
+    const duration = 900
+    const startTime = performance.now()
+    const previousScrollBehavior = document.documentElement.style.scrollBehavior
+    originalScrollBehaviorRef.current = previousScrollBehavior
+    document.documentElement.style.scrollBehavior = 'auto'
+
+    const animateScroll = (now: number) => {
+      const progress = Math.min((now - startTime) / duration, 1)
+      const easedProgress = progress < 0.5
+        ? 8 * progress ** 4
+        : 1 - ((-2 * progress + 2) ** 4) / 2
+      window.scrollTo({ top: startY + distance * easedProgress, behavior: 'instant' })
+
+      if (progress < 1) {
+        scrollAnimationRef.current = requestAnimationFrame(animateScroll)
+      } else {
+        scrollAnimationRef.current = null
+        document.documentElement.style.scrollBehavior = originalScrollBehaviorRef.current ?? previousScrollBehavior
+        originalScrollBehaviorRef.current = null
+      }
+    }
+
+    scrollAnimationRef.current = requestAnimationFrame(animateScroll)
+  }
+
   const handleToggleTheme = () => {
     const updateTheme = () => setIsDarkMode(prev => !prev)
     const transitionDocument = document as Document & {
@@ -381,7 +421,8 @@ function StorefrontApp() {
     setActiveCategory(category)
     setActiveTab('shop')
     requestAnimationFrame(() => {
-      document.getElementById('collection-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const collection = document.getElementById('collection-grid')
+      if (collection) smoothScrollTo(collection)
     })
   }
 
@@ -559,7 +600,14 @@ function StorefrontApp() {
         onToggleTheme={handleToggleTheme}
         onOpenSidebar={() => setIsSidebarOpen(true)}
         onOpenBag={() => setIsBagOpen(true)}
-        onOpenWishlist={() => setIsWishlistOpen(true)}
+        onOpenWishlist={() => {
+          if (authUser) {
+            setIsWishlistOpen(true)
+          } else {
+            setAuthMode('login')
+            setIsAuthOpen(true)
+          }
+        }}
         bagCount={totalBagCount}
         wishlistCount={wishlist.length}
         searchQuery={searchQuery}
@@ -574,7 +622,8 @@ function StorefrontApp() {
           setActiveCategory('all')
           setActiveTab('shop')
           requestAnimationFrame(() => {
-            document.getElementById('collection-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            const collection = document.getElementById('collection-grid')
+            if (collection) smoothScrollTo(collection)
           })
         }}
         onSelectProduct={product => {
@@ -589,17 +638,17 @@ function StorefrontApp() {
             setActiveCategory('all')
           }
           if (tab === 'home') {
-            window.scrollTo({ top: 0, behavior: 'smooth' })
+            smoothScrollTo(0)
           } else if (tab === 'shop') {
             const el = document.getElementById('collection-grid')
-            if (el) el.scrollIntoView({ behavior: 'smooth' })
+            if (el) smoothScrollTo(el)
           } else if (tab === 'story') {
             const el = document.getElementById('our-story')
-            if (el) el.scrollIntoView({ behavior: 'smooth' })
+            if (el) smoothScrollTo(el)
           } else if (tab === 'contact') {
             setIsChatbotOpen(true)
             const el = document.getElementById('concierge')
-            if (el) el.scrollIntoView({ behavior: 'smooth' })
+            if (el) smoothScrollTo(el)
           }
         }}
         onOpenBuilder={() => setActiveTab('builder')}
@@ -652,12 +701,12 @@ function StorefrontApp() {
         onOpenStory={() => {
           setActiveTab('story')
           const el = document.getElementById('our-story')
-          if (el) el.scrollIntoView({ behavior: 'smooth' })
+          if (el) smoothScrollTo(el)
         }}
         onOpenConcierge={() => {
           setIsChatbotOpen(true)
           const el = document.getElementById('concierge')
-          if (el) el.scrollIntoView({ behavior: 'smooth' })
+          if (el) smoothScrollTo(el)
         }}
         onOpenChatbot={() => setIsChatbotOpen(true)}
         activeCategory={activeCategory}
@@ -706,7 +755,7 @@ function StorefrontApp() {
                   isDarkMode={isDarkMode}
                   onExplore={() => {
                     const el = document.getElementById('collection-grid')
-                    if (el) el.scrollIntoView({ behavior: 'smooth' })
+                    if (el) smoothScrollTo(el)
                   }}
                   onCreateMemory={() => setActiveTab('builder')}
                 />
@@ -736,7 +785,6 @@ function StorefrontApp() {
                 wishlist={wishlist}
                 onToggleWishlist={handleToggleWishlist}
                 searchQuery={searchQuery}
-                isAuthenticated={Boolean(authUser)}
               />
             </LazyViewport>
 
@@ -753,7 +801,7 @@ function StorefrontApp() {
                     isDarkMode={isDarkMode}
                     onExploreGifts={() => {
                       const el = document.getElementById('collection-grid')
-                      if (el) el.scrollIntoView({ behavior: 'smooth' })
+                      if (el) smoothScrollTo(el)
                     }}
                   />
                 </LazyViewport>
@@ -812,7 +860,7 @@ function StorefrontApp() {
         }}
         onExplore={() => {
           const el = document.getElementById('collection-grid')
-          if (el) el.scrollIntoView({ behavior: 'smooth' })
+          if (el) smoothScrollTo(el)
         }}
       /></DeferredMount>
 
@@ -913,14 +961,14 @@ function StorefrontApp() {
             setActiveTab('home')
             setTimeout(() => {
               const el = document.getElementById('our-story')
-              if (el) el.scrollIntoView({ behavior: 'smooth' })
+              if (el) smoothScrollTo(el)
             }, 100)
           }}
           onOpenConcierge={() => {
             setActiveTab('home')
             setTimeout(() => {
               const el = document.getElementById('concierge')
-              if (el) el.scrollIntoView({ behavior: 'smooth' })
+              if (el) smoothScrollTo(el)
             }, 100)
           }}
         />

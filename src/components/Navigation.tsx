@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, Settings, X } from 'lucide-react'
 import { AuthUser, Product, StoreSettings } from '../types'
@@ -28,6 +28,41 @@ interface NavigationProps {
   settings: StoreSettings
 }
 
+interface WishlistActionProps {
+  isDarkMode: boolean
+  wishlistCount: number
+  onOpenWishlist: () => void
+}
+
+const WishlistAction: React.FC<WishlistActionProps> = ({ isDarkMode, wishlistCount, onOpenWishlist }) => {
+  return (
+    <button
+      type="button"
+      onClick={onOpenWishlist}
+      aria-label={`Open wishlist${wishlistCount ? ` with ${wishlistCount} items` : ''}`}
+      className={`wishlist-expand group relative flex h-10 shrink-0 items-center justify-center overflow-hidden rounded-full ${
+        isDarkMode ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
+      }`}
+    >
+      <span
+        className={`wishlist-heart shrink-0 ${wishlistCount > 0 ? 'is-wishlisted' : ''}`}
+      >
+        <Heart className={`h-4 w-4 ${wishlistCount > 0 ? 'fill-current' : ''}`} />
+      </span>
+      <span
+        className="wishlist-label overflow-hidden whitespace-nowrap text-xs font-medium"
+      >
+        Wishlist
+      </span>
+      {wishlistCount > 0 && (
+        <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#B36D6D] px-1 text-[9px] font-semibold text-white">
+          {wishlistCount}
+        </span>
+      )}
+    </button>
+  )
+}
+
 export const Navigation: React.FC<NavigationProps> = ({
   isDarkMode,
   onToggleTheme,
@@ -52,7 +87,35 @@ export const Navigation: React.FC<NavigationProps> = ({
   settings
 }) => {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [isCompactProfileOpen, setIsCompactProfileOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+  const compactProfileMenuRef = useRef<HTMLDivElement>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isSearchHovered, setIsSearchHovered] = useState(false)
+  const [isHeaderHidden, setIsHeaderHidden] = useState(() => window.scrollY > 24)
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsHeaderHidden(window.scrollY > 24)
+      setIsProfileOpen(false)
+      setIsCompactProfileOpen(false)
+    }
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (profileMenuRef.current?.contains(target) || compactProfileMenuRef.current?.contains(target)) return
+      setIsProfileOpen(false)
+      setIsCompactProfileOpen(false)
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      document.removeEventListener('pointerdown', handleOutsidePointerDown)
+    }
+  }, [])
+
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
     if (!query) return []
@@ -68,15 +131,236 @@ export const Navigation: React.FC<NavigationProps> = ({
     setIsSearchOpen(false)
   }
 
+  const renderSearchControl = () => (
+    <div
+      onMouseEnter={() => setIsSearchHovered(true)}
+      onMouseLeave={() => setIsSearchHovered(false)}
+      onFocus={() => setIsSearchHovered(true)}
+      onBlur={() => setIsSearchHovered(false)}
+      className={`top-search-control relative flex h-10 items-center overflow-visible rounded-full border ${
+        isSearchOpen ? 'top-search-open' : isSearchHovered ? 'top-search-hovered' : ''
+      } ${
+        isSearchOpen
+          ? isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-white'
+          : 'border-transparent'
+      }`}
+    >
+      <AnimatePresence initial={false}>
+        {isSearchOpen && (
+          <motion.form
+            initial={{ opacity: 0, width: 0 }}
+            animate={{ opacity: 1, width: '100%' }}
+            exit={{ opacity: 0, width: 0 }}
+            transition={{ duration: 0.24 }}
+            onSubmit={event => { event.preventDefault(); onSearchSubmit() }}
+            className="absolute inset-y-0 left-0 flex items-center"
+          >
+            <input
+              autoFocus
+              type="search"
+              value={searchQuery}
+              onChange={event => onSearchChange(event.target.value)}
+              placeholder="Search gifts..."
+              aria-label="Search products"
+              className={`h-full w-full rounded-full bg-transparent pl-4 pr-10 text-xs outline-none ${
+                isDarkMode ? 'text-[#F3EBE6] placeholder:text-[#A7958F]' : 'text-[#2C2523] placeholder:text-[#96827C]'
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => { setIsSearchOpen(false); onSearchChange('') }}
+              aria-label="Close product search"
+              className="absolute right-2 rounded-full p-1 text-[#96827C] hover:text-[#B36D6D]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            {searchQuery.trim() && (
+              <div className={`absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border p-1 shadow-xl ${
+                isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-[#FFFCF9]'
+              }`}>
+                {searchResults.length ? searchResults.map(product => (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => selectSearchResult(product)}
+                    className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-[#B36D6D]/10"
+                  >
+                    <img
+                      src={product.imageUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-medium">{product.name}</span>
+                      <span className="block truncate text-[10px] text-[#96827C]">
+                        {product.price > 0 ? `₹${product.price.toLocaleString('en-IN')}` : 'Price on request'}
+                      </span>
+                    </span>
+                  </button>
+                )) : (
+                  <p className="px-3 py-4 text-center text-xs text-[#96827C]">No matching gifts found.</p>
+                )}
+                <button
+                  type="submit"
+                  className="w-full rounded-xl px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#B36D6D] hover:bg-[#B36D6D]/10"
+                >
+                  See all matching gifts
+                </button>
+              </div>
+            )}
+          </motion.form>
+        )}
+      </AnimatePresence>
+      {!isSearchOpen && (
+        <button
+          type="button"
+          onClick={() => setIsSearchOpen(true)}
+          aria-label="Search products"
+          className={`top-search-trigger flex h-10 w-full shrink-0 items-center justify-center rounded-full transition-colors ${
+            isDarkMode ? 'text-[#E5D7D0] hover:bg-[#2A2422]' : 'text-[#4A3C38] hover:bg-[#F2E5DF]'
+          }`}
+        >
+          <Search className="top-search-icon h-4 w-4 shrink-0" />
+          <span className="top-search-label">Search</span>
+        </button>
+      )}
+    </div>
+  )
+
+  const renderBagButton = (compact = false) => (
+    <motion.button
+      whileTap={{ scale: 0.92 }}
+      onClick={onOpenBag}
+      aria-label={`View shopping bag${bagCount ? ` with ${bagCount} items` : ''}`}
+      className={`compact-action-expand compact-action-bag relative flex shrink-0 items-center justify-center rounded-full transition-colors ${
+        isDarkMode ? 'bg-[#2A2422] text-[#F3EBE6] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#5D4640] hover:bg-[#EAD5CD]'
+      }`}
+    >
+      <span className="compact-action-icon"><ShoppingBag className="h-4 w-4" /></span>
+      <span className="compact-action-label">Bag</span>
+      {bagCount > 0 && (
+        <motion.span
+          key={bagCount}
+          initial={{ scale: 0.5, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+          className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#B36D6D] px-1 text-[9px] font-semibold text-white"
+        >
+          {bagCount}
+        </motion.span>
+      )}
+    </motion.button>
+  )
+
+  const renderAccountMenu = (compact = false) => {
+    const setMenuOpen = compact ? setIsCompactProfileOpen : setIsProfileOpen
+
+    return (
+    <div ref={compact ? compactProfileMenuRef : profileMenuRef} className="relative">
+      <motion.button
+        whileTap={{ scale: 0.92 }}
+        onClick={() => (compact ? setIsCompactProfileOpen : setIsProfileOpen)(open => !open)}
+        aria-expanded={compact ? isCompactProfileOpen : isProfileOpen}
+        aria-label={user ? 'Open profile menu' : 'Open account menu'}
+        className={`compact-action-expand compact-action-account relative flex shrink-0 items-center justify-center overflow-hidden rounded-full transition-colors ${
+          isDarkMode ? 'bg-[#2A2422] text-[#F3EBE6] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#5D4640] hover:bg-[#EAD5CD]'
+        }`}
+      >
+        <span className={`compact-action-icon ${compact ? 'compact-action-icon-compact h-4 w-4' : 'h-8 w-8 rounded-full'} flex items-center justify-center text-xs font-semibold ${
+          compact
+            ? 'text-[#B36D6D]'
+            : isDarkMode ? 'bg-[#493936] text-[#F3EBE6]' : 'bg-[#EAD5CD] text-[#6B524C]'
+        }`}>
+          {user ? user.name.trim().charAt(0).toUpperCase() : <UserRound className="h-4 w-4 text-[#B36D6D]" />}
+        </span>
+        <span className="compact-action-label">Account</span>
+      </motion.button>
+      <AnimatePresence>
+        {(compact ? isCompactProfileOpen : isProfileOpen) && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.97 }}
+            transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className={`absolute right-0 top-full z-50 mt-3 w-72 origin-top-right rounded-2xl border p-4 shadow-xl ${
+              isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-[#FFFCF9]'
+            }`}
+          >
+            {user ? (
+              <>
+                <div className="border-b border-black/5 pb-3 dark:border-white/10">
+                  <p className="font-serif-title text-lg">Hello, {user.name}</p>
+                  <p className="text-xs text-[#8E7973] dark:text-[#A79690]">@{user.username}</p>
+                </div>
+                <dl className="mt-3 space-y-2 text-xs">
+                  <div><dt className="text-[#9A8781]">Email</dt><dd className="break-all">{user.email}</dd></div>
+                </dl>
+                <button
+                  onClick={() => { setMenuOpen(false); onOpenProfile() }}
+                  className="mt-3 flex w-full items-center gap-2 rounded-xl bg-[#B36D6D]/10 px-3 py-2.5 text-xs font-semibold text-[#B36D6D] transition-colors hover:bg-[#B36D6D]/15"
+                >
+                  <UserRound className="h-4 w-4" /> My Profile
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onOpenSettings() }}
+                  className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-colors hover:bg-[#B36D6D]/10"
+                >
+                  <Settings className="h-4 w-4" /> Settings
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onLogout() }}
+                  className="mt-1 flex w-full items-center gap-2 border-t border-black/5 pt-3 text-xs font-semibold text-[#B36D6D] dark:border-white/10"
+                >
+                  <LogOut className="h-4 w-4" /> Logout
+                </button>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="px-2 pb-1 font-serif-title text-base">Your AUREL account</p>
+                <button
+                  onClick={() => { setMenuOpen(false); onOpenAuth('signup') }}
+                  className="w-full rounded-xl bg-[#B36D6D] px-3 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-[#9E5B5B]"
+                >
+                  Create account
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onOpenAuth('login') }}
+                  className={`w-full rounded-xl px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    isDarkMode ? 'text-[#E5D7D0] hover:bg-white/5' : 'text-[#6B524C] hover:bg-[#F6EAE5]'
+                  }`}
+                >
+                  Sign in
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+    )
+  }
+
   return (
-    <header className={`theme-surface sticky top-0 z-40 backdrop-blur-md border-b ${
-      isDarkMode 
-        ? 'bg-[#181615]/90 border-[#322A28] text-[#F3EBE6]' 
-        : 'bg-[#FAF7F2]/90 border-[#EAD5CD]/60 text-[#2C2523]'
+    <>
+    <div aria-hidden="true" className="h-[4.5rem] lg:h-32" />
+    <header className={`nav-hide-reveal theme-surface fixed inset-x-0 top-0 z-40 px-2 pb-3 transition-transform duration-700 ease-in-out sm:px-6 lg:px-8 ${
+      isHeaderHidden ? 'pointer-events-none -translate-y-full' : 'translate-y-0'
     }`}>
-      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-2 sm:gap-3">
-        {/* Left Zone: Menu button & Brand Wordmark */}
-        <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+      <div className="mx-auto max-w-7xl">
+        <div className="relative">
+          {!isHeaderHidden && (
+            <motion.div
+              aria-hidden="true"
+              className={`absolute inset-x-0 top-0 h-14 rounded-full border shadow-lg backdrop-blur-xl transition-colors duration-500 ${
+                isDarkMode
+                  ? 'border-white/10 bg-[#211B19]/65 shadow-black/10'
+                  : 'border-white/60 bg-white/55 shadow-[#6B524C]/10'
+              }`}
+            />
+          )}
+          <div className="relative z-10 flex h-14 items-center justify-between gap-2 px-2 sm:px-4">
           <button
             onClick={onOpenSidebar}
             aria-label="Open sidebar menu"
@@ -92,19 +376,52 @@ export const Navigation: React.FC<NavigationProps> = ({
 
           <button
             onClick={() => onSelectTab('home')}
-            className="group flex flex-col items-start text-left"
+            aria-label="AUREL home"
+            className="absolute left-1/2 flex h-12 w-20 -translate-x-1/2 items-center justify-center sm:h-[3.25rem] sm:w-[100px]"
           >
-            <span className="font-serif-title text-xl tracking-[0.16em] font-light transition-opacity duration-300 group-hover:opacity-80 sm:text-3xl sm:tracking-[0.25em]">
-              {settings.storeName}
-            </span>
-            <span className="font-editorial text-[10px] tracking-widest text-[#B36D6D] uppercase hidden sm:block">
-              {settings.tagline}
-            </span>
+            {isDarkMode ? (
+              <span className="brand-logo-salmon h-full w-full" role="img" aria-label="AUREL" />
+            ) : (
+              <img
+                src="/aurel-logo.png"
+                alt="AUREL"
+                className="h-full w-full object-contain transition-opacity duration-300 hover:opacity-80"
+              />
+            )}
           </button>
+
+        {/* Search and primary quick actions */}
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-3">
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            onClick={onToggleTheme}
+            aria-label="Toggle light and dark mode"
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ${
+              isDarkMode
+                ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]'
+                : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
+            }`}
+          >
+            {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </motion.button>
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+            <WishlistAction isDarkMode={isDarkMode} wishlistCount={wishlistCount} onOpenWishlist={onOpenWishlist} />
+            {renderBagButton()}
+            {renderAccountMenu()}
+          </div>
+        </div>
         </div>
 
         {/* Center Zone: Clean editorial text links */}
-        <nav className="hidden min-w-0 flex-1 items-center justify-center gap-2 whitespace-nowrap text-[11px] font-medium font-sans-body xl:flex xl:gap-3 xl:text-xs 2xl:gap-3 2xl:text-xs">
+        <div className="relative mt-2 flex min-h-11 items-center justify-center">
+          <div className="absolute right-0 z-20 lg:left-[calc(50%+17rem)] lg:right-auto">
+            {renderSearchControl()}
+          </div>
+          <nav className={`hidden w-fit min-w-[28rem] items-center justify-center gap-6 whitespace-nowrap rounded-full border px-8 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 lg:flex ${
+            isDarkMode
+              ? 'border-white/10 bg-[#211B19]/65 text-[#F3EBE6] shadow-black/10'
+              : 'border-white/60 bg-white/55 text-[#2C2523] shadow-[#6B524C]/10'
+          }`}>
           <button
             onClick={() => onSelectTab('home')}
             className={`relative whitespace-nowrap py-1 transition-colors ${
@@ -115,13 +432,9 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             Home
             {activeTab === 'home' && (
-              <motion.div 
-                layoutId="navIndicator" 
-                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" 
-              />
+              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
             )}
           </button>
-
           <button
             onClick={() => onSelectTab('shop')}
             className={`relative whitespace-nowrap py-1 transition-colors ${
@@ -132,13 +445,9 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             Collection
             {activeTab === 'shop' && (
-              <motion.div 
-                layoutId="navIndicator" 
-                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" 
-              />
+              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
             )}
           </button>
-
           <button
             onClick={onOpenBuilder}
             className={`relative flex items-center gap-1.5 whitespace-nowrap py-1 transition-colors ${
@@ -147,16 +456,12 @@ export const Navigation: React.FC<NavigationProps> = ({
                 : isDarkMode ? 'text-[#C7B7AF] hover:text-white' : 'text-[#6B5A55] hover:text-[#2C2523]'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-[#B36D6D]" />
+            <Sparkles className="h-3.5 w-3.5 text-[#B36D6D]" />
             Custom Gift Studio
             {activeTab === 'builder' && (
-              <motion.div 
-                layoutId="navIndicator" 
-                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" 
-              />
+              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
             )}
           </button>
-
           <button
             onClick={() => onSelectTab('story')}
             className={`relative whitespace-nowrap py-1 transition-colors ${
@@ -167,234 +472,29 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             Our Story
             {activeTab === 'story' && (
-              <motion.div 
-                layoutId="navIndicator" 
-                className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" 
-              />
+              <motion.div layoutId="navIndicator" className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]" />
             )}
           </button>
-
-        </nav>
-
-        {/* Right Zone: Theme Toggle & Animated Bag Button */}
-        <div className="flex shrink-0 items-center gap-1 sm:gap-3">
-          <motion.div
-            layout
-            animate={{ width: isSearchOpen ? 'min(14rem, 55vw)' : 36 }}
-            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-            className={`relative flex h-9 items-center overflow-visible rounded-full border sm:h-10 ${
-              isSearchOpen
-                ? isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-white'
-                : 'border-transparent'
-            }`}
-          >
-            <AnimatePresence initial={false}>
-              {isSearchOpen && (
-                <motion.form
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: '100%' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.24 }}
-                  onSubmit={event => { event.preventDefault(); onSearchSubmit() }}
-                  className="absolute inset-y-0 left-0 flex items-center"
-                >
-                  <input
-                    autoFocus
-                    type="search"
-                    value={searchQuery}
-                    onChange={event => onSearchChange(event.target.value)}
-                    placeholder="Search gifts..."
-                    aria-label="Search products"
-                    className={`h-full w-full rounded-full bg-transparent pl-4 pr-10 text-xs outline-none ${
-                      isDarkMode ? 'text-[#F3EBE6] placeholder:text-[#A7958F]' : 'text-[#2C2523] placeholder:text-[#96827C]'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => { setIsSearchOpen(false); onSearchChange('') }}
-                    aria-label="Close product search"
-                    className="absolute right-2 rounded-full p-1 text-[#96827C] hover:text-[#B36D6D]"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                  {searchQuery.trim() && (
-                    <div className={`absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border p-1 shadow-xl ${
-                      isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-[#FFFCF9]'
-                    }`}>
-                      {searchResults.length ? searchResults.map(product => (
-                        <button
-                          key={product.id}
-                          type="button"
-                          onClick={() => selectSearchResult(product)}
-                          className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-[#B36D6D]/10"
-                        >
-                          <img
-                            src={product.imageUrl}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            className="h-10 w-10 shrink-0 rounded-lg object-cover"
-                          />
-                          <span className="min-w-0">
-                            <span className="block truncate text-xs font-medium">{product.name}</span>
-                            <span className="block truncate text-[10px] text-[#96827C]">
-                              {product.price > 0 ? `₹${product.price.toLocaleString('en-IN')}` : 'Price on request'}
-                            </span>
-                          </span>
-                        </button>
-                      )) : (
-                        <p className="px-3 py-4 text-center text-xs text-[#96827C]">No matching gifts found.</p>
-                      )}
-                      <button
-                        type="submit"
-                        className="w-full rounded-xl px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-[#B36D6D] hover:bg-[#B36D6D]/10"
-                      >
-                        See all matching gifts
-                      </button>
-                    </div>
-                  )}
-                </motion.form>
-              )}
-            </AnimatePresence>
-            {!isSearchOpen && (
-              <button
-                type="button"
-                onClick={() => setIsSearchOpen(true)}
-                aria-label="Search products"
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors sm:h-10 sm:w-10 ${
-                  isDarkMode ? 'text-[#E5D7D0] hover:bg-[#2A2422]' : 'text-[#4A3C38] hover:bg-[#F2E5DF]'
-                }`}
-              >
-                <Search className="h-4 w-4" />
-              </button>
-            )}
-          </motion.div>
-
-          {user ? (
-            <>
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={onOpenWishlist}
-              aria-label={`Open wishlist${wishlistCount ? ` with ${wishlistCount} items` : ''}`}
-              className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors ${
-                isSearchOpen ? 'max-sm:hidden' : ''
-              } ${
-                isDarkMode ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
-              }`}
-            >
-              <Heart className="h-4 w-4" />
-              {wishlistCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#B36D6D] px-1 text-[9px] font-semibold text-white">
-                  {wishlistCount}
-                </span>
-              )}
-            </motion.button>
-            <div className={`relative ${isSearchOpen ? 'max-sm:hidden' : ''}`}>
-              <button
-                onClick={() => setIsProfileOpen(open => !open)}
-                aria-expanded={isProfileOpen}
-                aria-label="Open profile menu"
-                className={`flex max-w-20 items-center gap-2 rounded-full px-2 py-2 text-xs font-medium sm:max-w-44 sm:px-3 ${
-                  isDarkMode ? 'bg-[#2A2422] text-[#F3EBE6] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#5D4640] hover:bg-[#EAD5CD]'
-                }`}
-              >
-                <UserRound className="h-4 w-4 shrink-0 text-[#B36D6D]" />
-                <span className="hidden truncate sm:inline">{user.name}</span>
-              </button>
-              {isProfileOpen && (
-                <div className={`absolute right-0 top-full z-50 mt-3 w-72 rounded-2xl border p-4 shadow-xl ${
-                  isDarkMode ? 'border-[#493936] bg-[#211B19]' : 'border-[#E8D4CB] bg-[#FFFCF9]'
-                }`}>
-                  <div className="border-b border-black/5 pb-3 dark:border-white/10">
-                    <p className="font-serif-title text-lg">Hello, {user.name}</p>
-                    <p className="text-xs text-[#8E7973] dark:text-[#A79690]">@{user.username}</p>
-                  </div>
-                  <dl className="mt-3 space-y-2 text-xs">
-                    <div><dt className="text-[#9A8781]">Email</dt><dd className="break-all">{user.email}</dd></div>
-                  </dl>
-                  <button
-                    onClick={() => { setIsProfileOpen(false); onOpenProfile() }}
-                    className="mt-3 flex w-full items-center gap-2 rounded-xl bg-[#B36D6D]/10 px-3 py-2.5 text-xs font-semibold text-[#B36D6D] transition-colors hover:bg-[#B36D6D]/15"
-                  >
-                    <UserRound className="h-4 w-4" /> My Profile
-                  </button>
-                  <button
-                    onClick={() => { setIsProfileOpen(false); onOpenSettings() }}
-                    className="mt-2 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-colors hover:bg-[#B36D6D]/10"
-                  >
-                    <Settings className="h-4 w-4" /> Settings
-                  </button>
-                  <button
-                    onClick={() => { setIsProfileOpen(false); onLogout() }}
-                    className="mt-1 flex w-full items-center gap-2 border-t border-black/5 pt-3 text-xs font-semibold text-[#B36D6D] dark:border-white/10"
-                  >
-                    <LogOut className="h-4 w-4" /> Logout
-                  </button>
-                </div>
-              )}
-            </div>
-            </>
-          ) : (
-            <div className={`flex items-center gap-1 rounded-full border p-1 ${isSearchOpen ? 'max-sm:hidden' : ''} ${
-              isDarkMode ? 'border-[#493936] bg-[#211B19]/80' : 'border-[#E8D4CB] bg-white/75'
-            }`}>
-              <button
-                onClick={() => onOpenAuth('login')}
-                className={`rounded-full px-1.5 py-1.5 text-[10px] font-semibold transition-colors sm:px-3 sm:py-2 sm:text-xs ${
-                  isDarkMode ? 'text-[#E5D7D0] hover:bg-white/5' : 'text-[#6B524C] hover:bg-[#F6EAE5]'
-                }`}
-              >
-                Log in
-              </button>
-              <button
-                onClick={() => onOpenAuth('signup')}
-                className="rounded-full bg-[#B36D6D] px-2 py-1.5 text-[10px] font-semibold text-white shadow-sm transition-colors hover:bg-[#9E5B5B] sm:px-4 sm:py-2 sm:text-xs"
-              >
-                <span className="hidden sm:inline">Create account</span>
-                <span className="sm:hidden">Join</span>
-              </button>
-            </div>
-          )}
-
-          {/* Theme toggle with smooth rotation */}
-          <motion.button
-            whileTap={{ scale: 0.92 }}
-            onClick={onToggleTheme}
-            aria-label="Toggle light and dark mode"
-            className={`rounded-full p-2 transition-colors duration-300 sm:p-2.5 ${isSearchOpen ? 'max-sm:hidden' : ''} ${
-              isDarkMode 
-                ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]' 
-                : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
-            }`}
-          >
-            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </motion.button>
-
-          {/* Bag button with fluid badge count */}
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={onOpenBag}
-            aria-label="View shopping bag"
-            className={`relative flex items-center gap-1.5 rounded-full px-2 py-2 text-sm font-medium shadow-sm transition-all duration-300 sm:gap-2.5 sm:px-4 sm:py-2.5 ${isSearchOpen ? 'max-sm:hidden' : ''} ${
-              isDarkMode
-                ? 'bg-[#B36D6D] text-white hover:bg-[#C27979]'
-                : 'bg-[#B36D6D] text-white hover:bg-[#9E5B5B]'
-            }`}
-          >
-            <ShoppingBag className="w-4 h-4" />
-            <span className="font-sans-body hidden sm:inline text-xs tracking-wider uppercase">Bag</span>
-            <motion.span
-              key={bagCount}
-              initial={{ scale: 0.6, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-              className="bg-white/25 px-2 py-0.5 rounded-full text-xs font-semibold tabular-nums"
-            >
-              {bagCount}
-            </motion.span>
-          </motion.button>
+          </nav>
         </div>
       </div>
+      </div>
     </header>
+    <div
+      className={`compact-nav-glass compact-nav-vertical fixed right-4 top-4 z-50 flex flex-col items-end gap-2.5 rounded-full border sm:right-5 sm:top-5 ${
+        isDarkMode ? 'compact-nav-glass-dark' : 'compact-nav-glass-light'
+      } ${isHeaderHidden ? 'compact-nav-visible' : 'compact-nav-hidden'}`}
+      aria-hidden={!isHeaderHidden}
+    >
+      <div className="compact-nav-actions relative z-10 flex flex-col items-end gap-2.5">
+        <div className="compact-nav-action-item compact-nav-wishlist">
+          <WishlistAction isDarkMode={isDarkMode} wishlistCount={wishlistCount} onOpenWishlist={onOpenWishlist} />
+        </div>
+        <div className="compact-nav-action-item compact-nav-bag">
+          {renderBagButton(true)}
+        </div>
+      </div>
+    </div>
+    </>
   )
 }

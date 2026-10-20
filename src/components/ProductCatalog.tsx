@@ -12,7 +12,6 @@ interface ProductCatalogProps {
   wishlist: string[]
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
   searchQuery: string
-  isAuthenticated: boolean
   products: Product[]
   categories: StoreCategory[]
 }
@@ -26,7 +25,6 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   wishlist,
   onToggleWishlist,
   searchQuery = '',
-  isAuthenticated,
   products,
   categories
 }) => {
@@ -367,12 +365,20 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                     <div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
 
                     {/* Wishlist Heart Button */}
-                    {isAuthenticated && (
-                      <button
-                        onClick={(e) => onToggleWishlist(product.id, e)}
-                        aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-                        aria-pressed={isWishlisted}
-                        className="absolute right-4 top-4 rounded-full bg-white/85 p-2.5 shadow-md backdrop-blur-md transition-all duration-200 hover:scale-110 dark:bg-[#1D1716]/85"
+                    <motion.button
+                      onClick={(e) => onToggleWishlist(product.id, e)}
+                      aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+                      aria-pressed={isWishlisted}
+                      whileHover={{ scale: 1.12, rotate: isWishlisted ? -6 : 6 }}
+                      whileTap={{ scale: 0.84, rotate: isWishlisted ? 10 : -10 }}
+                      className="absolute right-4 top-4 rounded-full bg-white/85 p-2.5 shadow-md backdrop-blur-md dark:bg-[#1D1716]/85"
+                    >
+                      <motion.span
+                        key={`${product.id}-${isWishlisted}`}
+                        initial={{ scale: 0.55, rotate: -18 }}
+                        animate={{ scale: [0.55, 1.22, 0.92, 1], rotate: [-18, 12, -7, 0] }}
+                        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                        className="block"
                       >
                         <Heart
                           className={`h-4 w-4 transition-colors ${
@@ -381,8 +387,8 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                               : 'text-[#8E7A74] hover:text-[#B36D6D]'
                           }`}
                         />
-                      </button>
-                    )}
+                      </motion.span>
+                    </motion.button>
 
                     {/* Available finishes indicator */}
                     {product.availableFinishes && (
