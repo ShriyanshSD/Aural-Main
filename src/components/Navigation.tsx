@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, Settings, X } from 'lucide-react'
 import { AuthUser, Product, StoreSettings } from '../types'
 import { AuthMode } from './AuthModal'
@@ -428,11 +428,12 @@ export const Navigation: React.FC<NavigationProps> = ({
           <div className="absolute right-0 z-20 lg:left-[calc(50%+17rem)] lg:right-auto">
             {renderSearchControl()}
           </div>
-          <nav className={`hidden w-fit min-w-[28rem] items-center justify-center gap-6 whitespace-nowrap rounded-full border px-8 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 lg:flex ${
-            isDarkMode
-              ? 'border-white/10 bg-[#211B19]/65 text-[#F3EBE6] shadow-black/10'
-              : 'border-white/60 bg-white/55 text-[#2C2523] shadow-[#6B524C]/10'
-          }`}>
+          <MotionConfig reducedMotion="never">
+            <nav className={`hidden w-fit min-w-[28rem] items-center justify-center gap-6 whitespace-nowrap rounded-full border px-8 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 lg:flex ${
+              isDarkMode
+                ? 'border-white/10 bg-[#211B19]/65 text-[#F3EBE6] shadow-black/10'
+                : 'border-white/60 bg-white/55 text-[#2C2523] shadow-[#6B524C]/10'
+            }`}>
           <button
             onClick={() => onSelectTab('home')}
             className={`relative whitespace-nowrap py-1 transition-colors ${
@@ -502,7 +503,8 @@ export const Navigation: React.FC<NavigationProps> = ({
               />
             )}
           </button>
-          </nav>
+            </nav>
+          </MotionConfig>
         </div>
       </div>
       </div>
