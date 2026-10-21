@@ -42,6 +42,11 @@
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.nav-hide-reveal .backdrop-blur-xl {
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  backdrop-filter: blur(10px) saturate(130%);
+}
+
 .brand-logo-salmon {
   background-color: #FF91A4;
   -webkit-mask: url('/aurel-logo.png') center / contain no-repeat;
@@ -50,8 +55,8 @@
 
 .compact-nav-glass {
   isolation: isolate;
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  backdrop-filter: blur(10px) saturate(130%);
   box-shadow: 0 12px 30px rgba(48, 34, 29, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: opacity 560ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear;
 }
@@ -247,7 +252,7 @@
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.13), transparent 44%),
     radial-gradient(ellipse at 20% 0%, rgba(196, 156, 137, 0.14), transparent 64%);
-  background-attachment: fixed;
+  background-attachment: scroll;
 }
 
 .compact-nav-glass-dark .compact-nav-action-item .wishlist-label,
@@ -257,11 +262,11 @@
   background-image:
     linear-gradient(135deg, rgba(255, 255, 255, 0.13), transparent 44%),
     radial-gradient(ellipse at 20% 0%, rgba(196, 156, 137, 0.14), transparent 64%);
-  background-attachment: fixed;
+  background-attachment: scroll;
   color: #F3EBE6;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  backdrop-filter: blur(10px) saturate(130%);
 }
 
 .compact-nav-glass-light {
@@ -273,7 +278,7 @@
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.58), transparent 48%),
     radial-gradient(ellipse at 20% 0%, rgba(179, 109, 109, 0.12), transparent 64%);
-  background-attachment: fixed;
+  background-attachment: scroll;
 }
 
 .compact-nav-glass-light .compact-nav-action-item .wishlist-label,
@@ -283,11 +288,11 @@
   background-image:
     linear-gradient(135deg, rgba(255, 255, 255, 0.58), transparent 48%),
     radial-gradient(ellipse at 20% 0%, rgba(179, 109, 109, 0.12), transparent 64%);
-  background-attachment: fixed;
+  background-attachment: scroll;
   color: #5D4640;
   box-shadow: 0 12px 30px rgba(48, 34, 29, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  backdrop-filter: blur(10px) saturate(130%);
 }
 
 .wishlist-expand {
@@ -646,18 +651,6 @@
 }
 
 @media (max-width: 640px) {
-  .nav-hide-reveal .backdrop-blur-xl,
-  .compact-nav-glass {
-    -webkit-backdrop-filter: blur(8px) saturate(125%);
-    backdrop-filter: blur(8px) saturate(125%);
-  }
-
-  .compact-nav-glass::before,
-  .compact-nav-glass .compact-nav-action-item .wishlist-label,
-  .compact-nav-glass .compact-nav-action-item .compact-action-label {
-    background-attachment: scroll;
-  }
-
   .nav-hide-reveal {
     transition-duration: 240ms !important;
   }

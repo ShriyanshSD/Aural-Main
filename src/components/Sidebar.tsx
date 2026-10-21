@@ -138,9 +138,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/45"
           />
 
           {/* Fluid Sliding Panel */}
@@ -149,8 +149,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: '-100%', opacity: 0.98 }}
             transition={{
-              x: { duration: 0.82, ease: [0.22, 1, 0.36, 1] },
-              opacity: { duration: 0.48, ease: 'easeOut' }
+              x: { duration: 0.52, ease: [0.22, 1, 0.36, 1] },
+              opacity: { duration: 0.3, ease: 'easeOut' }
             }}
             className={`theme-surface fixed top-0 bottom-0 left-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-y-auto will-change-transform ${
               isDarkMode 

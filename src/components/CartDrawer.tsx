@@ -38,9 +38,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/50"
           />
 
           {/* Slide-over Drawer */}
@@ -48,8 +48,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ duration: 0.78, ease: [0.22, 1, 0.36, 1] }}
-            className={`theme-surface fixed top-0 bottom-0 right-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-hidden border-l ${
+            transition={{ duration: 0.52, ease: [0.22, 1, 0.36, 1] }}
+            className={`theme-surface fixed top-0 bottom-0 right-0 z-50 w-full max-w-md shadow-2xl flex flex-col justify-between overflow-hidden border-l will-change-transform ${
               isDarkMode 
                 ? 'bg-[#1C1817] text-[#F3EBE6] border-[#342A27]' 
                 : 'bg-[#FAF6F2] text-[#2C2422] border-[#E8D4CB]'
