@@ -49,6 +49,14 @@ export const Hero: React.FC<HeroProps> = ({
           : 'bg-gradient-to-b from-[#FAF7F2] via-[#F6EDE8] to-[#FAF7F2]'
       }`}
     >
+      <div
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-x-0 top-0 h-28 ${
+          isDarkMode
+            ? 'bg-gradient-to-b from-[#181615] via-[#181615]/60 to-transparent'
+            : 'bg-gradient-to-b from-[#FAF7F2] via-[#FAF7F2]/60 to-transparent'
+        }`}
+      />
       {/* Soft Ambient Glows in Rose and Warm Champagne */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-[#E8C7BE]/20 dark:bg-[#B36D6D]/10 blur-3xl pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-[30rem] h-[30rem] rounded-full bg-[#F3DDD5]/30 dark:bg-[#7D4646]/10 blur-3xl pointer-events-none" />
@@ -82,7 +90,7 @@ export const Hero: React.FC<HeroProps> = ({
               initial={{ opacity: 0, y: 25 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-              className="font-serif-title text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-[1.12]"
+              className="hero-headline font-serif-title text-4xl tracking-tight leading-[1.12] sm:text-5xl lg:text-6xl"
             >
               Make moments <br />
               <span className="italic font-normal text-[#B36D6D]">worth keeping.</span>

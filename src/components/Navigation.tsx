@@ -456,7 +456,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
 
         {/* Center Zone: Clean editorial text links */}
-        <div className="relative mt-2 flex min-h-11 items-center justify-start lg:justify-center">
+        <div className="relative mt-[21px] flex min-h-12 items-center justify-start sm:mt-2 sm:min-h-11 lg:justify-center">
           <div className={`mobile-search-actions absolute right-0 z-20 flex items-center gap-1 transition-opacity duration-200 lg:left-[calc(50%+17rem)] lg:right-auto ${
             isProfileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
           }`}>
@@ -475,7 +475,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             {renderSearchControl()}
           </div>
           <MotionConfig reducedMotion="never">
-            <nav className={`mobile-nav-scroll flex w-[calc(100%-10rem)] min-w-0 items-center justify-start gap-5 overflow-x-auto whitespace-nowrap rounded-full border px-4 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 sm:w-[calc(100%-6rem)] lg:w-fit lg:min-w-[28rem] lg:justify-center lg:gap-6 lg:overflow-visible lg:px-8 ${
+            <nav className={`mobile-nav-scroll flex w-[calc(100%-10.5rem)] min-w-0 items-center justify-start gap-5 overflow-x-auto whitespace-nowrap rounded-full border px-4 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 sm:w-[calc(100%-6rem)] lg:w-fit lg:min-w-[28rem] lg:justify-center lg:gap-6 lg:overflow-visible lg:px-8 ${
               isDarkMode
                 ? 'border-white/10 bg-[#211B19]/65 text-[#F3EBE6] shadow-black/10'
                 : 'border-white/60 bg-white/55 text-[#2C2523] shadow-[#6B524C]/10'

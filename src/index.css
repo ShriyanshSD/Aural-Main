@@ -36,6 +36,29 @@
   transition-timing-function: var(--theme-ease);
 }
 
+.hero-headline {
+  view-transition-name: hero-headline;
+  transition: none !important;
+}
+
+html:not(.dark) .hero-headline {
+  color: #2c2422;
+}
+
+html.dark .hero-headline {
+  color: #f3ebe6;
+}
+
+::view-transition-group(hero-headline),
+::view-transition-old(hero-headline),
+::view-transition-new(hero-headline) {
+  animation: none;
+}
+
+::view-transition-old(hero-headline) {
+  display: none;
+}
+
 .nav-hide-reveal {
   transition-property: translate;
   transition-duration: 700ms;
@@ -431,6 +454,11 @@
 }
 
 @media (max-width: 639px) {
+  .mobile-nav-scroll {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), transparent 100%);
+  }
+
   .mobile-search-actions {
     width: 156px;
     justify-content: space-between;
