@@ -680,11 +680,11 @@ html.dark .hero-headline {
 
 @media (max-width: 640px) {
   .nav-hide-reveal {
-    transition-duration: 240ms !important;
+    transition-duration: 700ms !important;
   }
 
   .compact-nav-glass {
-    transition-duration: 220ms !important;
+    transition-duration: 560ms !important;
   }
 
   body,

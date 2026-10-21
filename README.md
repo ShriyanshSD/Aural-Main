@@ -53,6 +53,8 @@ npm run dev
 To verify and build for production:
 npm run build
 
+For local development, the server loads `.env` from the `aural` project folder and the workspace root, with project-local values taking precedence. Keep server-only values such as `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_EMAILS` out of browser-prefixed variables.
+
 ## Supabase Account Setup
 
 1. Create a Supabase project and open its SQL Editor.

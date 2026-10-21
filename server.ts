@@ -22,10 +22,12 @@ import {
 import { indiaCitiesHandler, indiaStatesHandler } from './locations-handler'
 import { adminApiHandler, publicCatalogHandler } from './admin-handler'
 
-dotenv.config()
-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+dotenv.config({
+  path: [path.resolve(__dirname, '.env'), path.resolve(__dirname, '..', '.env')]
+})
 
 const cliArgs = process.argv.slice(2)
 const isProduction = process.env.NODE_ENV === 'production' || cliArgs.includes('--preview')
