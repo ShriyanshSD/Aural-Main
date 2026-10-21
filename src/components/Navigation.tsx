@@ -388,7 +388,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           <button
             onClick={() => onSelectTab('home')}
             aria-label="AUREL home"
-            className="absolute left-1/2 flex h-12 w-20 -translate-x-1/2 items-center justify-center sm:h-[3.25rem] sm:w-[100px]"
+            className="absolute left-1/2 flex h-10 w-16 -translate-x-1/2 items-center justify-center sm:h-[3.25rem] sm:w-[100px]"
           >
             {isDarkMode ? (
               <span className="brand-logo-salmon h-full w-full" role="img" aria-label="AUREL" />
@@ -402,12 +402,12 @@ export const Navigation: React.FC<NavigationProps> = ({
           </button>
 
         {/* Search and primary quick actions */}
-        <div className="flex shrink-0 items-center gap-0.5 sm:gap-3">
+        <div className="mobile-header-actions flex shrink-0 items-center gap-0.5 sm:gap-3">
           <motion.button
             whileTap={{ scale: 0.92 }}
             onClick={onToggleTheme}
             aria-label="Toggle light and dark mode"
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 ${
+            className={`hidden h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 sm:flex ${
               isDarkMode
                 ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]'
                 : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
@@ -415,7 +415,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           >
             {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </motion.button>
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-0 sm:gap-2">
             <WishlistAction isDarkMode={isDarkMode} wishlistCount={wishlistCount} onOpenWishlist={onOpenWishlist} />
             {renderBagButton()}
             {renderAccountMenu()}
@@ -424,12 +424,24 @@ export const Navigation: React.FC<NavigationProps> = ({
         </div>
 
         {/* Center Zone: Clean editorial text links */}
-        <div className="relative mt-2 flex min-h-11 items-center justify-center">
-          <div className="absolute right-0 z-20 lg:left-[calc(50%+17rem)] lg:right-auto">
+        <div className="relative mt-2 flex min-h-11 items-center justify-start lg:justify-center">
+          <div className="absolute right-0 z-20 flex items-center gap-1 lg:left-[calc(50%+17rem)] lg:right-auto">
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              onClick={onToggleTheme}
+              aria-label="Toggle light and dark mode"
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-300 sm:hidden ${
+                isDarkMode
+                  ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]'
+                  : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
+              }`}
+            >
+              {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </motion.button>
             {renderSearchControl()}
           </div>
           <MotionConfig reducedMotion="never">
-            <nav className={`hidden w-fit min-w-[28rem] items-center justify-center gap-6 whitespace-nowrap rounded-full border px-8 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 lg:flex ${
+            <nav className={`mobile-nav-scroll flex w-[calc(100%-6rem)] min-w-0 items-center justify-start gap-5 overflow-x-auto whitespace-nowrap rounded-full border px-4 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 lg:w-fit lg:min-w-[28rem] lg:justify-center lg:gap-6 lg:overflow-visible lg:px-8 ${
               isDarkMode
                 ? 'border-white/10 bg-[#211B19]/65 text-[#F3EBE6] shadow-black/10'
                 : 'border-white/60 bg-white/55 text-[#2C2523] shadow-[#6B524C]/10'
