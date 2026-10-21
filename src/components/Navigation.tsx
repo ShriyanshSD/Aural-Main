@@ -116,9 +116,13 @@ export const Navigation: React.FC<NavigationProps> = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isSearchHovered, setIsSearchHovered] = useState(false)
   const [isHeaderHidden, setIsHeaderHidden] = useState(() => window.scrollY > 24)
+  const isHeaderHiddenRef = useRef(isHeaderHidden)
   useEffect(() => {
     const handleScroll = () => {
-      setIsHeaderHidden(window.scrollY > 24)
+      const shouldHideHeader = window.scrollY > 24
+      if (shouldHideHeader === isHeaderHiddenRef.current) return
+      isHeaderHiddenRef.current = shouldHideHeader
+      setIsHeaderHidden(shouldHideHeader)
       setIsProfileOpen(false)
       setIsCompactProfileOpen(false)
     }

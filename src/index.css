@@ -646,6 +646,26 @@
 }
 
 @media (max-width: 640px) {
+  .nav-hide-reveal .backdrop-blur-xl,
+  .compact-nav-glass {
+    -webkit-backdrop-filter: blur(8px) saturate(125%);
+    backdrop-filter: blur(8px) saturate(125%);
+  }
+
+  .compact-nav-glass::before,
+  .compact-nav-glass .compact-nav-action-item .wishlist-label,
+  .compact-nav-glass .compact-nav-action-item .compact-action-label {
+    background-attachment: scroll;
+  }
+
+  .nav-hide-reveal {
+    transition-duration: 240ms !important;
+  }
+
+  .compact-nav-glass {
+    transition-duration: 220ms !important;
+  }
+
   body,
   .theme-surface {
     transition-duration: var(--theme-duration);
