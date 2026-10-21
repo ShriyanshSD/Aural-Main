@@ -1,5 +1,5 @@
 import React from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { ArrowRight, Heart, ShoppingBag, Trash2, X } from 'lucide-react'
 import { Product } from '../types'
 
@@ -22,6 +22,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
   onAddToBag,
   onOpenBag
 }) => (
+  <MotionConfig reducedMotion="never">
   <AnimatePresence>
     {isOpen && (
       <>
@@ -31,6 +32,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           onClick={onClose}
           className="fixed inset-0 z-50 cursor-default bg-black/50 backdrop-blur-sm"
         />
@@ -38,7 +40,7 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
           initial={{ x: '100%' }}
           animate={{ x: 0 }}
           exit={{ x: '100%' }}
-          transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+          transition={{ duration: 0.78, ease: [0.22, 1, 0.36, 1] }}
           aria-label="Wishlist"
           className={`theme-surface fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col overflow-hidden border-l shadow-2xl ${
             isDarkMode
@@ -151,4 +153,5 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
       </>
     )}
   </AnimatePresence>
+  </MotionConfig>
 )

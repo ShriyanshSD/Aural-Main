@@ -34,6 +34,31 @@ interface WishlistActionProps {
   onOpenWishlist: () => void
 }
 
+const CountPulseIcon: React.FC<{
+  count: number
+  className: string
+  children: React.ReactNode
+}> = ({ count, className, children }) => {
+  const previousCount = useRef(count)
+  const [pulseKey, setPulseKey] = useState(0)
+
+  useEffect(() => {
+    if (count > previousCount.current) {
+      setPulseKey(key => key + 1)
+    }
+    previousCount.current = count
+  }, [count])
+
+  return (
+    <span
+      key={pulseKey}
+      className={`${className}${pulseKey > 0 ? ' compact-count-pulse' : ''}`}
+    >
+      {children}
+    </span>
+  )
+}
+
 const WishlistAction: React.FC<WishlistActionProps> = ({ isDarkMode, wishlistCount, onOpenWishlist }) => {
   return (
     <button
@@ -44,11 +69,9 @@ const WishlistAction: React.FC<WishlistActionProps> = ({ isDarkMode, wishlistCou
         isDarkMode ? 'bg-[#2A2422] text-[#F3C4B8] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#8C4F49] hover:bg-[#EAD5CD]'
       }`}
     >
-      <span
-        className={`wishlist-heart shrink-0 ${wishlistCount > 0 ? 'is-wishlisted' : ''}`}
-      >
+      <CountPulseIcon count={wishlistCount} className={`wishlist-heart shrink-0 ${wishlistCount > 0 ? 'is-wishlisted' : ''}`}>
         <Heart className={`h-4 w-4 ${wishlistCount > 0 ? 'fill-current' : ''}`} />
-      </span>
+      </CountPulseIcon>
       <span
         className="wishlist-label overflow-hidden whitespace-nowrap text-xs font-medium"
       >
@@ -240,7 +263,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     </div>
   )
 
-  const renderBagButton = (compact = false) => (
+  const renderBagButton = () => (
     <motion.button
       whileTap={{ scale: 0.92 }}
       onClick={onOpenBag}
@@ -249,7 +272,12 @@ export const Navigation: React.FC<NavigationProps> = ({
         isDarkMode ? 'bg-[#2A2422] text-[#F3EBE6] hover:bg-[#382E2B]' : 'bg-[#F2E5DF] text-[#5D4640] hover:bg-[#EAD5CD]'
       }`}
     >
-      <span className="compact-action-icon"><ShoppingBag className="h-4 w-4" /></span>
+      <CountPulseIcon
+        count={bagCount}
+        className="compact-action-icon"
+      >
+        <ShoppingBag className="h-4 w-4" />
+      </CountPulseIcon>
       <span className="compact-action-label">Bag</span>
       {bagCount > 0 && (
         <motion.span
@@ -371,7 +399,7 @@ export const Navigation: React.FC<NavigationProps> = ({
               }`}
             />
           )}
-          <div className="relative z-10 flex h-14 items-center justify-between gap-2 px-2 sm:px-4">
+          <div className="relative z-30 flex h-14 items-center justify-between gap-2 px-2 sm:px-4">
           <button
             onClick={onOpenSidebar}
             aria-label="Open sidebar menu"
@@ -425,7 +453,9 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Center Zone: Clean editorial text links */}
         <div className="relative mt-2 flex min-h-11 items-center justify-start lg:justify-center">
-          <div className="absolute right-0 z-20 flex items-center gap-1 lg:left-[calc(50%+17rem)] lg:right-auto">
+          <div className={`mobile-search-actions absolute right-0 z-20 flex items-center gap-1 transition-opacity duration-200 lg:left-[calc(50%+17rem)] lg:right-auto ${
+            isProfileOpen ? 'pointer-events-none opacity-0' : 'opacity-100'
+          }`}>
             <motion.button
               whileTap={{ scale: 0.92 }}
               onClick={onToggleTheme}
@@ -441,7 +471,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             {renderSearchControl()}
           </div>
           <MotionConfig reducedMotion="never">
-            <nav className={`mobile-nav-scroll flex w-[calc(100%-6rem)] min-w-0 items-center justify-start gap-5 overflow-x-auto whitespace-nowrap rounded-full border px-4 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 lg:w-fit lg:min-w-[28rem] lg:justify-center lg:gap-6 lg:overflow-visible lg:px-8 ${
+            <nav className={`mobile-nav-scroll flex w-[calc(100%-10rem)] min-w-0 items-center justify-start gap-5 overflow-x-auto whitespace-nowrap rounded-full border px-4 py-2.5 text-[11px] font-medium font-sans-body shadow-md backdrop-blur-xl transition-colors duration-500 sm:w-[calc(100%-6rem)] lg:w-fit lg:min-w-[28rem] lg:justify-center lg:gap-6 lg:overflow-visible lg:px-8 ${
               isDarkMode
                 ? 'border-white/10 bg-[#211B19]/65 text-[#F3EBE6] shadow-black/10'
                 : 'border-white/60 bg-white/55 text-[#2C2523] shadow-[#6B524C]/10'
@@ -532,7 +562,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           <WishlistAction isDarkMode={isDarkMode} wishlistCount={wishlistCount} onOpenWishlist={onOpenWishlist} />
         </div>
         <div className="compact-nav-action-item compact-nav-bag">
-          {renderBagButton(true)}
+          {renderBagButton()}
         </div>
       </div>
     </div>
