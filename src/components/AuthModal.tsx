@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { X, UserRound, ShieldCheck, MailCheck } from 'lucide-react'
 import { AuthUser } from '../types'
 import { isValidAccountEmail, normalizeValidPhoneNumber } from '../utils/accountValidation'
+import PasswordInput from './PasswordInput'
 
 export type AuthMode = 'login' | 'signup'
 
@@ -273,15 +274,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </label>
 
               <div className={isSignup ? 'grid gap-4 sm:grid-cols-2' : ''}>
-                <label className="block space-y-1.5 text-xs font-medium">
-                  Password
-                  <input className={fieldClass(isDarkMode)} type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={isSignup ? 'new-password' : 'current-password'} minLength={8} maxLength={128} required />
-                </label>
+                <div className="block space-y-1.5 text-xs font-medium">
+                  <label htmlFor="auth-password">Password</label>
+                  <PasswordInput id="auth-password" className={fieldClass(isDarkMode)} value={password} onChange={event => setPassword(event.target.value)} autoComplete={isSignup ? 'new-password' : 'current-password'} minLength={8} maxLength={128} required />
+                </div>
                 {isSignup && (
-                  <label className="mt-4 block space-y-1.5 text-xs font-medium sm:mt-0">
-                    Confirm password
-                    <input className={fieldClass(isDarkMode)} type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
-                  </label>
+                  <div className="mt-4 block space-y-1.5 text-xs font-medium sm:mt-0">
+                    <label htmlFor="auth-confirm-password">Confirm password</label>
+                    <PasswordInput id="auth-confirm-password" className={fieldClass(isDarkMode)} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
+                  </div>
                 )}
               </div>
 

@@ -19,6 +19,7 @@ export interface Product {
   rating: number
   reviewsCount: number
   imageUrl: string
+  imageUrls?: string[]
   fallbackColor: string
   description: string
   tagline: string

@@ -5,6 +5,7 @@ import {
   Store, Trash2, Users, X
 } from 'lucide-react'
 import type { Product } from './types'
+import PasswordInput from './components/PasswordInput'
 
 type Section = 'dashboard' | 'products' | 'categories' | 'orders' | 'customers' | 'settings'
 type Fulfillment = 'unfulfilled' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -293,9 +294,10 @@ export default function AdminApp() {
               <label className="block text-sm font-medium">Owner email
                 <input autoComplete="username" type="email" required value={loginEmail} onChange={event => setLoginEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
               </label>
-              <label className="block text-sm font-medium">Password
-                <input autoComplete="current-password" type="password" required value={loginPassword} onChange={event => setLoginPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
-              </label>
+              <div className="block text-sm font-medium">
+                <label htmlFor="owner-login-password">Password</label>
+                <PasswordInput id="owner-login-password" autoComplete="current-password" required value={loginPassword} onChange={event => setLoginPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
+              </div>
               <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-3 font-semibold text-white transition hover:bg-[#8c4e50] disabled:opacity-60">
                 {busy && <LoaderCircle className="h-4 w-4 animate-spin" />} Sign in securely
               </button>
@@ -311,9 +313,14 @@ export default function AdminApp() {
   return (
     <div className="owner-dashboard min-h-screen bg-[#f7f5f2] text-[#322825]">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#eee6e1] bg-white lg:flex">
-        <a href="/" className="flex h-20 items-center gap-3 border-b border-[#f1ebe7] px-6">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#a45f60] text-white"><Store className="h-5 w-5" /></span>
-          <span><span className="block font-serif-title text-lg tracking-[.12em]">AUREL</span><span className="text-[10px] uppercase tracking-[.18em] text-[#9d7c74]">Owner studio</span></span>
+        <a href="/" className="flex h-24 items-center gap-3 border-b border-[#f1ebe7] px-6">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#a45f60] text-white">
+            <Store className="h-5 w-5" />
+          </span>
+          <span className="flex flex-col items-start">
+            <img src="/aurel-logo.png" alt="AUREL" className="block h-14 w-32 object-contain object-left" />
+            <span className="mt-1 text-[10px] uppercase tracking-[.18em] text-[#9d7c74]">Owner studio</span>
+          </span>
         </a>
         <nav className="flex-1 space-y-1 px-3 py-6">
           {sections.map(item => {

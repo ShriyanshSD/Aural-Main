@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
-import { Sparkles } from 'lucide-react'
+import { ArrowUp, Sparkles } from 'lucide-react'
 import { Navigation } from './components/Navigation'
 import { Hero } from './components/Hero'
 import type { AuthMode } from './components/AuthModal'
@@ -192,6 +192,7 @@ function StorefrontApp() {
   const [searchQuery, setSearchQuery] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isChatbotOpen, setIsChatbotOpen] = useState(false)
+  const [showBackToTop, setShowBackToTop] = useState(false)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [isAuthLoaded, setIsAuthLoaded] = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
@@ -212,6 +213,13 @@ function StorefrontApp() {
   const [wishlist, setWishlist] = useState<string[]>(signupResume?.wishlist ?? [])
   const [wishlistOwnerId, setWishlistOwnerId] = useState<string | null>(null)
   const [isWishlistOpen, setIsWishlistOpen] = useState(false)
+
+  useEffect(() => {
+    const updateBackToTopVisibility = () => setShowBackToTop(window.scrollY > 400)
+    window.addEventListener('scroll', updateBackToTopVisibility, { passive: true })
+    updateBackToTopVisibility()
+    return () => window.removeEventListener('scroll', updateBackToTopVisibility)
+  }, [])
 
   // Modals state
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -433,7 +441,7 @@ function StorefrontApp() {
   const totalBagCount = cartItems.reduce((acc, item) => acc + item.quantity, 0)
 
   // Handlers
-  const smoothScrollTo = (target: number | HTMLElement) => {
+  const smoothScrollTo = (target: number | HTMLElement, duration = 900) => {
     if (scrollAnimationRef.current !== null) {
       cancelAnimationFrame(scrollAnimationRef.current)
       scrollAnimationRef.current = null
@@ -446,7 +454,6 @@ function StorefrontApp() {
       document.documentElement.scrollHeight - window.innerHeight
     ))
     const distance = targetY - startY
-    const duration = 900
     const startTime = performance.now()
     const previousScrollBehavior = document.documentElement.style.scrollBehavior
     originalScrollBehaviorRef.current = previousScrollBehavior
@@ -469,6 +476,54 @@ function StorefrontApp() {
     }
 
     scrollAnimationRef.current = requestAnimationFrame(animateScroll)
+  }
+
+  const handleScrollBackToTop = () => {
+    if (scrollAnimationRef.current !== null) {
+      cancelAnimationFrame(scrollAnimationRef.current)
+      scrollAnimationRef.current = null
+      document.documentElement.style.scrollBehavior = originalScrollBehaviorRef.current ?? ''
+      originalScrollBehaviorRef.current = null
+    }
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      window.scrollTo({ top: 0, behavior: 'instant' })
+      return
+    }
+
+    const scrollElement = document.scrollingElement
+    if (!scrollElement) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+
+    const startY = scrollElement.scrollTop
+    if (startY <= 0) return
+
+    const startTime = performance.now()
+    const duration = Math.min(2600, 1400 + startY * 0.08)
+    originalScrollBehaviorRef.current = document.documentElement.style.scrollBehavior
+    document.documentElement.style.scrollBehavior = 'auto'
+
+    const animateToTop = (now: number) => {
+      const progress = Math.min((now - startTime) / duration, 1)
+      const easedProgress = progress < 0.5
+        ? 4 * progress ** 3
+        : 1 - ((-2 * progress + 2) ** 3) / 2
+
+      scrollElement.scrollTop = startY * (1 - easedProgress)
+
+      if (progress < 1) {
+        scrollAnimationRef.current = requestAnimationFrame(animateToTop)
+      } else {
+        scrollElement.scrollTop = 0
+        scrollAnimationRef.current = null
+        document.documentElement.style.scrollBehavior = originalScrollBehaviorRef.current ?? ''
+        originalScrollBehaviorRef.current = null
+      }
+    }
+
+    scrollAnimationRef.current = requestAnimationFrame(animateToTop)
   }
 
   const handleToggleTheme = () => {
@@ -995,6 +1050,35 @@ function StorefrontApp() {
           onAccountDeleted={handleAccountDeleted}
         />}
       </DeferredMount>
+
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.button
+            initial={{ opacity: 0, y: 8, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.92 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            whileHover={{ scale: 1.08, y: -2 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={handleScrollBackToTop}
+            aria-label="Scroll back to top"
+            title="Back to top"
+            className={`theme-surface fixed bottom-24 right-6 z-50 flex h-11 w-11 cursor-pointer items-center justify-center rounded-full border shadow-lg backdrop-blur-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#B36D6D] ${
+              isDarkMode
+                ? 'border-[#493936] bg-[#211B19]/90 text-[#E2B7B0] hover:bg-[#B36D6D] hover:text-white'
+                : 'border-[#EAD7CF] bg-white/90 text-[#B36D6D] hover:bg-[#B36D6D] hover:text-white'
+            }`}
+          >
+            <motion.span
+              whileHover={{ y: -3 }}
+              whileTap={{ y: -5 }}
+              transition={{ type: 'spring', stiffness: 360, damping: 18 }}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </motion.span>
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       <motion.button
         whileHover={{ scale: 1.08 }}

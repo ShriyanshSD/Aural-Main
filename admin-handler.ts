@@ -327,6 +327,7 @@ const toPublicProduct = (record: ProductRecord): Product & { stockQuantity: numb
   rating: Number(record.rating),
   reviewsCount: record.reviews_count,
   imageUrl: record.image_url,
+  imageUrls: Array.isArray(record.image_urls) ? record.image_urls : [],
   fallbackColor: record.fallback_color,
   description: record.description,
   tagline: record.tagline,

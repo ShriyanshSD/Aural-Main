@@ -70,6 +70,33 @@ html.dark .hero-headline {
   backdrop-filter: blur(10px) saturate(130%);
 }
 
+.password-eye-toggle svg {
+  transform-origin: center;
+}
+
+.password-eye-toggle:hover svg,
+.password-eye-toggle:focus-visible svg {
+  animation: password-eye-doodle 560ms ease-in-out;
+}
+
+.password-eye-toggle:active svg {
+  animation: password-eye-tap 260ms ease-out;
+}
+
+@keyframes password-eye-doodle {
+  0%, 100% { transform: rotate(0) scale(1); }
+  22% { transform: rotate(-12deg) scale(1.12); }
+  45% { transform: rotate(9deg) scale(1.08); }
+  68% { transform: rotate(-5deg) scale(1.04); }
+  84% { transform: rotate(3deg) scale(1.02); }
+}
+
+@keyframes password-eye-tap {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.82) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
 .brand-logo-salmon {
   background-color: #FF91A4;
   -webkit-mask: url('/aurel-logo.png') center / contain no-repeat;
@@ -675,6 +702,28 @@ html.dark .hero-headline {
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation-duration: var(--theme-duration) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .password-eye-toggle:hover svg,
+  .password-eye-toggle:focus-visible svg {
+    animation: password-eye-doodle-reduced 220ms ease-in-out !important;
+  }
+
+  .password-eye-toggle:active svg {
+    animation: password-eye-tap-reduced 160ms ease-out !important;
+  }
+
+  @keyframes password-eye-doodle-reduced {
+    0%, 100% { transform: rotate(0) scale(1); }
+    40% { transform: rotate(-4deg) scale(1.04); }
+    72% { transform: rotate(3deg) scale(1.02); }
+  }
+
+  @keyframes password-eye-tap-reduced {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(0.96) rotate(-3deg); }
   }
 }
 

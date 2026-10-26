@@ -2,6 +2,67 @@ import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { Star, Heart, Plus, ChevronDown, Check, SlidersHorizontal, ArrowLeft } from 'lucide-react'
 import { Product, ProductCategory, SortOption, StoreCategory } from '../types'
+import { PRODUCTS } from '../data/products'
+
+const ProductCardImage: React.FC<{ product: Product; isDarkMode: boolean }> = ({ product, isDarkMode }) => {
+  const bundledProduct = PRODUCTS.find(item => item.id === product.id)
+  const hasBundledImage = bundledProduct?.imageUrl === product.imageUrl
+  const optimizedBundledImage = bundledProduct
+    ? `/catalog-images/${encodeURIComponent(product.id)}.webp`
+    : undefined
+  const imageSources = [...new Set([
+    ...(hasBundledImage && optimizedBundledImage ? [optimizedBundledImage] : []),
+    product.imageUrl,
+    ...(product.imageUrls ?? []),
+    bundledProduct?.imageUrl
+  ].filter((source): source is string => typeof source === 'string' && source.trim().length > 0))]
+  const imageSourceKey = imageSources.join('\n')
+  const [sourceIndex, setSourceIndex] = useState(0)
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [isUnavailable, setIsUnavailable] = useState(imageSources.length === 0)
+
+  useEffect(() => {
+    setSourceIndex(0)
+    setIsLoaded(false)
+    setIsUnavailable(imageSources.length === 0)
+  }, [imageSourceKey])
+
+  return (
+    <>
+      {!isLoaded && (
+        <div
+          className={`absolute inset-0 ${isUnavailable ? 'flex items-center justify-center px-5 text-center font-editorial text-xl italic text-[#8C7068]' : ''}`}
+          style={{ backgroundColor: product.fallbackColor }}
+        >
+          {isUnavailable ? product.name : null}
+        </div>
+      )}
+      {!isUnavailable && imageSources[sourceIndex] && (
+        <motion.img
+          src={imageSources[sourceIndex]}
+          alt={product.name}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setIsLoaded(true)}
+          onError={() => {
+            setIsLoaded(false)
+            if (sourceIndex < imageSources.length - 1) {
+              setSourceIndex(index => index + 1)
+            } else {
+              setIsUnavailable(true)
+            }
+          }}
+          whileHover={{ scale: 1.04 }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          className={`relative h-full w-full object-cover transition-opacity duration-300 ${
+            isLoaded ? 'opacity-100' : 'opacity-0'
+          } ${isDarkMode ? '' : 'mix-blend-multiply'}`}
+        />
+      )}
+    </>
+  )
+}
 
 interface ProductCatalogProps {
   isDarkMode: boolean
@@ -471,7 +532,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-            className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3"
+            className="grid grid-cols-2 gap-x-4 gap-y-10 sm:gap-8 lg:grid-cols-3"
           >
             {processedProducts.length === 0 && activeCategory === 'hair-accessories' && (
               <div
@@ -512,24 +573,15 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                     delay: (index % 3) * 0.09,
                     ease: [0.22, 1, 0.36, 1]
                   }}
-                  className={`group flex cursor-pointer flex-col justify-between overflow-hidden rounded-3xl border transition-[border-color,box-shadow] duration-300 ease-out ${
+                  className={`group flex cursor-pointer flex-col justify-between overflow-hidden transition-[border-color,box-shadow] duration-300 ease-out md:rounded-3xl md:border ${
                     isDarkMode
-                      ? 'bg-[#1F1918] border-[#362A27] hover:border-[#B36D6D]/60 hover:shadow-xl hover:shadow-black/40'
-                      : 'bg-[#FFFFFF] border-[#EAD7CF] hover:border-[#B36D6D]/60 hover:shadow-xl hover:shadow-[#B36D6D]/10'
+                      ? 'bg-transparent md:bg-[#1F1918] md:border-[#362A27] md:hover:border-[#B36D6D]/60 md:hover:shadow-xl md:hover:shadow-black/40'
+                      : 'bg-transparent md:bg-[#FFFFFF] md:border-[#EAD7CF] md:hover:border-[#B36D6D]/60 md:hover:shadow-xl md:hover:shadow-[#B36D6D]/10'
                   }`}
                 >
                   {/* Image Container with Smooth Zoom */}
-                  <div className="relative aspect-4/3 w-full overflow-hidden bg-[#F6ECE8]">
-                    <motion.img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                      decoding="async"
-                      whileHover={{ scale: 1.04 }}
-                      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-                      className="h-full w-full object-cover will-change-transform"
-                    />
+                  <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#F6ECE8] md:aspect-4/3">
+                    <ProductCardImage product={product} isDarkMode={isDarkMode} />
 
                     {/* Subtle Scrim */}
                     <div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent pointer-events-none" />
@@ -541,7 +593,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                       aria-pressed={isWishlisted}
                       whileHover={{ scale: 1.12, rotate: isWishlisted ? -6 : 6 }}
                       whileTap={{ scale: 0.84, rotate: isWishlisted ? 10 : -10 }}
-                      className="absolute right-4 top-4 rounded-full bg-white/85 p-2.5 shadow-md backdrop-blur-md dark:bg-[#1D1716]/85"
+                      className="absolute right-2 top-2 rounded-full bg-white/85 p-2 shadow-md backdrop-blur-md sm:right-4 sm:top-4 sm:p-2.5 dark:bg-[#1D1716]/85"
                     >
                       <motion.span
                         key={`${product.id}-${isWishlisted}`}
@@ -569,10 +621,10 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                   </div>
 
                   {/* Product Details */}
-                  <div className="p-6 flex-1 flex flex-col justify-between">
+                  <div className="flex flex-1 flex-col justify-between px-0 py-4 text-center sm:p-6 sm:text-left">
                     <div>
                       {/* Rating & Review Counter */}
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="mb-2 hidden items-center justify-between sm:flex">
                         <div className="flex items-center gap-1.5 text-xs text-[#B36D6D] font-medium">
                           <Star className="w-3.5 h-3.5 fill-[#B36D6D]" />
                           <span className="tabular-nums font-semibold">{product.rating.toFixed(1)}</span>
@@ -586,23 +638,23 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                       </div>
 
                       {/* Product Name */}
-                      <h3 className="font-serif-title text-xl font-medium tracking-wide mb-1 transition-colors group-hover:text-[#B36D6D]">
+                      <h3 className="mb-1 font-editorial text-base font-semibold leading-snug tracking-wide transition-colors group-hover:text-[#B36D6D] sm:font-serif-title sm:text-xl sm:font-medium">
                         {product.name}
                       </h3>
 
                       {/* Tagline */}
-                      <p className="font-sans-body text-xs text-[#7B6862] dark:text-[#B8A7A1] line-clamp-2 leading-relaxed">
+                      <p className="hidden font-sans-body text-xs leading-relaxed text-[#7B6862] dark:text-[#B8A7A1] sm:line-clamp-2 sm:block">
                         {product.tagline}
                       </p>
                     </div>
 
                     {/* Price Baseline & Quick Add Button */}
-                    <div className="pt-5 mt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
-                      <div>
-                        <span className="text-[10px] uppercase tracking-wider text-[#988680] block">
+                    <div className="mt-2 flex items-center justify-between gap-1 border-t border-black/5 pt-3 dark:border-white/5 sm:mt-4 sm:pt-5">
+                      <div className="min-w-0 text-left">
+                        <span className="mb-0.5 hidden text-[10px] uppercase tracking-wider text-[#988680] sm:block">
                           {product.price > 0 ? 'Starts at' : 'Pricing'}
                         </span>
-                        <span className="font-serif-title text-xl font-semibold text-[#B36D6D] tabular-nums">
+                        <span className="font-serif-title text-sm font-semibold tabular-nums text-[#B36D6D] sm:text-xl">
                           {product.price > 0 ? `₹${product.price.toLocaleString('en-IN')}` : 'Price on request'}
                         </span>
                       </div>
@@ -613,7 +665,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                         whileTap={{ scale: 0.98 }}
                         onClick={(e) => handleQuickAddClick(product, e)}
                         aria-label={product.stockQuantity === 0 ? 'Out of stock' : 'Add to bag'}
-                        className={`px-4 py-2 rounded-full text-xs font-medium tracking-wider uppercase transition-all duration-300 flex items-center gap-1.5 disabled:cursor-not-allowed disabled:bg-[#8d817d] ${
+                        className={`flex items-center gap-1 rounded-full px-2.5 py-2 text-[9px] font-medium uppercase tracking-wide transition-all duration-300 disabled:cursor-not-allowed disabled:bg-[#8d817d] sm:gap-1.5 sm:px-4 sm:text-xs sm:tracking-wider ${
                           isQuickAdded
                             ? 'bg-emerald-600 text-white'
                             : 'bg-[#B36D6D] text-white hover:bg-[#9E5B5B]'

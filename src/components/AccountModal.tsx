@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import type { AccountOrder, AuthUser } from '../types'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
+import PasswordInput from './PasswordInput'
 
 type AccountSection = 'profile' | 'settings' | 'orders'
 
@@ -598,9 +599,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         <label className="block space-y-1.5 text-xs font-medium">New email address
                           <input className={inputClass} type="email" value={newEmail} onChange={event => setNewEmail(event.target.value)} autoComplete="email" maxLength={254} required />
                         </label>
-                        <label className="block space-y-1.5 text-xs font-medium">Current password
-                          <input className={inputClass} type="password" value={emailPassword} onChange={event => setEmailPassword(event.target.value)} autoComplete="current-password" minLength={8} maxLength={128} required />
-                        </label>
+                        <div className="block space-y-1.5 text-xs font-medium">
+                          <label htmlFor="change-email-password">Current password</label>
+                          <PasswordInput id="change-email-password" className={inputClass} value={emailPassword} onChange={event => setEmailPassword(event.target.value)} autoComplete="current-password" minLength={8} maxLength={128} required />
+                        </div>
                         <div className="flex justify-end gap-2">
                           <button type="button" onClick={() => { setIsEditingEmail(false); setEmailPassword('') }} className={`rounded-full border px-4 py-2 text-xs font-semibold ${inset}`}>Cancel</button>
                           <button type="submit" disabled={isChangingEmail || newEmail.trim().toLowerCase() === user.email.toLowerCase()} className="flex items-center gap-2 rounded-full bg-[#B36D6D] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60">
@@ -618,15 +620,18 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                       <div><h3 className="font-serif-title text-lg">Password</h3><p className="text-xs text-[#8E7973] dark:text-[#A79690]">Change your account password securely</p></div>
                     </div>
                     <form onSubmit={changePassword} className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
-                      <label className="space-y-1.5 text-xs font-medium sm:col-span-2">Current password
-                        <input className={inputClass} type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} autoComplete="current-password" maxLength={128} required />
-                      </label>
-                      <label className="space-y-1.5 text-xs font-medium">New password
-                        <input className={inputClass} type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
-                      </label>
-                      <label className="space-y-1.5 text-xs font-medium">Confirm new password
-                        <input className={inputClass} type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
-                      </label>
+                      <div className="space-y-1.5 text-xs font-medium sm:col-span-2">
+                        <label htmlFor="current-password">Current password</label>
+                        <PasswordInput id="current-password" className={inputClass} value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} autoComplete="current-password" maxLength={128} required />
+                      </div>
+                      <div className="space-y-1.5 text-xs font-medium">
+                        <label htmlFor="new-password">New password</label>
+                        <PasswordInput id="new-password" className={inputClass} value={newPassword} onChange={event => setNewPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
+                      </div>
+                      <div className="space-y-1.5 text-xs font-medium">
+                        <label htmlFor="confirm-new-password">Confirm new password</label>
+                        <PasswordInput id="confirm-new-password" className={inputClass} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={128} required />
+                      </div>
                       <button type="submit" disabled={isChangingPassword} className="flex items-center justify-center gap-2 rounded-full bg-[#B36D6D] px-5 py-3 text-xs font-semibold text-white transition-colors hover:bg-[#9E5B5B] disabled:opacity-60 sm:col-span-2 sm:justify-self-end">
                         {isChangingPassword ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Update password
                       </button>
@@ -656,9 +661,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                         <label className="block space-y-1.5 text-xs font-medium">Type DELETE to continue
                           <input className={inputClass} value={deletePhrase} onChange={event => setDeletePhrase(event.target.value)} autoComplete="off" required />
                         </label>
-                        <label className="block space-y-1.5 text-xs font-medium">Current password
-                          <input className={inputClass} type="password" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} autoComplete="current-password" maxLength={128} required />
-                        </label>
+                        <div className="block space-y-1.5 text-xs font-medium">
+                          <label htmlFor="delete-account-password">Current password</label>
+                          <PasswordInput id="delete-account-password" className={inputClass} value={deletePassword} onChange={event => setDeletePassword(event.target.value)} autoComplete="current-password" maxLength={128} required />
+                        </div>
                         <div className="flex justify-end gap-2">
                           <button type="button" onClick={() => { setDeleteStep(0); setDeletePhrase(''); setDeletePassword('') }} disabled={isDeleting} className={`rounded-full border px-4 py-2 text-xs font-semibold ${inset}`}>Cancel</button>
                           <button type="submit" disabled={isDeleting} className="flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-60">
