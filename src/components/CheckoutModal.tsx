@@ -205,7 +205,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }
 
   const getWhatsAppUrl = (order: OrderDetails) => {
-    const brandWhatsAppNumber = '919876543210'
+    const brandWhatsAppNumber = '919999200913'
     const message = formatWhatsAppMessage(order)
     return `https://wa.me/${brandWhatsAppNumber}?text=${encodeURIComponent(message)}`
   }

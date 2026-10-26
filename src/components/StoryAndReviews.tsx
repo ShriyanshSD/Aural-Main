@@ -257,11 +257,20 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
               <div className="mt-6 space-y-3 text-xs">
                 <div className="flex items-center gap-2.5">
                   <Mail className="w-4 h-4 text-[#B36D6D]" />
-                  <span className="font-medium">concierge@aurelgifts.com</span>
+                  <a href="mailto:aruelstudio22@gmail.com" className="font-medium hover:text-[#B36D6D]">
+                    aruelstudio22@gmail.com
+                  </a>
                 </div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-start gap-2.5">
                   <MessageCircle className="w-4 h-4 text-[#B36D6D]" />
-                  <span className="font-medium">WhatsApp Priority: +91 98765 43210</span>
+                  <div className="flex flex-col gap-2 font-medium">
+                    <a href="https://wa.me/919999200913" target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">
+                      WhatsApp: +91 99992 00913
+                    </a>
+                    <a href="https://wa.me/917042640417" target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">
+                      WhatsApp: +91 70426 40417
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>

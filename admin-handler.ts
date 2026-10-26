@@ -82,9 +82,9 @@ const defaultSettings: StoreSettings = {
   storeName: 'AUREL',
   tagline: 'Made With Love For You',
   description: 'Curated luxury memory magazines, botanical bouquets, eternal single blossoms, and thoughtful keepsakes.',
-  contactEmail: 'concierge@aurelgifts.com',
+  contactEmail: 'aruelstudio22@gmail.com',
   phone: '',
-  whatsappNumber: '',
+  whatsappNumber: '919999200913',
   instagramUrl: '',
   facebookUrl: '',
   deliveryNote: 'Pan India Delivery'
@@ -95,6 +95,20 @@ const sendJson = (res: ServerResponse, status: number, payload: unknown) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store')
   res.end(JSON.stringify(payload))
+}
+
+const resolveStoreSettings = (stored: Partial<StoreSettings> = {}): StoreSettings => {
+  const settings = { ...defaultSettings, ...stored }
+  const previousWhatsappNumbers = new Set(['919876543210', '8588905927'])
+
+  if (!settings.contactEmail || settings.contactEmail === 'concierge@aurelgifts.com') {
+    settings.contactEmail = defaultSettings.contactEmail
+  }
+  if (!settings.whatsappNumber || previousWhatsappNumbers.has(settings.whatsappNumber)) {
+    settings.whatsappNumber = defaultSettings.whatsappNumber
+  }
+  if (!settings.instagramUrl) settings.instagramUrl = defaultSettings.instagramUrl
+  return settings
 }
 
 const fetchAllRows = async <T,>(table: string, query: URLSearchParams, pageSize = 1000, maxRows = 20_000): Promise<T[]> => {
@@ -365,9 +379,7 @@ const loadPublicCatalog = async () => {
         .map(toPublicProduct)
       : PRODUCTS,
     categories: categories.length ? categories : categorySeeds().map(category => ({ ...category, description: '', image_url: '' })),
-    settings: Object.fromEntries(
-      Object.keys(defaultSettings).map(key => [key, storedSettings[key as keyof StoreSettings] ?? defaultSettings[key as keyof StoreSettings]])
-    )
+    settings: resolveStoreSettings(storedSettings)
   }
 }
 
@@ -927,7 +939,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       'aurel_store_settings',
       new URLSearchParams({ id: 'eq.storefront', select: 'settings', limit: '1' })
     )
-    return sendJson(res, 200, { settings: { ...defaultSettings, ...(rows[0]?.settings ?? {}) } })
+    return sendJson(res, 200, { settings: resolveStoreSettings(rows[0]?.settings) })
   }
   if (path === '/api/admin/settings' && method === 'PATCH') {
     const body = parseBody(req)

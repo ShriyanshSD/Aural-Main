@@ -16,16 +16,9 @@ const ProductCardImage: React.FC<{ product: Product; isDarkMode: boolean }> = ({
     ...(product.imageUrls ?? []),
     bundledProduct?.imageUrl
   ].filter((source): source is string => typeof source === 'string' && source.trim().length > 0))]
-  const imageSourceKey = imageSources.join('\n')
   const [sourceIndex, setSourceIndex] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isUnavailable, setIsUnavailable] = useState(imageSources.length === 0)
-
-  useEffect(() => {
-    setSourceIndex(0)
-    setIsLoaded(false)
-    setIsUnavailable(imageSources.length === 0)
-  }, [imageSourceKey])
 
   return (
     <>
@@ -581,7 +574,11 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
                 >
                   {/* Image Container with Smooth Zoom */}
                   <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#F6ECE8] md:aspect-4/3">
-                    <ProductCardImage product={product} isDarkMode={isDarkMode} />
+                    <ProductCardImage
+                      key={`${product.id}-${product.imageUrl}-${(product.imageUrls ?? []).join('|')}`}
+                      product={product}
+                      isDarkMode={isDarkMode}
+                    />
 
                     {/* Subtle Scrim */}
                     <div className="absolute inset-0 bg-linear-to-t from-black/25 via-transparent to-transparent pointer-events-none" />

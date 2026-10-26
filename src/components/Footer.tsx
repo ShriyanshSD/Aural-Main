@@ -37,7 +37,7 @@ export const Footer: React.FC<FooterProps> = ({
               {settings.description}
             </p>
             <div className="pt-2 text-xs text-[#8E7973]">
-              Concierge: {settings.contactEmail}
+              Concierge: <a href="mailto:aruelstudio22@gmail.com" className="hover:text-[#B36D6D]">aruelstudio22@gmail.com</a>
             </div>
           </div>
 
@@ -101,9 +101,6 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <span className="opacity-70">{settings.deliveryNote}</span>
               </li>
-              <li>
-                <span className="opacity-70">Care Instructions</span>
-              </li>
             </ul>
           </div>
 
@@ -114,14 +111,14 @@ export const Footer: React.FC<FooterProps> = ({
             </h4>
             <ul className="space-y-2 text-xs text-[#6F5C56] dark:text-[#C5B4AD]">
               <li>
-                {settings.instagramUrl
-                  ? <a href={settings.instagramUrl} target="_blank" rel="noreferrer" className="hover:text-[#B36D6D]">Instagram</a>
-                  : <span className="opacity-70">Instagram @aurel.keepsakes</span>}
-              </li>
-              <li>
-                {settings.facebookUrl
-                  ? <a href={settings.facebookUrl} target="_blank" rel="noreferrer" className="hover:text-[#B36D6D]">Facebook</a>
-                  : <span className="opacity-70">Pinterest @aurelgifts</span>}
+                <a
+                  href="https://www.instagram.com/_.aurelstudio._?psln=YnRvcGt3dTNyM2V3"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-[#B36D6D]"
+                >
+                  Instagram
+                </a>
               </li>
             </ul>
           </div>
@@ -129,17 +126,8 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
 
         {/* Bottom Bar */}
-        <div className="mt-12 pt-6 border-t border-black/5 dark:border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-[#8E7973] dark:text-[#A79690]">
-          <div>
-            © 2026 AUREL · All Rights Reserved
-          </div>
-          <div className="flex items-center gap-4">
-            <span>Privacy Policy</span>
-            <span>·</span>
-            <span>Terms of Service</span>
-            <span>·</span>
-            <span>Secured Checkout</span>
-          </div>
+        <div className="mt-10 border-t border-black/5 pt-5 text-center text-[11px] text-[#8E7973] dark:border-white/5 dark:text-[#A79690]">
+          © {new Date().getFullYear()} AUREL · All Rights Reserved
         </div>
 
       </div>

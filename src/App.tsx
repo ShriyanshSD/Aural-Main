@@ -139,9 +139,9 @@ const initialStoreSettings: StoreSettings = {
   storeName: 'AUREL',
   tagline: 'Made With Love For You',
   description: 'Curated luxury memory magazines, botanical bouquets, eternal single blossoms, and thoughtful keepsakes.',
-  contactEmail: 'concierge@aurelgifts.com',
+  contactEmail: 'aruelstudio22@gmail.com',
   phone: '',
-  whatsappNumber: '',
+  whatsappNumber: '919999200913',
   instagramUrl: '',
   facebookUrl: '',
   deliveryNote: 'Pan India Delivery'
@@ -493,7 +493,7 @@ function StorefrontApp() {
 
     const scrollElement = document.scrollingElement
     if (!scrollElement) {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, behavior: 'instant' })
       return
     }
 
