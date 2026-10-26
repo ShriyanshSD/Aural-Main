@@ -491,39 +491,8 @@ function StorefrontApp() {
       return
     }
 
-    const scrollElement = document.scrollingElement
-    if (!scrollElement) {
-      window.scrollTo({ top: 0, behavior: 'instant' })
-      return
-    }
-
-    const startY = scrollElement.scrollTop
-    if (startY <= 0) return
-
-    const startTime = performance.now()
-    const duration = Math.min(2600, 1400 + startY * 0.08)
-    originalScrollBehaviorRef.current = document.documentElement.style.scrollBehavior
-    document.documentElement.style.scrollBehavior = 'auto'
-
-    const animateToTop = (now: number) => {
-      const progress = Math.min((now - startTime) / duration, 1)
-      const easedProgress = progress < 0.5
-        ? 4 * progress ** 3
-        : 1 - ((-2 * progress + 2) ** 3) / 2
-
-      scrollElement.scrollTop = startY * (1 - easedProgress)
-
-      if (progress < 1) {
-        scrollAnimationRef.current = requestAnimationFrame(animateToTop)
-      } else {
-        scrollElement.scrollTop = 0
-        scrollAnimationRef.current = null
-        document.documentElement.style.scrollBehavior = originalScrollBehaviorRef.current ?? ''
-        originalScrollBehaviorRef.current = null
-      }
-    }
-
-    scrollAnimationRef.current = requestAnimationFrame(animateToTop)
+    const duration = Math.min(3500, 1800 + window.scrollY * 0.15)
+    smoothScrollTo(0, duration)
   }
 
   const handleToggleTheme = () => {
