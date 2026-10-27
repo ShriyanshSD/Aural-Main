@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { motion } from 'motion/react'
 import { Star, Heart, Sparkles, Send, CheckCircle2, Mail, MessageCircle, Shield, Award } from 'lucide-react'
 import { REVIEWS } from '../data/products'
+import { BrandLogo } from './BrandLogo'
 
 interface StoryAndReviewsProps {
   isDarkMode: boolean
@@ -370,9 +371,7 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
           </div>
 
           <div className="pt-8">
-            <p className="font-serif-title text-xl tracking-[0.2em] font-light">
-              AUREL
-            </p>
+            <BrandLogo isDarkMode={isDarkMode} className="mx-auto block h-12 w-20 object-contain" />
             <p className="font-editorial text-xs text-[#8E7973] dark:text-[#A79690] mt-1">
               Made for your people · Made for your moments
             </p>

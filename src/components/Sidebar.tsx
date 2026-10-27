@@ -4,6 +4,7 @@ import { X, Sparkles, BookOpen, Gift, Flower2, Heart, Layers, ArrowRight, UserRo
 import { ProductCategory, StoreCategory, StoreSettings } from '../types'
 import { AuthUser } from '../types'
 import { AuthMode } from './AuthModal'
+import { BrandLogo } from './BrandLogo'
 
 interface SidebarProps {
   isOpen: boolean
@@ -161,9 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {/* Header with Brand and Close */}
             <div className="p-6 sm:p-8 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
               <div>
-                <span className="font-serif-title text-2xl tracking-[0.2em] font-light">
-                  {settings.storeName}
-                </span>
+                <BrandLogo isDarkMode={isDarkMode} className="block h-14 w-28 object-contain object-left" />
                 <p className="font-editorial text-xs text-[#B36D6D] tracking-wider mt-0.5">
                   {settings.tagline}
                 </p>
@@ -359,9 +358,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Footer Note */}
             <div className="p-6 border-t border-black/5 dark:border-white/5 text-center">
-              <p className="font-serif-title text-xs tracking-widest text-[#B36D6D]">
-                AUREL BESPOKE ARCHIVE
-              </p>
+              <BrandLogo isDarkMode={isDarkMode} className="mx-auto block h-12 w-24 object-contain" />
+              <p className="font-serif-title text-[10px] tracking-widest text-[#B36D6D]">BESPOKE ARCHIVE</p>
               <p className="font-sans-body text-[11px] text-[#917E79] dark:text-[#A18F89] mt-1">
                 Made for your people · Made for your moments
               </p>

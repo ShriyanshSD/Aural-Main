@@ -1,5 +1,6 @@
 import React from 'react'
 import { ProductCategory, StoreSettings } from '../types'
+import { BrandLogo } from './BrandLogo'
 
 interface FooterProps {
   isDarkMode: boolean
@@ -27,9 +28,7 @@ export const Footer: React.FC<FooterProps> = ({
           
           {/* Brand Info */}
           <div className="md:col-span-5 space-y-3">
-            <span className="font-serif-title text-2xl sm:text-3xl tracking-[0.2em] font-light">
-              {settings.storeName}
-            </span>
+            <BrandLogo isDarkMode={isDarkMode} className="block h-16 w-32 object-contain object-left" />
             <p className="font-editorial text-sm text-[#B36D6D]">
               {settings.tagline}
             </p>
@@ -127,7 +126,7 @@ export const Footer: React.FC<FooterProps> = ({
 
         {/* Bottom Bar */}
         <div className="mt-10 border-t border-black/5 pt-5 text-center text-[11px] text-[#8E7973] dark:border-white/5 dark:text-[#A79690]">
-          © {new Date().getFullYear()} AUREL · All Rights Reserved
+          © {new Date().getFullYear()} <BrandLogo isDarkMode={isDarkMode} className="mx-1 inline-block h-7 w-10 align-middle object-contain" /> · All Rights Reserved
         </div>
 
       </div>

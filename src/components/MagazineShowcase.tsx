@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { motion } from 'motion/react'
 import { Sparkles, Check, ArrowRight, BookOpen, Layers } from 'lucide-react'
 import { FinishType, Product } from '../types'
+import { BrandLogo } from './BrandLogo'
 
 interface MagazineShowcaseProps {
   isDarkMode: boolean
@@ -87,12 +88,13 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                 {/* Masthead Header */}
                 <div className="border-b border-black/10 dark:border-white/10 pb-4">
                   <div className="flex items-center justify-between text-[10px] tracking-[0.25em] uppercase text-[#B36D6D]">
-                    <span>AUREL ARCHIVES</span>
+                    <span className="flex items-center gap-1">
+                      <BrandLogo isDarkMode={isDarkMode} className="h-5 w-8 object-contain" />
+                      ARCHIVES
+                    </span>
                     <span>VOL · 2026</span>
                   </div>
-                  <h1 className="font-serif-title text-4xl sm:text-5xl font-light tracking-[0.2em] text-center mt-2 text-[#292220] dark:text-[#F3EBE6]">
-                    AUREL
-                  </h1>
+                  <BrandLogo isDarkMode={isDarkMode} className="mx-auto mt-2 block h-16 w-32 object-contain" />
                   <p className="font-editorial text-center text-xs tracking-widest text-[#8F5A54] dark:text-[#D5AEA7] italic mt-1">
                     Made With Love For You
                   </p>

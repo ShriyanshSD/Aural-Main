@@ -3,6 +3,7 @@ import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, Settings, X } from 'lucide-react'
 import { AuthUser, Product, StoreSettings } from '../types'
 import { AuthMode } from './AuthModal'
+import { BrandLogo } from './BrandLogo'
 
 interface NavigationProps {
   isDarkMode: boolean
@@ -422,15 +423,10 @@ export const Navigation: React.FC<NavigationProps> = ({
             aria-label="AUREL home"
             className="absolute left-1/2 flex h-10 w-16 -translate-x-1/2 items-center justify-center sm:h-[3.25rem] sm:w-[100px]"
           >
-            {isDarkMode ? (
-              <span className="brand-logo-salmon h-full w-full" role="img" aria-label="AUREL" />
-            ) : (
-              <img
-                src="/aurel-logo.png"
-                alt="AUREL"
-                className="h-full w-full object-contain transition-opacity duration-300 hover:opacity-80"
-              />
-            )}
+            <BrandLogo
+              isDarkMode={isDarkMode}
+              className="h-full w-full object-contain transition-opacity duration-300 hover:opacity-80"
+            />
           </button>
 
         {/* Search and primary quick actions */}
