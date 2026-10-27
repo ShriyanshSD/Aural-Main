@@ -462,8 +462,8 @@ function StorefrontApp() {
     const animateScroll = (now: number) => {
       const progress = Math.min((now - startTime) / duration, 1)
       const easedProgress = progress < 0.5
-        ? 8 * progress ** 4
-        : 1 - ((-2 * progress + 2) ** 4) / 2
+        ? 4 * progress ** 3
+        : 1 - ((-2 * progress + 2) ** 3) / 2
       window.scrollTo({ top: startY + distance * easedProgress, behavior: 'instant' })
 
       if (progress < 1) {
@@ -486,12 +486,11 @@ function StorefrontApp() {
       originalScrollBehaviorRef.current = null
     }
 
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      window.scrollTo({ top: 0, behavior: 'instant' })
-      return
-    }
-
-    const duration = Math.min(3500, 1800 + window.scrollY * 0.15)
+    const scrollY = window.scrollY
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const duration = prefersReducedMotion
+      ? Math.min(1200, 650 + scrollY * 0.05)
+      : Math.min(3500, 1800 + scrollY * 0.15)
     smoothScrollTo(0, duration)
   }
 
@@ -1021,7 +1020,7 @@ function StorefrontApp() {
       </DeferredMount>
 
       <AnimatePresence>
-        {showBackToTop && (
+        {showBackToTop && !selectedProduct && (
           <motion.button
             initial={{ opacity: 0, y: 8, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
