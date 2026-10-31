@@ -747,3 +747,81 @@ html.dark .hero-headline {
     animation-duration: var(--theme-duration);
   }
 }
+
+.owner-dashboard {
+  --owner-motion: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.owner-page-enter {
+  animation: owner-page-enter 420ms var(--owner-motion) both;
+}
+
+.owner-card {
+  transition: transform 220ms var(--owner-motion), box-shadow 220ms var(--owner-motion), border-color 220ms ease;
+}
+
+.owner-card:hover {
+  border-color: #e7d8d1;
+  box-shadow: 0 14px 34px rgba(70, 48, 39, 0.07);
+}
+
+.owner-overview-hero::before,
+.owner-overview-hero::after {
+  position: absolute;
+  z-index: -1;
+  border-radius: 9999px;
+  content: "";
+  pointer-events: none;
+}
+
+.owner-overview-hero::before {
+  top: -11rem;
+  right: -5rem;
+  width: 28rem;
+  height: 28rem;
+  background: radial-gradient(circle, rgba(193, 128, 119, 0.3), rgba(193, 128, 119, 0) 68%);
+}
+
+.owner-overview-hero::after {
+  right: 24%;
+  bottom: -16rem;
+  width: 30rem;
+  height: 24rem;
+  background: radial-gradient(ellipse, rgba(125, 91, 83, 0.3), rgba(125, 91, 83, 0) 72%);
+}
+
+.owner-nav-item {
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms var(--owner-motion);
+}
+
+.owner-nav-item:hover {
+  transform: translateX(2px);
+}
+
+@keyframes owner-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .owner-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .owner-page-enter {
+    animation: none;
+  }
+
+  .owner-card,
+  .owner-nav-item {
+    transition: none;
+  }
+}

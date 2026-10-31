@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, Check, ChevronDown, CircleAlert, ImagePlus,
-  Bell, LayoutDashboard, LoaderCircle, LogOut, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
-  Star, Store, Trash2, Users, X
+  Activity, ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, CalendarDays, Check, ChevronDown, CircleAlert,
+  CircleDollarSign, Clock3, ImagePlus, Bell, LayoutDashboard, LoaderCircle, LogOut, Mail, MapPin, Package,
+  PackageCheck, Phone, Plus, Search, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Trash2,
+  UserRound, Users, X
 } from 'lucide-react'
 import type { Product } from './types'
 import type { StorefrontContent } from './types'
@@ -370,7 +371,7 @@ export default function AdminApp() {
     `${product.name} ${product.id} ${product.category}`.toLowerCase().includes(search.toLowerCase())
   ), [products, search])
   const filteredOrders = useMemo(() => orders.filter(order =>
-    `${order.id} ${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''}`.toLowerCase().includes(search.toLowerCase())
+    `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''} ${order.order_data.phoneNumber ?? ''} ${order.order_data.address ?? ''} ${order.order_data.city ?? ''} ${order.order_data.postalCode ?? ''}`.toLowerCase().includes(search.toLowerCase())
   ), [orders, search])
   const filteredCustomers = useMemo(() => customers.filter(customer =>
     `${customer.name} ${customer.username} ${customer.email} ${customer.phone}`.toLowerCase().includes(search.toLowerCase())
@@ -443,7 +444,7 @@ export default function AdminApp() {
     if (notification.notification_type !== 'new_order') await markNotificationRead(notification)
     setNotificationsOpen(false)
     if (notification.target_type === 'order') {
-      setSearch(notification.target_id ?? '')
+      setSearch('')
       navigateSection('orders')
     }
     else if (notification.target_type === 'review') navigateSection('reviews')
@@ -494,9 +495,9 @@ export default function AdminApp() {
   const currentTitle = sections.find(item => item.id === section)?.label ?? 'Overview'
   return (
     <div className="owner-dashboard min-h-screen bg-[#f7f5f2] text-[#322825]">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#eee6e1] bg-white lg:flex">
-        <a href="/" className="flex h-24 items-center gap-3 border-b border-[#f1ebe7] px-6">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#a45f60] text-white">
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#eee6e1] bg-white/95 shadow-[10px_0_40px_rgba(74,49,39,0.025)] backdrop-blur-xl lg:flex">
+        <a href="/" className="flex h-24 items-center gap-3 border-b border-[#f1ebe7] px-6 transition-colors hover:bg-[#fcf9f7]">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#bd7e78] to-[#925256] text-white shadow-lg shadow-[#a45f60]/20">
             <Store className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
@@ -507,10 +508,10 @@ export default function AdminApp() {
         <nav className="flex-1 space-y-1 px-3 py-6">
           {sections.map(item => {
             const Icon = item.icon
-            return <button key={item.id} onClick={() => { navigateSection(item.id); setSearch('') }} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${section === item.id ? 'bg-[#f8eeeb] text-[#a45f60]' : 'text-[#776762] hover:bg-[#faf7f5]'}`}><Icon className="h-4 w-4" />{item.label}</button>
+            return <button key={item.id} aria-current={section === item.id ? 'page' : undefined} onClick={() => { navigateSection(item.id); setSearch('') }} className={`owner-nav-item flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${section === item.id ? 'bg-[#f8eeeb] text-[#a45f60] shadow-sm shadow-[#a45f60]/5' : 'text-[#776762] hover:bg-[#faf7f5]'}`}><Icon className="h-4 w-4" />{item.label}</button>
           })}
         </nav>
-        <div className="border-t border-[#f1ebe7] p-4">
+        <div className="border-t border-[#f1ebe7] bg-[#fdfbf9] p-4">
           <div className="truncate px-2 text-xs text-[#92817b]" title={ownerEmail}>{ownerEmail}</div>
           <button onClick={() => { window.location.href = '/' }} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#776762] hover:bg-[#faf7f5]"><ArrowUpRight className="h-4 w-4" /> View storefront</button>
           <button onClick={() => void logout()} className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#9e5353] hover:bg-[#fff4f2]"><LogOut className="h-4 w-4" /> Sign out</button>
@@ -518,8 +519,8 @@ export default function AdminApp() {
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-10 flex min-h-20 items-center justify-between border-b border-[#eee6e1] bg-white/95 px-4 backdrop-blur sm:px-8">
-          <div><p className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#aa7771]">Aurel Studio / {currentTitle}</p><h1 className="mt-1 font-serif-title text-xl sm:text-2xl">{currentTitle}</h1></div>
+        <header className="sticky top-0 z-20 flex min-h-[72px] items-center justify-between border-b border-[#eee6e1] bg-white/90 px-4 shadow-[0_8px_24px_rgba(60,40,32,0.035)] backdrop-blur-xl sm:px-8">
+          <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[.2em] text-[#aa7771] sm:text-[10px]">Aurel Studio <span className="px-1 text-[#d3c4bd]">/</span> {currentTitle}</p><h1 className="mt-1 truncate font-serif-title text-xl sm:text-2xl">{currentTitle}</h1></div>
           <div className="flex items-center gap-3">
             <span className="hidden max-w-48 truncate text-xs text-[#897770] sm:block">{ownerEmail}</span>
             <NotificationBell
@@ -538,15 +539,16 @@ export default function AdminApp() {
             <button onClick={() => void logout()} title="Sign out" className="rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] hover:bg-[#faf6f3] lg:hidden"><LogOut className="h-4 w-4" /></button>
           </div>
         </header>
-        <div className="flex gap-1 overflow-x-auto border-b border-[#eee6e1] bg-white px-3 py-2 lg:hidden">
-          {sections.map(item => <button key={item.id} onClick={() => { navigateSection(item.id); setSearch('') }} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-medium ${section === item.id ? 'bg-[#a45f60] text-white' : 'text-[#776762]'}`}>{item.label}</button>)}
+        <div className="sticky top-[72px] z-10 flex gap-1 overflow-x-auto border-b border-[#eee6e1] bg-white/95 px-3 py-2 shadow-[0_8px_18px_rgba(60,40,32,0.035)] backdrop-blur-xl lg:hidden">
+          {sections.map(item => <button key={item.id} aria-current={section === item.id ? 'page' : undefined} onClick={() => { navigateSection(item.id); setSearch('') }} className={`shrink-0 rounded-lg px-3.5 py-2.5 text-xs font-medium transition ${section === item.id ? 'bg-[#a45f60] text-white shadow-md shadow-[#a45f60]/20' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>{item.label}</button>)}
         </div>
 
-        <main className="mx-auto max-w-[1500px] p-4 sm:p-8">
+        <main className="mx-auto max-w-[1500px] px-3 py-5 sm:px-6 sm:py-7 xl:px-9">
           {error && <AlertMessage message={error} />}
           {notice && <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check className="h-4 w-4" />{notice}<button onClick={() => setNotice('')} className="ml-auto"><X className="h-4 w-4" /></button></div>}
           {busy && <div className="mb-4 flex items-center gap-2 text-xs text-[#9b8881]"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Updating dashboard</div>}
 
+          <div key={section} className="owner-page-enter">
           {section === 'dashboard' && <Dashboard overview={overview} range={analyticsRange} onRangeChange={setAnalyticsRange} onOpenSection={navigateSection} />}
           {section === 'products' && <ProductsPage
             products={filteredProducts} categories={categories} search={search} setSearch={setSearch}
@@ -698,6 +700,7 @@ export default function AdminApp() {
             }}
             onRefreshActivity={() => void loadSection('settings')}
           />}
+          </div>
         </main>
       </div>
 
@@ -960,11 +963,12 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
 }) {
   const metrics = overview?.metrics
   const cards = [
-    ['Verified order value', money(metrics?.recordedPaidOrderValue), 'Payments manually confirmed by an owner'],
-    ['Orders in period', String(metrics?.orders ?? 0), 'All recorded orders in the selected period'],
-    ['Customers', String(metrics?.customers ?? 0), 'Registered customer accounts'],
-    ['Products', String(metrics?.products ?? 0), `${metrics?.lowStock ?? 0} at or below their low-stock threshold`]
+    { label: 'Verified revenue', value: money(metrics?.recordedPaidOrderValue), detail: 'Payments confirmed by you', Icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
+    { label: 'Orders', value: String(metrics?.orders ?? 0), detail: 'In the selected period', Icon: ShoppingBag, tone: 'bg-[#f8eeeb] text-[#a45f60]' },
+    { label: 'Customers', value: String(metrics?.customers ?? 0), detail: 'Registered accounts', Icon: UserRound, tone: 'bg-sky-50 text-sky-700' },
+    { label: 'Products', value: String(metrics?.products ?? 0), detail: `${metrics?.lowStock ?? 0} running low on stock`, Icon: PackageCheck, tone: 'bg-violet-50 text-violet-700' }
   ]
+  const awaitingCount = overview?.orderStatuses.find(item => item.status === 'pending_payment')?.count ?? 0
   const statusColors: Record<string, string> = {
     pending_payment: '#d69a58',
     confirmed: '#83a98b',
@@ -981,13 +985,41 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
     chartAngle += item.count / Math.max(1, statusTotal) * 360
     return `${statusColors[item.status] ?? '#b9aaa5'} ${start}deg ${chartAngle}deg`
   }).join(', ')
-  return <div className="space-y-7">
-    <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-serif-title text-2xl">Welcome to your studio</h2><p className="mt-1 text-sm text-[#887770]">A live snapshot of your storefront and operations.</p></div><div className="flex items-center gap-3"><label className="text-xs font-medium text-[#887770]">Period<select value={range} onChange={event => onRangeChange(event.target.value as typeof range)} className="ml-2 rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2 text-xs"><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="all">All time</option></select></label><a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-[#a45f60]">Open storefront <ArrowUpRight className="h-4 w-4" /></a></div></div>
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, detail]) => <div key={label} className="rounded-2xl border border-[#eee5df] bg-white p-5"><p className="text-xs font-semibold uppercase tracking-[.12em] text-[#9a827a]">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-xs text-[#988780]">{detail}</p></div>)}</div>
-    <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div><h3 className="font-semibold">Order breakdown</h3><p className="mt-1 text-xs text-[#9a8881]">Orders by status in the selected period</p></div>
-        <span className="rounded-full bg-[#f8eeeb] px-3 py-1.5 text-xs font-semibold text-[#934f51]">{statusTotal} orders</span>
+  return <div className="space-y-5 sm:space-y-6">
+    <section className="owner-overview-hero relative isolate overflow-hidden rounded-[26px] bg-[#392b2c] px-5 py-6 text-white shadow-xl shadow-[#483532]/10 sm:px-8 sm:py-8 lg:px-10 lg:py-9">
+      <div className="relative z-10 flex flex-col justify-between gap-7 md:flex-row md:items-end">
+        <div className="max-w-2xl">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[.18em] text-[#f3d9d3]"><Sparkles className="h-3.5 w-3.5" /> Owner studio</span>
+          <h2 className="mt-4 font-serif-title text-3xl leading-tight sm:text-4xl">Your store, at a glance.</h2>
+          <p className="mt-2 max-w-lg text-sm leading-6 text-white/65">A clear view of orders, customers, and the details that need your attention.</p>
+          <div className="mt-6 flex flex-wrap gap-2.5">
+            <button type="button" onClick={() => onOpenSection('orders')} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-[#483536] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#fff8f5]">
+              <Clock3 className="h-4 w-4" /> Review {awaitingCount} awaiting confirmation
+            </button>
+            <a href="/" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10">
+              Open storefront <ArrowUpRight className="h-4 w-4" />
+            </a>
+          </div>
+        </div>
+        <label className="flex shrink-0 flex-col gap-2 text-[10px] font-semibold uppercase tracking-[.14em] text-white/60">
+          Analytics period
+          <select value={range} onChange={event => onRangeChange(event.target.value as typeof range)} className="min-h-11 rounded-xl border border-white/15 bg-[#4b3b3b] px-3 text-xs font-medium normal-case tracking-normal text-white outline-none transition focus:border-white/40">
+            <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="all">All time</option>
+          </select>
+        </label>
+      </div>
+    </section>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {cards.map(({ label, value, detail, Icon, tone }) => <article key={label} className="owner-card rounded-2xl border border-[#eee8e4] bg-white p-4 shadow-[0_8px_24px_rgba(70,48,39,0.035)] sm:p-5">
+        <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-[#96847d]">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight text-[#3d302e] sm:text-[28px]">{value}</p></div><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${tone}`}><Icon className="h-[18px] w-[18px]" /></span></div>
+        <p className="mt-3 truncate text-[11px] text-[#9a8881]">{detail}</p>
+      </article>)}
+    </div>
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.3fr)]">
+    <section className="owner-card rounded-2xl border border-[#eee5df] bg-white p-5 shadow-[0_8px_24px_rgba(70,48,39,0.035)] sm:p-6">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div><h3 className="font-semibold text-[#3d302e]">Order breakdown</h3><p className="mt-1 text-xs text-[#9a8881]">A quick look at order progress</p></div>
+        <span className="rounded-full bg-[#f8eeeb] px-3 py-1.5 text-[11px] font-semibold text-[#934f51]">{statusTotal} total</span>
       </div>
       {statusTotal ? <div className="grid items-center gap-5 sm:grid-cols-[132px_minmax(0,1fr)]">
         <div role="img" aria-label={`Order status breakdown: ${statusSlices.map(item => `${statusLabel(item.status)} ${item.count}`).join(', ')}`} className="relative mx-auto h-32 w-32 rounded-full" style={{ background: `conic-gradient(${chartGradient})` }}>
@@ -1002,14 +1034,13 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
         </ul>
       </div> : <EmptyState text="Orders will appear here for the selected period." />}
     </section>
-    <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-      <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><div><h3 className="font-semibold">Recent orders</h3><p className="mt-1 text-xs text-[#9a8881]">Latest customer orders</p></div><button onClick={() => onOpenSection('orders')} className="text-xs font-semibold text-[#a45f60]">All orders</button></div>
-        {overview?.recentOrders.length ? <div className="divide-y divide-[#f2ece8]">{overview.recentOrders.map(order => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{order.order_id}</p><p className="mt-1 truncate text-xs text-[#97857e]">{String(order.order_data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.order_data.total)}</p><p className="mt-1 text-[10px] text-[#97857e]">{statusLabel(order.order_status)} · {statusLabel(order.payment_status)}</p></div></div>)}</div> : <EmptyState text="Orders will appear here once they are placed." />}
-      </section>
-      <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5"><h3 className="font-semibold">Top sellers</h3><p className="mt-1 text-xs text-[#9a8881]">Based on recorded paid order items.</p></div>
-        {overview?.bestsellers.length ? <div className="space-y-4">{overview.bestsellers.map(item => <div key={item.name}><div className="mb-1.5 flex justify-between gap-3 text-sm"><span className="truncate">{item.name}</span><span className="shrink-0 text-[#8d7770]">{item.quantity} sold</span></div><div className="h-2 overflow-hidden rounded-full bg-[#f3eae6]"><div className="h-full rounded-full bg-[#b97772]" style={{ width: `${Math.min(100, Math.max(8, item.quantity / overview.bestsellers[0].quantity * 100))}%` }} /></div></div>)}</div> : <EmptyState text="Product sales will appear here after paid orders." />}
+      <section className="owner-card rounded-2xl border border-[#eee5df] bg-white p-5 shadow-[0_8px_24px_rgba(70,48,39,0.035)] sm:p-6"><div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="font-semibold text-[#3d302e]">Recent orders</h3><p className="mt-1 text-xs text-[#9a8881]">Latest customer activity</p></div><button onClick={() => onOpenSection('orders')} className="shrink-0 rounded-lg px-2.5 py-2 text-xs font-semibold text-[#a45f60] transition hover:bg-[#faf2ef]">All orders <ArrowUpRight className="ml-1 inline h-3.5 w-3.5" /></button></div>
+        {overview?.recentOrders.length ? <div className="divide-y divide-[#f2ece8]">{overview.recentOrders.slice(0, 5).map(order => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#443632]">{order.order_id}</p><p className="mt-1 truncate text-xs text-[#97857e]">{String(order.order_data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.order_data.total)}</p><p className="mt-1 text-[10px] text-[#97857e]">{statusLabel(order.order_status)}</p></div></div>)}</div> : <EmptyState text="Orders will appear here once they are placed." />}
       </section>
     </div>
+    <section className="owner-card rounded-2xl border border-[#eee5df] bg-white p-5 shadow-[0_8px_24px_rgba(70,48,39,0.035)] sm:p-6"><div className="mb-4 flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#f8eeeb] text-[#a45f60]"><Activity className="h-4 w-4" /></span><div><h3 className="font-semibold text-[#3d302e]">Top sellers</h3><p className="mt-0.5 text-xs text-[#9a8881]">Based on recorded paid order items</p></div></div>
+        {overview?.bestsellers.length ? <div className="space-y-4">{overview.bestsellers.map(item => <div key={item.name}><div className="mb-1.5 flex justify-between gap-3 text-sm"><span className="truncate">{item.name}</span><span className="shrink-0 text-[#8d7770]">{item.quantity} sold</span></div><div className="h-2 overflow-hidden rounded-full bg-[#f3eae6]"><div className="h-full rounded-full bg-[#b97772]" style={{ width: `${Math.min(100, Math.max(8, item.quantity / overview.bestsellers[0].quantity * 100))}%` }} /></div></div>)}</div> : <EmptyState text="Product sales will appear here after paid orders." />}
+    </section>
   </div>
 }
 function EmptyState({ text }: { text: string }) {
@@ -1089,7 +1120,7 @@ function OrdersPage({ orders, search, setSearch, onConfirmPayment, onRetryEmail,
     return true
   }), [orders, tab])
   const filteredOrders = useMemo(() => tabOrders.filter(order =>
-    `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''}`.toLowerCase().includes(search.toLowerCase())
+    `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''} ${order.order_data.phoneNumber ?? ''}`.toLowerCase().includes(search.toLowerCase())
   ), [tabOrders, search])
   const { page, setPage, pageCount, visibleItems } = usePagination(filteredOrders)
   const awaitingCount = orders.filter(order => order.payment_status === 'pending' && order.order_status === 'pending_payment').length
@@ -1192,24 +1223,57 @@ function OrdersPage({ orders, search, setSearch, onConfirmPayment, onRetryEmail,
           {label}<span className={`ml-2 inline-flex min-w-6 items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold ${id === 'awaiting' && count > 0 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/25' : tab === id ? 'bg-[#a45f60]/10' : 'bg-[#f4efec]'}`}>{count}</span>
         </button>)}
       </div>
-      <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search order, customer or email" />
+      <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search order ID, customer, email or phone" />
     </div>
     <div className="space-y-3">
       {visibleItems.map(order => {
         const items = Array.isArray(order.order_data.items) ? order.order_data.items as Record<string, unknown>[] : []
         const address = [order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'
-        if (tab === 'awaiting') return <article key={order.id} className="flex flex-col justify-between gap-4 rounded-2xl border border-[#eee5df] bg-white p-4 sm:flex-row sm:items-center sm:p-5">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <p className="text-sm font-semibold">{order.order_id}</p>
-              <span className="text-xs text-[#938079]">{dateLabel(order.created_at)}</span>
+        if (tab === 'awaiting') return <article key={order.id} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-[0_8px_24px_rgba(70,48,39,0.035)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f1ebe7] bg-gradient-to-r from-[#fffaf6] to-white px-4 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#fff0df] text-[#ae712e]"><ShoppingBag className="h-[18px] w-[18px]" /></span>
+              <div className="min-w-0"><p className="truncate text-sm font-bold text-[#3d302e]">{order.order_id}</p><p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#938079]"><CalendarDays className="h-3 w-3" />Placed {dateLabel(order.created_at)}</p></div>
             </div>
-            <p className="mt-1 text-sm text-[#5e4d47]">{String(order.order_data.customerName ?? 'Customer')} <span className="text-[#a18c84]">· {String(order.order_data.phoneNumber ?? order.order_data.email ?? 'No contact details')}</span></p>
-            <p className="mt-2 line-clamp-2 text-xs text-[#897770]">{items.map(item => `${String(item.name ?? 'Item')} × ${String(item.quantity ?? 1)}`).join(' · ') || 'Order items unavailable'}</p>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-[10px] font-semibold text-amber-800"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Awaiting confirmation</span>
           </div>
-          <div className="flex shrink-0 items-center justify-between gap-4 sm:justify-end">
-            <span className="text-lg font-semibold">{money(order.order_data.total)}</span>
-            <button type="button" onClick={() => onConfirmPayment(order)} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800">Confirm payment</button>
+          <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+            <section className="min-w-0">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[.15em] text-[#9a827a]">Customer & delivery</h3>
+              <p className="mt-2 text-sm font-semibold text-[#40332f]">{String(order.order_data.customerName ?? 'Customer')}</p>
+              <div className="mt-2 grid gap-2 text-xs text-[#76645e] sm:grid-cols-2">
+                <a href={`tel:${encodeURIComponent(String(order.order_data.phoneNumber ?? ''))}`} className="flex min-w-0 items-center gap-2 break-all hover:text-[#a45f60]"><Phone className="h-3.5 w-3.5 shrink-0 text-[#aa7771]" />{String(order.order_data.phoneNumber ?? 'No phone number')}</a>
+                <a href={`mailto:${encodeURIComponent(String(order.order_data.email ?? ''))}`} className="flex min-w-0 items-center gap-2 break-all hover:text-[#a45f60]"><Mail className="h-3.5 w-3.5 shrink-0 text-[#aa7771]" />{String(order.order_data.email ?? 'No email')}</a>
+              </div>
+              <div className="mt-3 flex items-start gap-2 rounded-xl bg-[#faf7f5] p-3 text-xs leading-5 text-[#6f5c55]">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#aa7771]" /><span>{address}</span>
+              </div>
+              {typeof order.order_data.notes === 'string' && order.order_data.notes.trim() && <p className="mt-3 rounded-xl border border-[#f1ebe7] px-3 py-2.5 text-xs leading-5 text-[#76645e]"><span className="font-semibold text-[#5e4d47]">Order note: </span>{order.order_data.notes}</p>}
+            </section>
+            <section className="min-w-0">
+              <h3 className="text-[10px] font-semibold uppercase tracking-[.15em] text-[#9a827a]">Items <span className="font-normal normal-case tracking-normal">({items.length})</span></h3>
+              {items.length ? <ul className="mt-2 divide-y divide-[#f2ece8]">{items.map((item, index) => {
+                const quantity = Number(item.quantity ?? 1)
+                const unitPrice = Number(item.price ?? 0)
+                const options = [item.variantName, item.finish].filter(value => typeof value === 'string' && value).map(String)
+                return <li key={`${String(item.productId ?? item.name)}-${index}`} className="py-2.5 first:pt-1">
+                  <div className="flex justify-between gap-3 text-xs"><span className="min-w-0 font-medium text-[#51413c]">{String(item.name ?? 'Item')}<span className="font-normal text-[#8f7c75]"> × {quantity}</span></span><span className="shrink-0 font-semibold text-[#51413c]">{money(unitPrice * quantity)}</span></div>
+                  {options.length > 0 && <p className="mt-1 text-[10px] text-[#95827a]">{options.join(' · ')}</p>}
+                  {Array.isArray(item.customComponents) && item.customComponents.length > 0 && <p className="mt-1 text-[10px] text-[#76645e]">Includes: {item.customComponents.map(String).join(', ')}</p>}
+                  {typeof item.recipientName === 'string' && item.recipientName && <p className="mt-1 text-[10px] text-[#76645e]">For: {item.recipientName}</p>}
+                  {typeof item.customMessage === 'string' && item.customMessage && <p className="mt-1 line-clamp-2 text-[10px] italic text-[#8f7c75]">“{item.customMessage}”</p>}
+                </li>
+              })}</ul> : <p className="mt-3 text-xs text-[#95827a]">Order items unavailable.</p>}
+              <div className="mt-2 space-y-1.5 border-t border-[#eee5df] pt-3 text-xs">
+                <div className="flex justify-between text-[#897770]"><span>Subtotal</span><span>{money(order.order_data.subtotal)}</span></div>
+                <div className="flex justify-between text-[#897770]"><span>Delivery</span><span>{Number(order.order_data.shipping ?? 0) ? money(order.order_data.shipping) : 'Free'}</span></div>
+                <div className="flex justify-between border-t border-[#f2ece8] pt-2 text-sm font-bold text-[#40332f]"><span>Total</span><span>{money(order.order_data.total)}</span></div>
+              </div>
+            </section>
+          </div>
+          <div className="flex flex-col justify-between gap-3 border-t border-[#f1ebe7] bg-[#fdfbf9] px-4 py-3.5 sm:flex-row sm:items-center sm:px-6">
+            <p className="text-[11px] text-[#8f7c75]">Payment: <span className="font-semibold uppercase text-[#66534d]">{String(order.payment_method || 'UPI')}</span> <span className="px-1 text-[#d3c4bd]">·</span> Awaiting manual verification</p>
+            <button type="button" onClick={() => onConfirmPayment(order)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white shadow-sm shadow-emerald-900/10 transition hover:-translate-y-0.5 hover:bg-emerald-800 sm:w-auto"><Check className="h-4 w-4" />Confirm payment</button>
           </div>
         </article>
         return <article key={order.id} className="rounded-2xl border border-[#eee5df] bg-white p-4 shadow-sm sm:p-5">
