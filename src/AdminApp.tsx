@@ -9,6 +9,7 @@ import type { StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
 
 type Section = 'dashboard' | 'products' | 'inventory' | 'categories' | 'orders' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
+type OrderStatus = 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 type Fulfillment = 'unfulfilled' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 interface AdminCategory {
   slug: string
@@ -75,6 +76,11 @@ interface AdminOrder {
   order_data: Record<string, unknown>
   created_at: string
   fulfillment_status: Fulfillment
+  payment_status: 'pending' | 'paid' | 'failed' | 'refunded'
+  order_status: OrderStatus
+  payment_method: string
+  paid_at: string | null
+  paid_by: string | null
   events?: AdminOrderEvent[]
 }
 interface AdminOrderEvent {
@@ -198,7 +204,6 @@ const initialProduct: AdminProduct = {
   isActive: true,
   isPublished: true
 }
-const fulfillmentStatuses: Fulfillment[] = ['unfulfilled', 'processing', 'shipped', 'delivered', 'cancelled']
 const analyticsRangeStorageKey = 'aurel_admin_analytics_range'
 const analyticsRanges = ['7d', '30d', '90d', 'all'] as const
 type AnalyticsRange = typeof analyticsRanges[number]
@@ -618,10 +623,15 @@ export default function AdminApp() {
               }
             }}
           />}
-          {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} onUpdate={(order, status) => {
+          {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} onConfirmPayment={order => {
+            if (!window.confirm(`Confirm that ₹${money(order.order_data.total)} for ${order.order_id} has arrived in the receiving Google Pay or bank account?`)) return
             void runAction(async () => {
-              await api(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ fulfillmentStatus: status }) })
-            }, `Order ${order.order_id} fulfillment updated.`)
+              await api(`/api/admin/orders/${order.id}/confirm-payment`, { method: 'POST', body: '{}' })
+            }, `Payment verified and order ${order.order_id} confirmed.`)
+          }} onUpdate={(order, status) => {
+            void runAction(async () => {
+              await api(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
+            }, `Order ${order.order_id} status updated.`)
           }} />}
           {section === 'reviews' && <ReviewsPage
             reviews={reviews}
@@ -936,7 +946,7 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
 }) {
   const metrics = overview?.metrics
   const cards = [
-    ['Recorded paid-order value', money(metrics?.recordedPaidOrderValue), 'Checkout-recorded status only; payments are not independently verified'],
+    ['Verified order value', money(metrics?.recordedPaidOrderValue), 'Payments manually confirmed by an owner'],
     ['Orders in period', String(metrics?.orders ?? 0), 'All recorded orders in the selected period'],
     ['Customers', String(metrics?.customers ?? 0), 'Registered customer accounts'],
     ['Products', String(metrics?.products ?? 0), `${metrics?.lowStock ?? 0} at or below their low-stock threshold`]
@@ -946,7 +956,7 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, detail]) => <div key={label} className="rounded-2xl border border-[#eee5df] bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[.12em] text-[#9a827a]">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-xs text-[#988780]">{detail}</p></div>)}</div>
     <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
       <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><div><h3 className="font-semibold">Recent orders</h3><p className="mt-1 text-xs text-[#9a8881]">Payment state is customer-submitted and is not independently verified.</p></div><button onClick={() => onOpenSection('orders')} className="text-xs font-semibold text-[#a45f60]">All orders</button></div>
-        {overview?.recentOrders.length ? <div className="divide-y divide-[#f2ece8]">{overview.recentOrders.map(order => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{order.order_id}</p><p className="mt-1 truncate text-xs text-[#97857e]">{String(order.order_data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.order_data.total)}</p><p className="mt-1 text-[10px] text-[#97857e]">{statusLabel(order.fulfillment_status)} · {statusLabel(String(order.order_data.status ?? 'pending'))}</p></div></div>)}</div> : <EmptyState text="Orders will appear here once they are placed." />}
+        {overview?.recentOrders.length ? <div className="divide-y divide-[#f2ece8]">{overview.recentOrders.map(order => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{order.order_id}</p><p className="mt-1 truncate text-xs text-[#97857e]">{String(order.order_data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.order_data.total)}</p><p className="mt-1 text-[10px] text-[#97857e]">{statusLabel(order.order_status)} · {statusLabel(order.payment_status)}</p></div></div>)}</div> : <EmptyState text="Orders will appear here once they are placed." />}
       </section>
       <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5"><h3 className="font-semibold">Top sellers</h3><p className="mt-1 text-xs text-[#9a8881]">Based on recorded paid order items.</p></div>
         {overview?.bestsellers.length ? <div className="space-y-4">{overview.bestsellers.map(item => <div key={item.name}><div className="mb-1.5 flex justify-between gap-3 text-sm"><span className="truncate">{item.name}</span><span className="shrink-0 text-[#8d7770]">{item.quantity} sold</span></div><div className="h-2 overflow-hidden rounded-full bg-[#f3eae6]"><div className="h-full rounded-full bg-[#b97772]" style={{ width: `${Math.min(100, Math.max(8, item.quantity / overview.bestsellers[0].quantity * 100))}%` }} /></div></div>)}</div> : <EmptyState text="Product sales will appear here after paid orders." />}
@@ -1083,22 +1093,21 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
     {categories.length === 0 && <EmptyState text="No categories have been created yet." />}
   </section>
 }
-function OrdersPage({ orders, search, setSearch, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; onUpdate: (order: AdminOrder, status: Fulfillment) => void }) {
+function OrdersPage({ orders, search, setSearch, onConfirmPayment, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; onConfirmPayment: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => void }) {
   const [paymentFilter, setPaymentFilter] = useState('all')
   const [fulfillmentFilter, setFulfillmentFilter] = useState('all')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const filteredOrders = useMemo(() => orders.filter(order => {
-    const recordedPaymentStatus = String(order.order_data.status ?? 'pending')
     const date = order.created_at.slice(0, 10)
-    return (paymentFilter === 'all' || recordedPaymentStatus === paymentFilter)
-      && (fulfillmentFilter === 'all' || order.fulfillment_status === fulfillmentFilter)
+    return (paymentFilter === 'all' || order.payment_status === paymentFilter)
+      && (fulfillmentFilter === 'all' || order.order_status === fulfillmentFilter)
       && (!fromDate || date >= fromDate)
       && (!toDate || date <= toDate)
   }), [orders, paymentFilter, fulfillmentFilter, fromDate, toDate])
   const { page, setPage, pageCount, visibleItems } = usePagination(filteredOrders)
   const exportCsv = () => {
-    const columns = ['Order ID', 'Created at', 'Customer', 'Email', 'Recorded payment status', 'Total', 'Fulfillment']
+    const columns = ['Order ID', 'Created at', 'Customer', 'Email', 'Payment status', 'Order status', 'Paid at', 'Total']
     const escape = (value: unknown) => {
       const text = String(value ?? '')
       const safeText = /^[\t\r ]*[=+\-@]/.test(text) ? `'${text}` : text
@@ -1109,9 +1118,10 @@ function OrdersPage({ orders, search, setSearch, onUpdate }: { orders: AdminOrde
       order.created_at,
       order.order_data.customerName,
       order.order_data.email,
-      order.order_data.status,
+      order.payment_status,
+      order.order_status,
+      order.paid_at,
       order.order_data.total,
-      order.fulfillment_status
     ].map(escape).join(','))
     const blob = new Blob([[columns.map(escape).join(','), ...rows].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
@@ -1144,9 +1154,10 @@ function OrdersPage({ orders, search, setSearch, onUpdate }: { orders: AdminOrde
       `Email: ${String(order.order_data.email ?? '—')}`,
       `Phone: ${String(order.order_data.phoneNumber ?? '—')}`,
       `Address: ${[order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'}`,
-      `Recorded order total: ${money(order.order_data.total)} (payment is not verified)`,
-      `Recorded payment status: ${String(order.order_data.status ?? 'pending')}`,
-      `Fulfillment: ${statusLabel(order.fulfillment_status ?? 'unfulfilled')}`,
+      `Order total: ${money(order.order_data.total)}`,
+      `Payment status: ${statusLabel(order.payment_status)}`,
+      `Order status: ${statusLabel(order.order_status)}`,
+      `Paid at: ${order.paid_at ? dateLabel(order.paid_at) : 'Not paid'}`,
       `Placed: ${dateLabel(order.created_at)}`
     ]
     for (const line of detailLines) {
@@ -1183,19 +1194,51 @@ function OrdersPage({ orders, search, setSearch, onUpdate }: { orders: AdminOrde
     printWindow.print()
   }
   return <section>
-    <PageHeading title="Orders" description="Filter, inspect, and export recorded orders. Payment status is customer-submitted and is not independently verified." action={<button onClick={exportCsv} disabled={!filteredOrders.length} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] disabled:opacity-50">Export CSV</button>} />
+    <PageHeading title="Orders" description="Verify incoming UPI payments, then track fulfilment from confirmation through delivery." action={<button onClick={exportCsv} disabled={!filteredOrders.length} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] disabled:opacity-50">Export CSV</button>} />
     <div className="mb-4 space-y-3">
       <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search order, customer or email" />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="text-xs font-medium text-[#887770]">Recorded payment status<select value={paymentFilter} onChange={event => { setPaymentFilter(event.target.value); setPage(0) }} className="form-input mt-1"><option value="all">All</option><option value="paid">Recorded paid</option><option value="pending">Recorded pending</option></select></label>
-        <label className="text-xs font-medium text-[#887770]">Fulfillment<select value={fulfillmentFilter} onChange={event => { setFulfillmentFilter(event.target.value); setPage(0) }} className="form-input mt-1"><option value="all">All</option>{fulfillmentStatuses.map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></label>
+        <label className="text-xs font-medium text-[#887770]">Payment status<select value={paymentFilter} onChange={event => { setPaymentFilter(event.target.value); setPage(0) }} className="form-input mt-1"><option value="all">All</option><option value="pending">Pending payment</option><option value="paid">Paid</option></select></label>
+        <label className="text-xs font-medium text-[#887770]">Order status<select value={fulfillmentFilter} onChange={event => { setFulfillmentFilter(event.target.value); setPage(0) }} className="form-input mt-1"><option value="all">All</option>{(['pending_payment', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'] as OrderStatus[]).map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></label>
         <label className="text-xs font-medium text-[#887770]">From date<input type="date" value={fromDate} onChange={event => { setFromDate(event.target.value); setPage(0) }} className="form-input mt-1" /></label>
         <label className="text-xs font-medium text-[#887770]">To date<input type="date" value={toDate} onChange={event => { setToDate(event.target.value); setPage(0) }} className="form-input mt-1" /></label>
       </div>
     </div>
-    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{filteredOrders.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Order</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Recorded payment</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Fulfillment</th><th className="px-5 py-3">Placed</th><th className="px-5 py-3">Details</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(order => {
+    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{filteredOrders.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Order</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Order status</th><th className="px-5 py-3">Placed</th><th className="px-5 py-3">Details & actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(order => {
       const items = Array.isArray(order.order_data.items) ? order.order_data.items as Record<string, unknown>[] : []
-      return <tr key={order.id} className="align-top"><td className="px-5 py-4 font-semibold">{order.order_id}</td><td className="px-5 py-4"><p>{String(order.order_data.customerName ?? 'Customer')}</p><p className="mt-1 text-xs text-[#9a8881]">{String(order.order_data.email ?? '')}</p></td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${order.order_data.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabel(String(order.order_data.status ?? 'pending'))}</span><p className="mt-1 max-w-36 text-[10px] text-[#9a8881]">Unverified record</p></td><td className="px-5 py-4 font-medium">{money(order.order_data.total)}</td><td className="px-5 py-4"><select value={order.fulfillment_status ?? 'unfulfilled'} onChange={event => onUpdate(order, event.target.value as Fulfillment)} className="rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2 text-xs outline-none focus:border-[#a45f60]">{fulfillmentStatuses.map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(order.created_at)}</td><td className="px-5 py-4"><details className="max-w-72"><summary className="cursor-pointer text-xs font-semibold text-[#a45f60]">View</summary><div className="mt-3 space-y-2 rounded-xl bg-[#fbf8f6] p-3 text-xs"><p><strong>Phone:</strong> {String(order.order_data.phoneNumber ?? '—')}</p><p><strong>Address:</strong> {[order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'}</p><p><strong>Method:</strong> {String(order.order_data.paymentMethod ?? '—')}</p><p><strong>Items:</strong></p><ul className="list-inside list-disc">{items.map((item, index) => <li key={`${String(item.productId)}-${index}`}>{String(item.name ?? 'Item')}{typeof item.variantName === 'string' ? ` — ${item.variantName}` : ''} × {String(item.quantity ?? 1)}</li>)}</ul><button type="button" onClick={() => printOrder(order)} className="rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs font-semibold text-[#a45f60]">Print order</button>{order.events?.length ? <div className="border-t border-[#eee5df] pt-2"><p className="font-semibold">Timeline</p><ol className="mt-1 space-y-1">{[...order.events].reverse().map(event => <li key={event.id} className="text-[10px] text-[#806b63]">{dateLabel(event.created_at)} · {event.summary}</li>)}</ol></div> : <p className="border-t border-[#eee5df] pt-2 text-[10px] text-[#9a8881]">No timeline events recorded yet.</p>}</div></details></td></tr>
+      return <tr key={order.id} className="align-top">
+        <td className="px-5 py-4 font-semibold">{order.order_id}</td>
+        <td className="px-5 py-4"><p>{String(order.order_data.customerName ?? 'Customer')}</p><p className="mt-1 text-xs text-[#9a8881]">{String(order.order_data.email ?? '')}</p><p className="mt-1 text-xs text-[#9a8881]">{String(order.order_data.phoneNumber ?? '')}</p></td>
+        <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${order.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabel(order.payment_status)}</span><p className="mt-1 max-w-36 text-[10px] text-[#9a8881]">{order.paid_at ? `Verified ${dateLabel(order.paid_at)}` : order.payment_method.toUpperCase()}</p></td>
+        <td className="px-5 py-4 font-medium">{money(order.order_data.total)}</td>
+        <td className="px-5 py-4">
+          <span className="mb-2 inline-flex rounded-full bg-[#a45f60]/10 px-2.5 py-1 text-[10px] font-semibold text-[#8c4e50]">{statusLabel(order.order_status)}</span>
+          <select aria-label={`Update ${order.order_id} status`} value={order.order_status} onChange={event => {
+            const target = event.target.value as OrderStatus
+            if (target === 'cancelled' && !window.confirm(`Cancel order ${order.order_id}?`)) return
+            onUpdate(order, target)
+          }} className="block rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2 text-xs outline-none focus:border-[#a45f60]">
+            <option value={order.order_status}>{statusLabel(order.order_status)}</option>
+            {order.order_status === 'confirmed' && <option value="processing">Processing</option>}
+            {order.order_status === 'processing' && <option value="shipped">Shipped</option>}
+            {order.order_status === 'shipped' && <option value="delivered">Delivered</option>}
+            {!['cancelled', 'delivered'].includes(order.order_status) && <option value="cancelled">Cancelled</option>}
+          </select>
+        </td>
+        <td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(order.created_at)}</td>
+        <td className="px-5 py-4"><details className="max-w-72"><summary className="cursor-pointer text-xs font-semibold text-[#a45f60]">View order</summary><div className="mt-3 space-y-2 rounded-xl bg-[#fbf8f6] p-3 text-xs">
+          <p><strong>Customer:</strong> {String(order.order_data.customerName ?? 'Customer')}</p>
+          <p><strong>Email:</strong> {String(order.order_data.email ?? '—')}</p>
+          <p><strong>Phone:</strong> {String(order.order_data.phoneNumber ?? '—')}</p>
+          <p><strong>Address:</strong> {[order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'}</p>
+          <p><strong>Method:</strong> {order.payment_method.toUpperCase()}</p>
+          <p><strong>Items:</strong></p><ul className="list-inside list-disc">{items.map((item, index) => <li key={`${String(item.productId)}-${index}`}>{String(item.name ?? 'Item')}{typeof item.variantName === 'string' ? ` — ${item.variantName}` : ''} × {String(item.quantity ?? 1)} · {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</li>)}</ul>
+          {order.payment_status === 'pending' && order.order_status === 'pending_payment' && <button type="button" onClick={() => onConfirmPayment(order)} className="w-full rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800">Confirm Payment &amp; Confirm Order</button>}
+          {order.paid_by && <p><strong>Verified by:</strong> {order.paid_by}</p>}
+          <button type="button" onClick={() => printOrder(order)} className="rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs font-semibold text-[#a45f60]">Print order</button>
+          {order.events?.length ? <div className="border-t border-[#eee5df] pt-2"><p className="font-semibold">Timeline</p><ol className="mt-1 space-y-1">{[...order.events].reverse().map(event => <li key={event.id} className="text-[10px] text-[#806b63]">{dateLabel(event.created_at)} · {event.summary}</li>)}</ol></div> : <p className="border-t border-[#eee5df] pt-2 text-[10px] text-[#9a8881]">No timeline events recorded yet.</p>}
+        </div></details></td>
+      </tr>
     })}</tbody></table></div><TablePager page={page} pageCount={pageCount} total={filteredOrders.length} onChange={setPage} /></> : <EmptyState text="No matching orders found." />}</div>
   </section>
 }

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { X, ShieldCheck, CheckCircle2, AlertCircle, Lock, ArrowRight, Copy, Check, RefreshCw } from 'lucide-react'
-import confetti from 'canvas-confetti'
 import { AuthUser, CartItem, OrderDetails, StoreSettings } from '../types'
 import { sanitizeInput, validateCheckoutForm } from '../utils/security'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
+import { createWhatsAppMessage } from '../utils/payment'
 
 interface CheckoutModalProps {
   isOpen: boolean
@@ -13,7 +13,7 @@ interface CheckoutModalProps {
   cartItems: CartItem[]
   authUser: AuthUser | null
   settings: StoreSettings
-  onOrderSuccess: (order: OrderDetails) => Promise<void>
+  onOrderSuccess: (order: OrderDetails, idempotencyKey: string) => Promise<OrderDetails>
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -41,9 +41,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [formErrors, setFormErrors] = useState<string[]>([])
   const [completedOrder, setCompletedOrder] = useState<OrderDetails | null>(null)
   const [copiedMessage, setCopiedMessage] = useState(false)
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID())
 
   useEffect(() => {
     if (!isOpen || !authUser) return
+    setCompletedOrder(null)
+    setIdempotencyKey(crypto.randomUUID())
     setCustomerName(authUser.name)
     setPhoneNumber(authUser.phone)
     setEmail(authUser.email)
@@ -108,94 +111,51 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const handleOpenPaymentPreview = () => {
     if (!validateCurrentCheckout()) return
-    setIsPaymentPreviewOpen(true)
+    void handleSaveDemoOrder()
   }
 
-  const handleSaveDemoOrder = () => {
+  const handleSaveDemoOrder = async () => {
+    if (isSavingDemoOrder) return
     setIsSavingDemoOrder(true)
+    const now = new Date().toISOString()
+    const orderData: OrderDetails = {
+      orderId: '',
+      customerName: customerName.trim(),
+      phoneNumber: phoneNumber.trim(),
+      email: email.trim(),
+      address: address.trim(),
+      city: city.trim(),
+      state: sanitizeInput(state),
+      postalCode: postalCode.trim(),
+      notes: notes.trim(),
+      paymentMethod: 'upi',
+      paymentTimestamp: now,
+      items: [...cartItems],
+      subtotal,
+      shipping: deliveryFee,
+      total: grandTotal,
+      status: 'pending'
+    }
 
-    setTimeout(() => {
-      const now = new Date()
-      const formattedTimestamp = now.toLocaleString('en-US', {
-        dateStyle: 'full',
-        timeStyle: 'medium'
-      })
-
-      const generatedOrderId = `AUREL${crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`
-      const orderData: OrderDetails = {
-        orderId: generatedOrderId,
-        customerName: customerName.trim(),
-        phoneNumber: phoneNumber.trim(),
-        email: email.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        state: sanitizeInput(state),
-        postalCode: postalCode.trim(),
-        paymentMethod: 'Not processed — demo checkout only',
-        paymentTimestamp: formattedTimestamp,
-        items: [...cartItems],
-        subtotal,
-        shipping: deliveryFee,
-        total: grandTotal,
-        status: 'pending'
-      }
-
-      void onOrderSuccess(orderData).then(() => {
-        setIsSavingDemoOrder(false)
-        setIsPaymentPreviewOpen(false)
-        setCompletedOrder(orderData)
-        confetti({
-          particleCount: 90,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#B36D6D', '#E8C7BE', '#FAF7F2', '#EFAFAF']
-        })
-      }).catch(error => {
-        console.error('Unable to save completed order:', error)
-        setIsSavingDemoOrder(false)
-        setFormErrors([error instanceof Error ? error.message : 'The demo order request could not be saved. No payment was processed. Please try again.'])
-      })
-    }, 1600)
-  }
-
-  // WhatsApp Message Formatter
-  const formatWhatsAppMessage = (order: OrderDetails) => {
-    const itemsSummary = order.items.map(item => {
-      const finishText = item.finish ? ` Finish: ${item.finish}` : ''
-      const recipientText = item.recipientName ? ` For: ${item.recipientName}` : ''
-      return `• ${item.name} x${item.quantity} (₹${item.price * item.quantity})${finishText}${recipientText}`
-    }).join('\n')
-
-    return [
-      `✨ *NEW ${settings.storeName || 'AUREL'} ORDER REQUEST* ✨`,
-      '',
-      `*Order ID:* ${order.orderId}`,
-      `*Order Submitted:* ${order.paymentTimestamp}`,
-      `*Payment Status:* ${order.status === 'paid' ? 'Recorded as paid; not independently verified' : 'Not processed — pending payment'}`,
-      `*Order Total:* ₹${order.total}`,
-      '',
-      '*CUSTOMER DETAILS*',
-      `*Name:* ${order.customerName}`,
-      `*Phone Number:* ${order.phoneNumber}`,
-      `*Email Address:* ${order.email}`,
-      `*Delivery Address:* ${order.address}, ${order.city}${order.state ? `, ${order.state}` : ''}, PIN ${order.postalCode}`,
-      notes.trim() ? `*Special Notes:* ${notes.trim()}` : '',
-      '',
-      '*ITEMS ORDERED*',
-      itemsSummary,
-      '',
-      `${settings.tagline || 'Made With Love For You'} · ${settings.storeName || 'AUREL'} Bespoke Archives`
-    ].filter(Boolean).join('\n')
+    try {
+      await onOrderSuccess(orderData, idempotencyKey)
+      setIsPaymentPreviewOpen(false)
+      setIdempotencyKey(crypto.randomUUID())
+    } catch (error) {
+      console.error('Unable to create the order:', error)
+      setFormErrors([error instanceof Error ? error.message : 'The order could not be created. Please try again.'])
+    } finally {
+      setIsSavingDemoOrder(false)
+    }
   }
 
   const getWhatsAppUrl = (order: OrderDetails) => {
     const brandWhatsAppNumber = settings.whatsappNumber.replace(/\D/g, '') || '919999200913'
-    const message = formatWhatsAppMessage(order)
-    return `https://wa.me/${brandWhatsAppNumber}?text=${encodeURIComponent(message)}`
+    return `https://wa.me/${brandWhatsAppNumber}?text=${encodeURIComponent(createWhatsAppMessage(order))}`
   }
 
   const handleCopyWhatsAppMessage = (order: OrderDetails) => {
-    const message = formatWhatsAppMessage(order)
+    const message = createWhatsAppMessage(order)
     navigator.clipboard.writeText(message)
     setCopiedMessage(true)
     setTimeout(() => setCopiedMessage(false), 2500)
@@ -225,10 +185,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </span>
               <div>
                 <h3 className="font-serif-title text-xl font-normal tracking-wide">
-                  {completedOrder ? 'Order Request Received' : 'Checkout'}
+                  {completedOrder ? 'Order Created' : 'Checkout'}
                 </h3>
                 <span className="text-[11px] text-[#8E7973] dark:text-[#A79690] block">
-                  {completedOrder ? 'This demo checkout did not process a payment' : 'Enter your details to prepare an order request'}
+                  {completedOrder ? 'Payment is awaiting manual verification' : 'Enter your details to place an order'}
                 </span>
               </div>
             </div>
@@ -267,7 +227,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     Thank you, {completedOrder.customerName}
                   </h2>
                   <p className="font-editorial text-base text-[#7D6B65] dark:text-[#BBAAA3] mt-2 max-w-md mx-auto">
-                    Your order request was saved at {completedOrder.paymentTimestamp}. No payment was processed by this demo checkout.
+                    Your order has been placed. Complete the UPI payment and wait for AUREL to verify receipt.
                   </p>
                 </div>
 
@@ -283,7 +243,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                   <div className="flex justify-between text-[#8E7973]">
                     <span>Payment status</span>
-                    <span className="text-[#2C2422] dark:text-[#EAE0DA] font-medium">{completedOrder.paymentMethod}</span>
+                    <span className="text-[#2C2422] dark:text-[#EAE0DA] font-medium">Awaiting payment</span>
                   </div>
                   <div className="flex justify-between text-[#8E7973]">
                     <span>Delivery Contact</span>
@@ -307,7 +267,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="max-w-lg mx-auto text-left">
                   <div className="flex items-center justify-between mb-1.5 px-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[#B36D6D]">
-                      WhatsApp message preview
+                      Order details
                     </span>
                     <button
                       onClick={() => handleCopyWhatsAppMessage(completedOrder)}
@@ -329,7 +289,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className={`p-4 rounded-2xl border text-xs font-mono whitespace-pre-line leading-relaxed max-h-40 overflow-y-auto ${
                     isDarkMode ? 'bg-[#151211] border-[#382B28] text-[#CBB9B2]' : 'bg-[#FAF4EE] border-[#DEC5BB] text-[#52413C]'
                   }`}>
-                    {formatWhatsAppMessage(completedOrder)}
+                    {createWhatsAppMessage(completedOrder)}
                   </div>
                 </div>
 
@@ -341,7 +301,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     rel="noopener noreferrer"
                     className="w-full py-4 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold uppercase tracking-wider shadow-lg transition-all flex items-center justify-center gap-2"
                   >
-                    <span>Open WhatsApp Concierge</span>
+                    <span>Continue to payment</span>
                     <ArrowRight className="w-4 h-4" />
                   </a>
 
@@ -550,7 +510,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   isDarkMode ? 'bg-[#221B1A] border-[#382C29]' : 'bg-[#FAF4F0] border-[#E8D4CB]'
                 }`}>
                   <div className="flex justify-between text-[#8E7973]">
-                    <span>Items Subtotal ({cartItems.length} items)</span>
+                    <span>Items Subtotal ({cartItems.reduce((sum, item) => sum + item.quantity, 0)} items)</span>
                     <span className="tabular-nums font-medium">₹{subtotal.toLocaleString('en-IN')}</span>
                   </div>
                   <div className="flex justify-between text-[#8E7973]">
@@ -558,7 +518,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>{deliveryFee === 0 ? 'Complimentary' : `₹${deliveryFee}`}</span>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-black/5 dark:border-white/5 font-serif-title text-base font-semibold">
-                    <span>Order total (not charged)</span>
+                    <span>Order total</span>
                     <span className="text-xl text-[#B36D6D] tabular-nums">
                       ₹{grandTotal.toLocaleString('en-IN')}
                     </span>
@@ -570,15 +530,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    disabled={isSavingDemoOrder || cartItems.length === 0}
                     onClick={handleOpenPaymentPreview}
-                    className="w-full py-4 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] text-white text-xs font-semibold uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] text-white text-xs font-semibold uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2 disabled:cursor-wait disabled:opacity-70"
                   >
-                    <Lock className="w-4 h-4" />
-                    <span>Continue to demo checkout (no payment processing)</span>
+                    {isSavingDemoOrder ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                    <span>{isSavingDemoOrder ? 'Creating your order…' : 'Place Order & Continue to Payment'}</span>
                   </motion.button>
 
                   <p className="text-[10px] text-center text-[#9A8781] mt-2">
-                    Demo checkout only. This app is not connected to a payment provider.
+                    UPI payment is verified manually by AUREL after it arrives in the receiving account.
                   </p>
                 </div>
 

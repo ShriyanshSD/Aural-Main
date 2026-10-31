@@ -2,6 +2,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/api/payment/config", "destination": "/api/index?route=/api/payment/config" },
     { "source": "/api/catalog", "destination": "/api/index?route=/api/catalog" },
     { "source": "/api/admin/:path*", "destination": "/api/index?route=/api/admin/:path*" },
     { "source": "/api/chat", "destination": "/api/index?route=/api/chat" },

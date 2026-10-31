@@ -1,5 +1,6 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { BUILDER_ITEMS } from './src/data/products.js'
 import { isValidAccountEmail, normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
 
 interface AuthRequest extends IncomingMessage {
@@ -69,6 +70,8 @@ class AccountServiceError extends Error {
 }
 
 class AccountConfigurationError extends Error {}
+
+class OrderValidationError extends Error {}
 
 class AuthProviderError extends Error {
   constructor(readonly status: number, readonly code?: string | number, readonly providerMessage?: string) {
@@ -468,6 +471,10 @@ const readBody = (req: AuthRequest): Record<string, unknown> =>
     : {}
 
 const handleFailure = (res: ServerResponse, error: unknown, fallbackMessage: string) => {
+  if (error instanceof OrderValidationError) {
+    sendJson(res, 409, { error: error.message })
+    return
+  }
   if (error instanceof AccountConfigurationError) {
     console.error(error.message)
     sendJson(res, 503, { error: 'Account storage is not configured. Add the Supabase server environment variables.' })
@@ -768,10 +775,15 @@ export async function deleteAccountHandler(req: AuthRequest, res: ServerResponse
 }
 
 interface StoredAccountOrder {
+  id?: number
   order_id: string
   order_data: Record<string, unknown>
   created_at: string
   fulfillment_status?: string
+  payment_status?: 'pending' | 'paid' | 'failed' | 'refunded'
+  order_status?: 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+  paid_at?: string | null
+  idempotency_key?: string | null
 }
 
 const isSecureProofUrl = (value: string): boolean => {
@@ -801,7 +813,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         return sendJson(res, 403, { error: 'The request origin could not be verified.' })
       }
       const orderId = readBody(req).orderId
-      if (typeof orderId !== 'string' || !/^AUREL[A-Z0-9]{5,16}$/.test(orderId)) {
+      if (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)) {
         return sendJson(res, 400, { error: 'Provide a valid order number.' })
       }
       const orders = await supabaseRequest<Array<{ id: number }>>(
@@ -868,11 +880,37 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
     }
 
     if (req.method === 'GET') {
+      const requestedOrderId = new URL(req.url ?? '/', 'http://localhost').searchParams.get('orderId')
+      if (requestedOrderId) {
+        if (!/^AUR-\d{4}-\d{5,}$/.test(requestedOrderId)) {
+          return sendJson(res, 400, { error: 'Provide a valid order number.' })
+        }
+        const rows = await supabaseRequest<StoredAccountOrder[]>(
+          'aurel_orders',
+          new URLSearchParams({
+            user_id: `eq.${account.id}`,
+            order_id: `eq.${requestedOrderId}`,
+            select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at',
+            limit: '1'
+          })
+        )
+        const row = rows[0]
+        if (!row) return sendJson(res, 404, { error: 'Order not found in your account.' })
+        return sendJson(res, 200, {
+          order: {
+            ...row.order_data,
+            orderId: row.order_id,
+            paymentStatus: row.payment_status ?? 'pending',
+            orderStatus: row.order_status ?? 'pending_payment',
+            paidAt: row.paid_at ?? undefined
+          }
+        })
+      }
       const rows = await supabaseRequest<StoredAccountOrder[]>(
         'aurel_orders',
         new URLSearchParams({
           user_id: `eq.${account.id}`,
-          select: 'order_id,order_data,created_at,fulfillment_status',
+          select: 'order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at',
           order: 'created_at.desc',
           limit: '100'
         })
@@ -912,8 +950,16 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           const databaseOrderId = orderIdByOrderNumber.get(row.order_id)
           const operation = databaseOrderId ? operationByOrderId.get(databaseOrderId) : undefined
           return {
-            order: row.order_data,
+            order: {
+              ...row.order_data,
+              orderId: row.order_id,
+              paymentStatus: row.payment_status ?? 'pending',
+              orderStatus: row.order_status ?? 'pending_payment',
+              paidAt: row.paid_at ?? undefined
+            },
             createdAt: row.created_at,
+            paymentStatus: row.payment_status ?? 'pending',
+            orderStatus: row.order_status ?? 'pending_payment',
             fulfillmentStatus: row.fulfillment_status ?? 'unfulfilled',
             productionStatus: operation?.production_status,
             proofApproved: Boolean(operation?.customer_approved_at),
@@ -930,90 +976,273 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       return sendJson(res, 405, { error: 'Method not allowed.' })
     }
 
-    const order = readBody(req).order
-    if (!order || typeof order !== 'object' || Array.isArray(order)) {
-      return sendJson(res, 400, { error: 'Provide a valid order.' })
-    }
-    const data = order as Record<string, unknown>
-    const items = data.items
-    if (
-      typeof data.orderId !== 'string' || !/^AUREL[A-Z0-9]{5,16}$/.test(data.orderId)
-      || typeof data.customerName !== 'string' || data.customerName.trim().length < 2 || data.customerName.length > 120
-      || typeof data.phoneNumber !== 'string' || !normalizeValidPhoneNumber(data.phoneNumber)
-      || typeof data.email !== 'string' || !isValidAccountEmail(data.email)
-      || typeof data.address !== 'string' || data.address.trim().length < 5 || data.address.length > 240
-      || typeof data.city !== 'string' || data.city.trim().length < 2 || data.city.length > 100
-      || (data.state !== undefined && (typeof data.state !== 'string' || data.state.length > 100))
-      || typeof data.postalCode !== 'string' || !/^\d{5,8}$/.test(data.postalCode)
-      || typeof data.paymentMethod !== 'string' || data.paymentMethod.length > 100
-      || typeof data.paymentTimestamp !== 'string' || !data.paymentTimestamp.trim() || data.paymentTimestamp.length > 120
-      || !Array.isArray(items) || items.length < 1 || items.length > 100
-      || !items.every(item => item && typeof item === 'object'
-        && typeof item.productId === 'string' && item.productId.length <= 120
-        && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 160
-        && typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0 && item.price <= 10000000
-        && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 99
-        && typeof item.imageUrl === 'string' && item.imageUrl.length <= 2048
-        && ((item.variantId === undefined && item.variantName === undefined)
-          || (typeof item.variantId === 'string' && /^[a-zA-Z0-9_-]{1,60}$/.test(item.variantId)
-            && typeof item.variantName === 'string' && item.variantName.trim().length > 0 && item.variantName.length <= 100)))
-      || typeof data.subtotal !== 'number' || !Number.isFinite(data.subtotal) || data.subtotal < 0
-      || typeof data.shipping !== 'number' || !Number.isFinite(data.shipping) || data.shipping < 0
-      || typeof data.total !== 'number' || !Number.isFinite(data.total) || data.total !== data.subtotal + data.shipping
-      || (data.status !== 'paid' && data.status !== 'pending')
-    ) {
-      return sendJson(res, 400, { error: 'The order details are incomplete or invalid.' })
+    const origin = req.headers.origin
+    const forwardedHost = req.headers['x-forwarded-host']
+    const requestHost = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? req.headers.host
+    if (!origin || !requestHost) return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+    try {
+      if (new URL(origin).host.toLowerCase() !== requestHost.toLowerCase()) {
+        return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+      }
+    } catch {
+      return sendJson(res, 403, { error: 'The request origin could not be verified.' })
     }
 
-    const existingOrders = await supabaseRequest<Array<{ id: number }>>(
+    const body = readBody(req)
+    const customer = body.customer
+    const items = body.items
+    const idempotencyKey = body.idempotencyKey
+    if (
+      !customer || typeof customer !== 'object' || Array.isArray(customer)
+      || typeof idempotencyKey !== 'string' || !/^[a-f0-9-]{36}$/i.test(idempotencyKey)
+      || !Array.isArray(items) || items.length < 1 || items.length > 100
+      || !items.every(item => item && typeof item === 'object' && !Array.isArray(item)
+        && typeof item.productId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(item.productId)
+        && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 99
+        && (item.variantId === undefined || (typeof item.variantId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(item.variantId)))
+        && (item.finish === undefined || item.finish === 'matte' || item.finish === 'gloss')
+        && (item.recipientName === undefined || (typeof item.recipientName === 'string' && item.recipientName.length <= 100))
+        && (item.customMessage === undefined || (typeof item.customMessage === 'string' && item.customMessage.length <= 1000))
+        && (item.customComponents === undefined || (Array.isArray(item.customComponents) && item.customComponents.length <= 20
+          && item.customComponents.every((value: unknown) => typeof value === 'string' && value.length <= 100)))
+        && (item.productId !== 'custom_hamper_mix' || (Array.isArray(item.customComponents) && item.customComponents.length >= 2)))
+    ) return sendJson(res, 400, { error: 'The order details are incomplete or invalid.' })
+
+    const details = customer as Record<string, unknown>
+    const customerName = typeof details.customerName === 'string' ? details.customerName.trim() : ''
+    const phoneNumber = typeof details.phoneNumber === 'string' ? details.phoneNumber.trim() : ''
+    const email = typeof details.email === 'string' ? details.email.trim().toLowerCase() : ''
+    const address = typeof details.address === 'string' ? details.address.trim() : ''
+    const city = typeof details.city === 'string' ? details.city.trim() : ''
+    const state = typeof details.state === 'string' ? details.state.trim() : ''
+    const postalCode = typeof details.postalCode === 'string' ? details.postalCode.trim() : ''
+    const notes = typeof details.notes === 'string' ? details.notes.trim() : ''
+    if (
+      customerName.length < 2 || customerName.length > 120
+      || !normalizeValidPhoneNumber(phoneNumber) || !isValidAccountEmail(email)
+      || address.length < 5 || address.length > 240
+      || city.length < 2 || city.length > 100
+      || state.length > 100
+      || notes.length > 500
+      || !/^\d{5,8}$/.test(postalCode)
+    ) return sendJson(res, 400, { error: 'Enter valid delivery contact and address details.' })
+
+    const priorOrder = await supabaseRequest<StoredAccountOrder[]>(
       'aurel_orders',
-      new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${data.orderId}`, select: 'id', limit: '1' })
+      new URLSearchParams({
+        user_id: `eq.${account.id}`,
+        idempotency_key: `eq.${idempotencyKey}`,
+        select: 'order_id,order_data,created_at,payment_status,order_status,paid_at',
+        limit: '1'
+      })
     )
-    const stored = await supabaseRequest<StoredAccountOrder[]>(
-      'aurel_orders',
-      new URLSearchParams({ on_conflict: 'user_id,order_id', select: 'order_id,order_data,created_at' }),
-      {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-        body: JSON.stringify({ user_id: account.id, order_id: data.orderId, order_data: data })
-      }
-    )
-    if (!stored[0]) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
-    if (!existingOrders.length) {
-      const savedOrderId = await supabaseRequest<Array<{ id: number }>>(
-        'aurel_orders',
-        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${data.orderId}`, select: 'id', limit: '1' })
-      )
-      if (savedOrderId[0]) {
-        await supabaseRequest('aurel_order_events', new URLSearchParams(), {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            order_id: savedOrderId[0].id,
-            actor_type: 'customer',
-            actor_user_id: account.id,
-            event_type: 'order_submitted',
-            summary: 'Order was submitted. Payment status has not been independently verified.',
-            metadata: { recordedPaymentStatus: data.status }
-          })
-        })
-        await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            notification_type: 'new_order',
-            title: 'New order received',
-            message: `Order ${data.orderId} was submitted. Its recorded payment status is ${data.status}.`,
-            target_type: 'order',
-            target_id: String(savedOrderId[0].id)
-          })
-        })
-      }
+    if (priorOrder[0]) {
+      const row = priorOrder[0]
+      return sendJson(res, 200, {
+        order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status, paidAt: row.paid_at ?? undefined },
+        createdAt: row.created_at
+      })
     }
-    return sendJson(res, 201, { order: stored[0].order_data, createdAt: stored[0].created_at })
+
+    type CheckoutProduct = {
+      id: string
+      name: string
+      price: number | string
+      image_url: string
+      variants: { id: string; name: string; price: number; stockQuantity: number | null }[]
+      stock_quantity: number | null
+      is_active: boolean
+      is_published: boolean
+      available_finishes: string[]
+    }
+    const productIds = [...new Set((items as Array<{ productId: string }>)
+      .map(item => item.productId)
+      .filter(productId => productId !== 'custom_hamper_mix'))]
+    const products = await supabaseRequest<CheckoutProduct[]>(
+      'aurel_products',
+      new URLSearchParams({
+        id: `in.(${productIds.join(',')})`,
+        select: 'id,name,price,image_url,variants,stock_quantity,is_active,is_published,available_finishes',
+        limit: '100'
+      })
+    )
+    const productsById = new Map(products.map(product => [product.id, product]))
+    if (productsById.size !== productIds.length) return sendJson(res, 409, { error: 'One or more products are no longer available. Refresh your cart and try again.' })
+
+    const quantities = new Map<string, number>()
+    const orderItems = (items as Array<Record<string, unknown>>).map(item => {
+      if (item.productId === 'custom_hamper_mix') {
+        const components = item.customComponents as string[]
+        const selectedComponents = components.map(name => BUILDER_ITEMS.find(component => component.name === name))
+        if (!selectedComponents.length || selectedComponents.some(component => !component) || selectedComponents[0]?.category !== 'box') {
+          throw new OrderValidationError('The custom hamper contains an unavailable component. Update it and try again.')
+        }
+        const customPrice = selectedComponents.reduce((sum, component) => sum + (component?.price ?? 0), 0)
+        const customName = typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 160) : 'Custom Mix & Match Hamper'
+        return {
+          cartId: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : `custom-${randomBytes(8).toString('hex')}`,
+          productId: 'custom_hamper_mix',
+          name: customName,
+          price: customPrice,
+          quantity: Number(item.quantity),
+          imageUrl: selectedComponents[0]?.imageUrl ?? '',
+          ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
+          ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
+          customComponents: components
+        }
+      }
+      const product = productsById.get(String(item.productId))
+      if (!product || !product.is_active || !product.is_published) {
+        throw new OrderValidationError('One or more products are no longer available. Refresh your cart and try again.')
+      }
+      const quantity = Number(item.quantity)
+      const variantId = typeof item.variantId === 'string' ? item.variantId : undefined
+      const variant = variantId ? product.variants?.find(candidate => candidate.id === variantId) : undefined
+      if (variantId && !variant) throw new OrderValidationError(`The selected option for ${product.name} is no longer available.`)
+      if (item.finish && !product.available_finishes?.includes(String(item.finish))) {
+        throw new OrderValidationError(`The selected finish for ${product.name} is no longer available.`)
+      }
+      const price = Number(variant?.price ?? product.price)
+      if (!Number.isFinite(price) || price < 0) throw new OrderValidationError(`The price for ${product.name} is unavailable.`)
+      const stockKey = `${product.id}:${variantId ?? ''}`
+      quantities.set(stockKey, (quantities.get(stockKey) ?? 0) + quantity)
+      const selectedStock = variant?.stockQuantity ?? (variant ? null : product.stock_quantity)
+      if (selectedStock !== null && quantities.get(stockKey)! > selectedStock) {
+        throw new OrderValidationError(`${product.name} does not have enough stock for the requested quantity.`)
+      }
+      return {
+        cartId: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : `${product.id}-${randomBytes(8).toString('hex')}`,
+        productId: product.id,
+        name: product.name,
+        price,
+        quantity,
+        imageUrl: product.image_url,
+        ...(variant ? { variantId: variant.id, variantName: variant.name } : {}),
+        ...(typeof item.finish === 'string' ? { finish: item.finish } : {}),
+        ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
+        ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
+        ...(Array.isArray(item.customComponents) ? { customComponents: item.customComponents } : {})
+      }
+    })
+    const subtotal = Math.round(orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100) / 100
+    const shipping = subtotal === 0 || subtotal >= 1500 ? 0 : 99
+    const total = Math.round((subtotal + shipping) * 100) / 100
+    const generatedOrderId = await supabaseRequest<string>('rpc/aurel_next_order_number', new URLSearchParams(), {
+      method: 'POST',
+      body: JSON.stringify({})
+    })
+    if (typeof generatedOrderId !== 'string' || !/^AUR-\d{4}-\d{5,}$/.test(generatedOrderId)) {
+      throw new Error('A unique order number could not be generated.')
+    }
+    const createdAt = new Date().toISOString()
+    const orderData = {
+      orderId: generatedOrderId,
+      customerName,
+      phoneNumber,
+      email,
+      address,
+      city,
+      state,
+      postalCode,
+      notes,
+      paymentMethod: 'upi',
+      paymentTimestamp: createdAt,
+      items: orderItems,
+      subtotal,
+      shipping,
+      total,
+      status: 'pending',
+      paymentStatus: 'pending',
+      orderStatus: 'pending_payment'
+    }
+    let stored: StoredAccountOrder[]
+    let createdNewOrder = true
+    try {
+      stored = await supabaseRequest<StoredAccountOrder[]>(
+        'aurel_orders',
+        new URLSearchParams({ select: 'order_id,order_data,created_at,payment_status,order_status,paid_at' }),
+        {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({
+            user_id: account.id,
+            order_id: generatedOrderId,
+            order_data: orderData,
+            payment_method: 'upi',
+            payment_status: 'pending',
+            order_status: 'pending_payment',
+            fulfillment_status: 'unfulfilled',
+            idempotency_key: idempotencyKey
+          })
+        }
+      )
+    } catch (insertError) {
+      if (!(insertError instanceof AccountServiceError) || String(insertError.code) !== '23505') throw insertError
+      stored = await supabaseRequest<StoredAccountOrder[]>(
+        'aurel_orders',
+        new URLSearchParams({
+          user_id: `eq.${account.id}`,
+          idempotency_key: `eq.${idempotencyKey}`,
+          select: 'order_id,order_data,created_at,payment_status,order_status,paid_at',
+          limit: '1'
+        })
+      )
+      createdNewOrder = false
+    }
+    const row = stored[0]
+    if (!row) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
+    const savedOrderId = await supabaseRequest<Array<{ id: number }>>(
+      'aurel_orders',
+      new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${row.order_id}`, select: 'id', limit: '1' })
+    )
+    if (createdNewOrder && savedOrderId[0]) {
+      await supabaseRequest('aurel_order_events', new URLSearchParams(), {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          order_id: savedOrderId[0].id,
+          actor_type: 'customer',
+          actor_user_id: account.id,
+          event_type: 'order_submitted',
+          summary: 'Order was placed. UPI payment is awaiting manual verification.',
+          metadata: { paymentMethod: 'upi' }
+        })
+      })
+      await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          notification_type: 'new_order',
+          title: 'New UPI order received',
+          message: `Order ${row.order_id} was placed and is awaiting payment verification.`,
+          target_type: 'order',
+          target_id: String(savedOrderId[0].id)
+        })
+      })
+    }
+    return sendJson(res, 201, {
+      order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status },
+      createdAt: row.created_at
+    })
   } catch (error) {
     handleFailure(res, error, 'Unable to load or save your orders right now.')
   }
+}
+
+export async function paymentConfigHandler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET')
+    return sendJson(res, 405, { error: 'Method not allowed.' })
+  }
+  const upiId = process.env.AUREL_UPI_ID?.trim() || 'shriyansh.dogra2003@okicici'
+  const payeeName = process.env.AUREL_UPI_PAYEE_NAME?.trim() || 'AUREL'
+  const configuredNumber = (process.env.AUREL_WHATSAPP_NUMBER || '8588905927').replace(/\D/g, '')
+  if (!/^[\w.-]+@[\w.-]+$/.test(upiId) || !payeeName || payeeName.length > 80 || !/^\d{10,15}$/.test(configuredNumber)) {
+    console.error('Public checkout payment configuration is invalid.')
+    return sendJson(res, 503, { error: 'Payment details are temporarily unavailable. Please contact AUREL.' })
+  }
+  const whatsappNumber = configuredNumber.startsWith('91') ? configuredNumber : `91${configuredNumber.replace(/^0+/, '')}`
+  return sendJson(res, 200, { config: { upiId, payeeName, whatsappNumber } })
 }
 
 export async function accountReviewHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
@@ -1041,7 +1270,7 @@ export async function accountReviewHandler(req: AuthRequest, res: ServerResponse
     const rating = body.rating
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     const reviewBody = typeof body.body === 'string' ? body.body.trim() : ''
-    if (typeof orderId !== 'string' || !/^AUREL[A-Z0-9]{5,16}$/.test(orderId)
+    if (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)
       || typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(productId)
       || typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5
       || title.length > 120 || reviewBody.length < 10 || reviewBody.length > 3000) {

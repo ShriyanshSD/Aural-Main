@@ -128,6 +128,7 @@ export interface OrderDetails {
   city: string
   state?: string
   postalCode: string
+  notes?: string
   paymentMethod: string
   paymentTimestamp: string
   items: CartItem[]
@@ -135,6 +136,9 @@ export interface OrderDetails {
   shipping: number
   total: number
   status: 'paid' | 'pending'
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded'
+  orderStatus?: 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+  paidAt?: string
 }
 
 export interface AuthUser {
@@ -157,6 +161,8 @@ export interface AuthUser {
 export interface AccountOrder {
   order: OrderDetails
   createdAt: string
+  paymentStatus?: OrderDetails['paymentStatus']
+  orderStatus?: OrderDetails['orderStatus']
   fulfillmentStatus?: string
   productionStatus?: string
   proofApproved?: boolean

@@ -866,7 +866,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       return sendJson(res, 400, { error: 'Choose a supported analytics period.' })
     }
     const orderQuery = new URLSearchParams({
-      select: 'id,order_id,order_data,created_at,fulfillment_status',
+      select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status',
       order: 'created_at.desc',
       limit: '500'
     })
@@ -875,7 +875,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       orderQuery.set('created_at', `gte.${new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()}`)
     }
     const [orders, products, users] = await Promise.all([
-      fetchAllRows<{ id: number; order_id: string; order_data: Record<string, unknown>; created_at: string; fulfillment_status: string }>(
+      fetchAllRows<{ id: number; order_id: string; order_data: Record<string, unknown>; created_at: string; fulfillment_status: string; payment_status: string; order_status: string }>(
         'aurel_orders',
         orderQuery
       ),
@@ -885,7 +885,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       ),
       fetchAllRows<{ id: string }>('aurel_users', new URLSearchParams({ select: 'id', limit: '1000' }))
     ])
-    const paidOrders = orders.filter(order => order.order_data.status === 'paid')
+    const paidOrders = orders.filter(order => order.payment_status === 'paid')
     const revenue = paidOrders.reduce((total, order) => {
       const amount = Number(order.order_data.total)
       return total + (Number.isFinite(amount) ? amount : 0)
@@ -1412,7 +1412,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (path === '/api/admin/orders' && method === 'GET') {
     const orders = await fetchAllRows<Record<string, unknown>>(
       'aurel_orders',
-      new URLSearchParams({ select: 'id,user_id,order_id,order_data,created_at,fulfillment_status', order: 'created_at.desc', limit: '500' })
+      new URLSearchParams({ select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,paid_by', order: 'created_at.desc', limit: '500' })
     )
     const orderIds = orders.map(order => Number(order.id)).filter(Number.isSafeInteger)
     const events = orderIds.length
@@ -1428,26 +1428,61 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     }
     return sendJson(res, 200, { orders: orders.map(order => ({ ...order, events: eventMap.get(Number(order.id)) ?? [] })) })
   }
+  const paymentConfirmMatch = path.match(/^\/api\/admin\/orders\/(\d+)\/confirm-payment$/)
+  if (paymentConfirmMatch && method === 'POST') {
+    const result = await supabaseRequest<{ success: boolean; alreadyConfirmed?: boolean; reason?: string }>(
+      'rpc/aurel_confirm_order_payment',
+      new URLSearchParams(),
+      {
+        method: 'POST',
+        body: JSON.stringify({ p_order_id: Number(paymentConfirmMatch[1]), p_owner_id: session.user_id })
+      }
+    )
+    if (result.reason === 'not_found') return sendJson(res, 404, { error: 'Order not found.' })
+    if (!result.success) return sendJson(res, 409, { error: 'This order is no longer awaiting payment. Refresh the order before continuing.' })
+    return sendJson(res, 200, { success: true, alreadyConfirmed: Boolean(result.alreadyConfirmed) })
+  }
   const orderMatch = path.match(/^\/api\/admin\/orders\/(\d+)$/)
   if (orderMatch && method === 'PATCH') {
     const body = parseBody(req)
-    const validFulfillmentStatuses = ['unfulfilled', 'processing', 'shipped', 'delivered', 'cancelled'] as const
-    const fulfillmentStatus = typeof body.fulfillmentStatus === 'string' ? body.fulfillmentStatus : ''
-    if (!validFulfillmentStatuses.includes(fulfillmentStatus as typeof validFulfillmentStatuses[number])) {
-      return sendJson(res, 400, { error: 'Choose a valid fulfillment status.' })
+    const orderStatus = typeof body.orderStatus === 'string' ? body.orderStatus : ''
+    const validOrderStatuses = ['processing', 'shipped', 'delivered', 'cancelled'] as const
+    if (!validOrderStatuses.includes(orderStatus as typeof validOrderStatuses[number])) {
+      return sendJson(res, 400, { error: 'Choose a valid order status.' })
     }
-    const existing = await supabaseRequest<Array<{ id: number }>>(
+    const existing = await supabaseRequest<Array<{
+      id: number
+      order_id: string
+      payment_status: string
+      order_status: string
+      fulfillment_status: string
+    }>>(
       'aurel_orders',
-      new URLSearchParams({ id: `eq.${orderMatch[1]}`, select: 'id', limit: '1' })
+      new URLSearchParams({ id: `eq.${orderMatch[1]}`, select: 'id,order_id,payment_status,order_status,fulfillment_status', limit: '1' })
     )
-    if (!existing[0]) return sendJson(res, 404, { error: 'Order not found.' })
-    await supabaseRequest('aurel_orders', new URLSearchParams({ id: `eq.${orderMatch[1]}` }), {
-      method: 'PATCH', body: JSON.stringify({ fulfillment_status: fulfillmentStatus }),
-      headers: { Prefer: 'return=minimal' }
+    const current = existing[0]
+    if (!current) return sendJson(res, 404, { error: 'Order not found.' })
+    if (current.order_status === orderStatus) return sendJson(res, 200, { success: true })
+    if (
+      current.order_status === 'cancelled' || current.order_status === 'delivered'
+      || (orderStatus !== 'cancelled' && current.payment_status !== 'paid')
+      || (orderStatus === 'processing' && current.order_status !== 'confirmed')
+      || (orderStatus === 'shipped' && current.order_status !== 'processing')
+      || (orderStatus === 'delivered' && current.order_status !== 'shipped')
+    ) return sendJson(res, 409, { error: `Cannot move this order from ${current.order_status.replaceAll('_', ' ')} to ${orderStatus.replaceAll('_', ' ')}.` })
+    const fulfillmentStatus = orderStatus === 'cancelled' ? 'cancelled' : orderStatus
+    const updated = await supabaseRequest<Array<{ id: number }>>('aurel_orders', new URLSearchParams({
+      id: `eq.${orderMatch[1]}`,
+      order_status: `eq.${current.order_status}`,
+      select: 'id'
+    }), {
+      method: 'PATCH', body: JSON.stringify({ order_status: orderStatus, fulfillment_status: fulfillmentStatus, updated_at: new Date().toISOString() }),
+      headers: { Prefer: 'return=representation' }
     })
-    await createOrderEvent(Number(orderMatch[1]), 'owner', session.user_id, 'fulfillment_updated', `Fulfillment updated to ${fulfillmentStatus.replaceAll('_', ' ')}.`, { fulfillmentStatus })
-    await createAdminNotification('order_fulfillment', 'Order fulfillment updated', `Order ${orderMatch[1]} is now ${fulfillmentStatus.replaceAll('_', ' ')}.`, 'order', orderMatch[1])
-    await logAdminAction(session, 'order_fulfillment_updated', 'order', orderMatch[1], { fulfillmentStatus })
+    if (!updated.length) return sendJson(res, 409, { error: 'The order changed while you were updating it. Refresh and try again.' })
+    await createOrderEvent(Number(orderMatch[1]), 'owner', session.user_id, 'order_status_updated', `Order status updated to ${orderStatus.replaceAll('_', ' ')}.`, { orderStatus })
+    await createAdminNotification('order_status_updated', 'Order status updated', `Order ${current.order_id} is now ${orderStatus.replaceAll('_', ' ')}.`, 'order', orderMatch[1])
+    await logAdminAction(session, 'order_status_updated', 'order', orderMatch[1], { orderStatus })
     return sendJson(res, 200, { success: true })
   }
 

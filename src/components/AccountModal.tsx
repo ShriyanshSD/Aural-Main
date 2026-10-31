@@ -12,7 +12,7 @@ type AccountSection = 'profile' | 'settings' | 'orders'
 
 interface AccountModalProps {
   isOpen: boolean
-  initialSection: 'profile' | 'settings'
+  initialSection: 'profile' | 'settings' | 'orders'
   user: AuthUser
   isDarkMode: boolean
   onClose: () => void
@@ -613,9 +613,22 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                             <div><p className="text-[10px] font-semibold uppercase tracking-wider text-[#9A8781]">Order</p><h3 className="font-semibold">{order.orderId}</h3></div>
                             <div className="text-right"><p className="text-sm font-semibold">₹{order.total.toLocaleString('en-IN')}</p><p className="text-[10px] text-[#8E7973] dark:text-[#A79690]">{new Date(createdAt).toLocaleDateString()}</p></div>
                           </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold">
+                            <span className={`rounded-full px-2.5 py-1 ${order.paymentStatus === 'paid' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>Payment: {order.paymentStatus === 'paid' ? 'Paid' : order.paymentStatus ?? 'pending'}</span>
+                            <span className="rounded-full bg-[#B36D6D]/10 px-2.5 py-1 text-[#9A6560]">Order: {(order.orderStatus ?? fulfillmentStatus ?? 'pending_payment').replaceAll('_', ' ')}</span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-[#8E7973] dark:text-[#A79690]">
+                            {order.orderStatus === 'confirmed' ? 'Your payment has been verified and your order is confirmed.'
+                              : order.orderStatus === 'processing' ? 'Your order is being prepared.'
+                                : order.orderStatus === 'shipped' ? 'Your order has been dispatched.'
+                                  : order.orderStatus === 'delivered' ? 'Your order has been delivered.'
+                                    : order.orderStatus === 'cancelled' ? 'Your order has been cancelled.'
+                                      : 'Your order has been placed. Please complete your UPI payment and wait for payment verification.'}
+                          </p>
                           <ul className="mt-3 space-y-2 text-xs">
                             {order.items.map((item, index) => <li key={`${item.productId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 truncate">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span><span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span></li>)}
                           </ul>
+                          {order.paymentStatus === 'pending' && order.orderStatus === 'pending_payment' && <button type="button" onClick={() => window.location.assign(`/?paymentOrder=${encodeURIComponent(order.orderId)}`)} className="mt-3 rounded-full border border-[#B36D6D]/35 px-4 py-2 text-xs font-semibold text-[#9A6560]">Continue to payment</button>}
                           <p className="mt-3 flex items-start gap-1.5 text-[11px] text-[#8E7973] dark:text-[#A79690]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{[order.address, order.city, order.state, order.postalCode].filter(Boolean).join(', ')}</p>
                           {productionStatus === 'awaiting_customer_approval' && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
                             <span className="text-xs">A proof is awaiting your review.</span>

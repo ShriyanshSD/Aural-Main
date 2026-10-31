@@ -24,6 +24,7 @@ const ProductDetailModal = React.lazy(() => import('./components/ProductDetailMo
 const CartDrawer = React.lazy(() => import('./components/CartDrawer').then(module => ({ default: module.CartDrawer })))
 const WishlistDrawer = React.lazy(() => import('./components/WishlistDrawer').then(module => ({ default: module.WishlistDrawer })))
 const CheckoutModal = React.lazy(() => import('./components/CheckoutModal').then(module => ({ default: module.CheckoutModal })))
+const PaymentPage = React.lazy(() => import('./components/PaymentPage').then(module => ({ default: module.PaymentPage })))
 const AuthModal = React.lazy(() => import('./components/AuthModal').then(module => ({ default: module.AuthModal })))
 const AccountModal = React.lazy(() => import('./components/AccountModal').then(module => ({ default: module.AccountModal })))
 const ChatbotModal = React.lazy(() => import('./components/ChatbotModal').then(module => ({ default: module.ChatbotModal })))
@@ -217,7 +218,7 @@ function StorefrontApp() {
   const [isAuthLoaded, setIsAuthLoaded] = useState(false)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
-  const [accountInitialSection, setAccountInitialSection] = useState<'profile' | 'settings'>('profile')
+  const [accountInitialSection, setAccountInitialSection] = useState<'profile' | 'settings' | 'orders'>('profile')
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [authNotice, setAuthNotice] = useState('')
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(signupResume?.resumeCheckout ?? false)
@@ -244,6 +245,13 @@ function StorefrontApp() {
   // Modals state
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false)
+  const [paymentOrderId, setPaymentOrderId] = useState(() => new URLSearchParams(window.location.search).get('paymentOrder') ?? '')
+
+  useEffect(() => {
+    const handleHistoryChange = () => setPaymentOrderId(new URLSearchParams(window.location.search).get('paymentOrder') ?? '')
+    window.addEventListener('popstate', handleHistoryChange)
+    return () => window.removeEventListener('popstate', handleHistoryChange)
+  }, [])
 
   // Sync dark mode class on html/body
   useLayoutEffect(() => {
@@ -683,17 +691,52 @@ function StorefrontApp() {
     setActiveTab('shop')
   }
 
-  const handleOrderSuccess = async (order: OrderDetails) => {
+  const handleOrderSuccess = async (order: OrderDetails, idempotencyKey: string): Promise<OrderDetails> => {
     if (!authUser) throw new Error('Sign in to save your order to your account.')
     const response = await fetch('/api/auth/orders', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order })
+      body: JSON.stringify({
+        idempotencyKey,
+        customer: {
+          customerName: order.customerName,
+          phoneNumber: order.phoneNumber,
+          email: order.email,
+          address: order.address,
+          city: order.city,
+          state: order.state,
+          postalCode: order.postalCode,
+          notes: order.notes
+        },
+        items: order.items.map(item => ({
+          cartId: item.cartId,
+          productId: item.productId,
+          quantity: item.quantity,
+          variantId: item.variantId,
+          finish: item.finish,
+          recipientName: item.recipientName,
+          customMessage: item.customMessage,
+          customComponents: item.customComponents
+        }))
+      })
     })
-    const data = await response.json() as { error?: string }
-    if (!response.ok) throw new Error(data.error || 'Your order could not be saved to your account.')
+    const data = await response.json() as { order?: OrderDetails; error?: string }
+    if (!response.ok || !data.order) throw new Error(data.error || 'Your order could not be saved to your account.')
+    const paymentUrl = new URL(window.location.href)
+    paymentUrl.searchParams.set('paymentOrder', data.order.orderId)
+    window.history.pushState(null, '', paymentUrl)
+    setPaymentOrderId(data.order.orderId)
+    setIsCheckoutOpen(false)
     setCartItems([])
+    return data.order
+  }
+
+  const closePaymentPage = () => {
+    const storefrontUrl = new URL(window.location.href)
+    storefrontUrl.searchParams.delete('paymentOrder')
+    window.history.pushState(null, '', storefrontUrl)
+    setPaymentOrderId('')
   }
 
   const handleLogout = async () => {
@@ -720,6 +763,21 @@ function StorefrontApp() {
     setWishlistOwnerId(null)
     setIsWishlistOpen(false)
     setIsProfileOpen(false)
+  }
+
+  if (paymentOrderId) {
+    return <React.Suspense fallback={<div className="min-h-screen bg-[#FAF7F2]" />}>
+      <PaymentPage
+        orderId={paymentOrderId}
+        isDarkMode={isDarkMode}
+        onContinueShopping={closePaymentPage}
+        onViewOrders={() => {
+          closePaymentPage()
+          setAccountInitialSection('orders')
+          setIsProfileOpen(true)
+        }}
+      />
+    </React.Suspense>
   }
 
   return (
