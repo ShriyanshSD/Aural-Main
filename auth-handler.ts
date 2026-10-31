@@ -1099,7 +1099,8 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       const variantId = typeof item.variantId === 'string' ? item.variantId : undefined
       const variant = variantId ? product.variants?.find(candidate => candidate.id === variantId) : undefined
       if (variantId && !variant) throw new OrderValidationError(`The selected option for ${product.name} is no longer available.`)
-      if (item.finish && !product.available_finishes?.includes(String(item.finish))) {
+      const availableFinishes = product.available_finishes ?? []
+      if (item.finish && availableFinishes.length > 0 && !availableFinishes.includes(String(item.finish))) {
         throw new OrderValidationError(`The selected finish for ${product.name} is no longer available.`)
       }
       const price = Number(variant?.price ?? product.price)
@@ -1118,7 +1119,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         quantity,
         imageUrl: product.image_url,
         ...(variant ? { variantId: variant.id, variantName: variant.name } : {}),
-        ...(typeof item.finish === 'string' ? { finish: item.finish } : {}),
+        ...(typeof item.finish === 'string' && availableFinishes.includes(item.finish) ? { finish: item.finish } : {}),
         ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
         ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
         ...(Array.isArray(item.customComponents) ? { customComponents: item.customComponents } : {})

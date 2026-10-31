@@ -476,6 +476,21 @@ function StorefrontApp() {
     }
   }, [authUser, checkoutAfterAuth, isAuthLoaded])
 
+  useEffect(() => {
+    if (!isAuthLoaded) return
+    const accountUrl = new URL(window.location.href)
+    if (accountUrl.searchParams.get('account') !== 'orders') return
+    if (!authUser) {
+      setAuthMode('login')
+      setIsAuthOpen(true)
+      return
+    }
+    accountUrl.searchParams.delete('account')
+    window.history.replaceState(null, '', `${accountUrl.pathname}${accountUrl.search}${accountUrl.hash}`)
+    setAccountInitialSection('orders')
+    setIsProfileOpen(true)
+  }, [authUser, isAuthLoaded])
+
   const totalBagCount = cartItems.reduce((acc, item) => acc + item.quantity, 0)
 
   // Handlers
@@ -617,7 +632,7 @@ function StorefrontApp() {
       price: product.price,
       quantity: 1,
       imageUrl: product.imageUrl,
-      finish: product.availableFinishes ? product.availableFinishes[0] : undefined
+      finish: product.availableFinishes?.[0]
     }
     return handleAddToCart(newItem)
   }
@@ -635,7 +650,7 @@ function StorefrontApp() {
       price: product.price,
       quantity: 1,
       imageUrl: product.imageUrl,
-      finish: product.availableFinishes ? product.availableFinishes[0] : undefined
+      finish: product.availableFinishes?.[0]
     })
     if (addedToBag) {
       setWishlist(current => current.filter(productId => productId !== product.id))
@@ -672,7 +687,17 @@ function StorefrontApp() {
   }
 
   const handleCustomizeMagazine = (finish: FinishType, recipientName: string) => {
-    const magProduct = catalogProducts.find(p => p.id === 'prod_bday_mag') || catalogProducts[0] || PRODUCTS[0]
+    const magProduct = catalogProducts.find(product =>
+      product.category === 'magazines' && product.availableFinishes?.includes(finish)
+    )
+    if (!magProduct) {
+      setCartFeedback({
+        productName: 'Magazine customization is currently unavailable.',
+        timestamp: Date.now(),
+        kind: 'unavailable'
+      })
+      return
+    }
     const customItem: CartItem = {
       cartId: `mag_${Date.now()}`,
       productId: magProduct.id,
@@ -1032,6 +1057,17 @@ function StorefrontApp() {
         isWishlisted={selectedProduct ? wishlist.includes(selectedProduct.id) : false}
         onToggleWishlist={handleToggleWishlist}
         isAuthenticated={Boolean(authUser)}
+        reviews={storeReviews.filter(review => review.productId === selectedProduct?.id)}
+        onLeaveReview={() => {
+          setSelectedProduct(null)
+          if (authUser) {
+            setAccountInitialSection('orders')
+            setIsProfileOpen(true)
+          } else {
+            setAuthMode('login')
+            setIsAuthOpen(true)
+          }
+        }}
       /></DeferredMount>
 
       <DeferredMount active={isWishlistOpen && Boolean(authUser)}><WishlistDrawer

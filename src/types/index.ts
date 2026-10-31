@@ -28,6 +28,7 @@ export interface Product {
   isCustomizable?: boolean
   features: string[]
   stockQuantity?: number | null
+  lowStockThreshold?: number
   isActive?: boolean
   isPublished?: boolean
 }

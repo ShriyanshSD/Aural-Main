@@ -116,7 +116,7 @@ The dashboard adds API routes to the existing shared `api/index.ts` function, so
 ## Deploying to Vercel
 
 1. In the Supabase SQL Editor, run [`supabase/schema.sql`](./supabase/schema.sql) before deploying. It creates the profile, session, and account chat history tables required by the APIs. Re-run it to add chat history to an existing project.
-2. For the owner dashboard, run [`supabase/migrations/202606220001_owner_dashboard.sql`](./supabase/migrations/202606220001_owner_dashboard.sql) after the base schema. For manual SQL Editor setup, then run [`supabase/migrations/202610180002_atomic_customer_deletion.sql`](./supabase/migrations/202610180002_atomic_customer_deletion.sql); `202610180001_admin_delete_customer.sql` is not required. If using a migration runner that applies all pending files, ensure `202610180001` and then `202610180002` both complete, and do not deploy the delete UI/API until `202610180002` has completed. Finally, run [`supabase/migrations/202610270001_inventory_adjustments.sql`](./supabase/migrations/202610270001_inventory_adjustments.sql), [`supabase/migrations/202610270002_owner_operations.sql`](./supabase/migrations/202610270002_owner_operations.sql), and [`supabase/migrations/202610310001_upi_checkout.sql`](./supabase/migrations/202610310001_upi_checkout.sql) in order.
+2. For the owner dashboard, run [`supabase/migrations/202606220001_owner_dashboard.sql`](./supabase/migrations/202606220001_owner_dashboard.sql) after the base schema. For manual SQL Editor setup, then run [`supabase/migrations/202610180002_atomic_customer_deletion.sql`](./supabase/migrations/202610180002_atomic_customer_deletion.sql); `202610180001_admin_delete_customer.sql` is not required. If using a migration runner that applies all pending files, ensure `202610180001` and then `202610180002` both complete, and do not deploy the delete UI/API until `202610180002` has completed. Finally, run [`supabase/migrations/202610270001_inventory_adjustments.sql`](./supabase/migrations/202610270001_inventory_adjustments.sql), [`supabase/migrations/202610270002_owner_operations.sql`](./supabase/migrations/202610270002_owner_operations.sql), [`supabase/migrations/202610310001_upi_checkout.sql`](./supabase/migrations/202610310001_upi_checkout.sql), and [`supabase/migrations/202611010001_order_confirmation_email.sql`](./supabase/migrations/202611010001_order_confirmation_email.sql) in order.
 3. In Vercel, import the repository (or connect the existing project) with the repository root as the project root. `vercel.json` builds the Vite frontend into `dist`, and the rewritten API routes share the existing `api/index.ts` function.
 4. Add these server-side Environment Variables in Vercel Project Settings → Environment Variables:
    - `SUPABASE_URL` — the Supabase project URL.
@@ -128,6 +128,8 @@ The dashboard adds API routes to the existing shared `api/index.ts` function, so
    - `AUREL_UPI_ID` — public receiving UPI ID displayed in checkout and encoded in UPI payment links.
    - `AUREL_UPI_PAYEE_NAME` — public payee name used in payment links.
    - `AUREL_WHATSAPP_NUMBER` — public WhatsApp destination, with or without the `91` country prefix.
+   - `GMAIL_USER` — Gmail account used by the backend SMTP sender, `aurelstudiomain@gmail.com`.
+   - `GMAIL_APP_PASSWORD` — the Gmail App Password for that account. Keep it server-side and never commit it or expose it to the frontend.
 5. Add the variables to the Vercel environments where they are needed (Production, Preview, and/or Development). Preview deployments should use the appropriate preview origin for `APP_URL`; do not point production signups at localhost.
 6. In Supabase Authentication → URL Configuration, set the Site URL to the production origin and add the production origin, plus any preview origins you use, to the allowed redirect URLs. Confirm email signup is enabled and the confirmation email template uses `{{ .ConfirmationURL }}`.
 7. In Vercel, ensure the production branch is the intended branch (typically `main`). Pushing to that branch triggers a deployment when Git integration is enabled. After adding or changing environment variables, redeploy so the new serverless functions receive them.
@@ -138,6 +140,14 @@ The dashboard adds API routes to the existing shared `api/index.ts` function, so
 2. Import storefront products in `/admin/login`; orders are priced against active Supabase products. Custom hamper totals are recomputed from the server's bundled builder catalog.
 3. Sign in as a customer, place an order, and check its saved snapshot in **My Orders**. On a narrow viewport the payment page offers a UPI app link; on desktop it displays the original `public/payment/upi-qr.jpeg` file.
 4. The customer may open WhatsApp with a prefilled message, but must press Send. Neither UPI nor WhatsApp activity marks an order paid.
+5. After manually verifying a payment, confirm it in the owner dashboard. The backend sends one confirmation email to the customer's registered address; the order stays confirmed if SMTP delivery fails. The order details show the email status and allow an owner to retry a failed or pending send without reconfirming payment.
+
+## Order Confirmation Email Setup
+
+1. Enable 2-Step Verification for the Gmail account and create a Google App Password. Set `GMAIL_USER=aurelstudiomain@gmail.com` and `GMAIL_APP_PASSWORD=<your-app-password>` in the local server environment and Vercel. Do not use the account's normal Gmail password.
+2. Keep `APP_URL` set to the actual site origin for each environment. The email's **VIEW MY ORDERS** button opens that configured site.
+3. Apply [`supabase/migrations/202611010001_order_confirmation_email.sql`](./supabase/migrations/202611010001_order_confirmation_email.sql) after the UPI checkout migration.
+4. Test locally by placing a test order, completing the UPI payment, and using the owner dashboard to manually confirm it. The message is sent only after that confirmation. If SMTP fails, check the server logs and order email status, update the backend environment, then use **Retry Confirmation Email**.
 5. In `/admin`, locate the pending order, check the actual transaction in the receiving bank/Google Pay account, and use **Confirm Payment & Confirm Order**. The customer's open payment page polls every five seconds and updates after the owner confirmation.
 6. Test a declined/cancelled order, repeated order submission, and customer access to an order number belonging to a different account. Payment confirmation must remain owner-only.
 

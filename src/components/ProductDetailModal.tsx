@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { X, Star, Heart, Check, Minus, Plus, ShoppingBag, Sparkles, ArrowLeft, ShieldCheck, Truck } from 'lucide-react'
-import { Product, FinishType, CartItem } from '../types'
+import { Product, FinishType, CartItem, StoreReview } from '../types'
 
 interface ProductDetailModalProps {
   product: Product | null
@@ -11,6 +11,8 @@ interface ProductDetailModalProps {
   isWishlisted: boolean
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
   isAuthenticated: boolean
+  reviews: StoreReview[]
+  onLeaveReview: () => void
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -20,11 +22,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onAddToCart,
   isWishlisted,
   onToggleWishlist,
-  isAuthenticated
+  isAuthenticated,
+  reviews,
+  onLeaveReview
 }) => {
   const [quantity, setQuantity] = useState(1)
   const [selectedFinish, setSelectedFinish] = useState<FinishType>(
-    product?.availableFinishes ? product.availableFinishes[0] : 'matte'
+    product?.availableFinishes?.[0] ?? 'matte'
   )
   const [selectedVariantId, setSelectedVariantId] = useState(product?.variants?.[0]?.id ?? '')
   const [recipientName, setRecipientName] = useState('')
@@ -41,6 +45,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const selectedVariant = product.variants?.find(variant => variant.id === selectedVariantId)
   const unitPrice = selectedVariant?.price ?? product.price
   const availableStock = selectedVariant ? selectedVariant.stockQuantity : product.stockQuantity
+  const availability = availableStock === 0
+    ? 'Out of stock'
+    : typeof availableStock === 'number' && availableStock <= (product.lowStockThreshold ?? 5)
+      ? 'Few left'
+      : 'In stock'
+  const productReviews = reviews.filter(review => review.productId === product.id)
 
   const livePreviewHeading = recipientName.trim()
     ? `${recipientName.toUpperCase()}’S EDITION`
@@ -56,7 +66,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       imageUrl: product.imageUrl,
       variantId: selectedVariant?.id,
       variantName: selectedVariant?.name,
-      finish: product.availableFinishes ? selectedFinish : undefined,
+      finish: product.availableFinishes?.length ? selectedFinish : undefined,
       recipientName: recipientName.trim() || undefined,
       customMessage: customMessage.trim() || undefined
     }
@@ -192,13 +202,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 {/* Rating and Price */}
                 <div className="flex items-center justify-between mt-3 pb-4 border-b border-black/5 dark:border-white/5">
                   <div className="flex items-center gap-2 text-xs">
+                    {product.reviewsCount > 0 ? <>
                     <div className="flex items-center text-[#B36D6D]">
                       <Star className="w-4 h-4 fill-[#B36D6D]" />
                       <span className="ml-1 font-semibold">{product.rating.toFixed(1)}</span>
                     </div>
                     <span className="text-[#8E7A74] dark:text-[#A89791]">
-                      ({product.reviewsCount} {product.reviewsCount === 1 ? 'review' : 'reviews'})
+                      ({product.reviewsCount} {product.reviewsCount === 1 ? 'rating' : 'ratings'})
                     </span>
+                    </> : <span className="text-[#8E7A74] dark:text-[#A89791]">No ratings yet</span>}
                   </div>
 
                   <span className="font-serif-title text-2xl font-bold text-[#B36D6D] tabular-nums">
@@ -208,6 +220,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
                 <p className="font-sans-body text-xs sm:text-sm text-[#705D57] dark:text-[#BEADA7] mt-3 leading-relaxed">
                   {product.description}
+                </p>
+                <p className={`mt-4 rounded-xl border px-3.5 py-3 text-xs ${isDarkMode ? 'border-[#382C29] bg-[#221B1A]' : 'border-[#E8D4CB] bg-white'}`}>
+                  <span className="text-[#8E7973] dark:text-[#BCAAA4]">Availability: </span>
+                  <span className={`font-semibold ${availability === 'Out of stock' ? 'text-rose-700 dark:text-rose-300' : availability === 'Few left' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{availability}</span>
                 </p>
               </div>
 
@@ -221,7 +237,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               )}
 
               {/* Finish Options (if Magazine) */}
-              {product.availableFinishes && (
+              {product.availableFinishes?.length ? (
                 <div>
                   <label className="block text-xs font-semibold tracking-wider uppercase text-[#8B7771] dark:text-[#BCAAA4] mb-2">
                     Choose Finish
@@ -246,7 +262,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     ))}
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {/* Personalization Inputs */}
               {product.isCustomizable && (
@@ -304,6 +320,27 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </div>
                 ))}
               </div>
+
+              <section className="space-y-2 border-t border-black/5 pt-4 dark:border-white/10">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium">Reviews</h3>
+                  {product.reviewsCount > 0 && <span className="text-xs text-[#8E7973] dark:text-[#BCAAA4]">{product.reviewsCount}</span>}
+                </div>
+                {productReviews.length > 0 && <div className="space-y-3">
+                  {productReviews.slice(0, 3).map(review => <article key={review.id} className="border-t border-black/5 pt-3 first:border-0 first:pt-0 dark:border-white/10">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold">{review.title || review.customerName}</p>
+                      <span className="inline-flex items-center gap-1 text-xs text-[#B36D6D]"><Star className="h-3.5 w-3.5 fill-[#B36D6D]" />{review.rating}/5</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#705D57] dark:text-[#BEADA7]">{review.body}</p>
+                    <p className="mt-1 text-[10px] text-[#8E7973] dark:text-[#A89791]">{review.customerName}</p>
+                  </article>)}
+                </div>}
+                <button type="button" onClick={onLeaveReview} className="text-xs font-medium text-[#9A6560] underline decoration-[#B36D6D]/40 underline-offset-4 transition-colors hover:text-[#B36D6D] dark:text-[#D7A5A0]">
+                  Leave a review
+                </button>
+                <p className="text-[11px] text-[#8E7973] dark:text-[#BCAAA4]">Available after your order is delivered.</p>
+              </section>
 
               {/* Quantity Stepper & Add to Bag */}
               <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center gap-4">

@@ -81,6 +81,9 @@ interface AdminOrder {
   payment_method: string
   paid_at: string | null
   paid_by: string | null
+  confirmation_email_status: 'pending' | 'sending' | 'sent' | 'failed'
+  confirmation_email_sent_at: string | null
+  confirmation_email_error: string | null
   events?: AdminOrderEvent[]
 }
 interface AdminOrderEvent {
@@ -421,13 +424,13 @@ export default function AdminApp() {
     }
   }
 
-  const runAction = async (action: () => Promise<void>, successMessage: string) => {
+  const runAction = async <T,>(action: () => Promise<T>, successMessage: string | ((result: T) => string)) => {
     setBusy(true)
     setError('')
     setNotice('')
     try {
-      await action()
-      setNotice(successMessage)
+      const result = await action()
+      setNotice(typeof successMessage === 'function' ? successMessage(result) : successMessage)
       await loadSection(section)
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'The change could not be saved.')
@@ -626,8 +629,28 @@ export default function AdminApp() {
           {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} onConfirmPayment={order => {
             if (!window.confirm(`Confirm that ₹${money(order.order_data.total)} for ${order.order_id} has arrived in the receiving Google Pay or bank account?`)) return
             void runAction(async () => {
-              await api(`/api/admin/orders/${order.id}/confirm-payment`, { method: 'POST', body: '{}' })
-            }, `Payment verified and order ${order.order_id} confirmed.`)
+              return api<{ alreadyConfirmed: boolean; emailStatus: string; emailError?: string }>(`/api/admin/orders/${order.id}/confirm-payment`, { method: 'POST', body: '{}' })
+            }, result => {
+              if (result.alreadyConfirmed) {
+                if (result.emailStatus === 'sent') return 'Order confirmation email has already been sent.'
+                if (result.emailStatus === 'failed') return 'Payment is already confirmed, but the confirmation email failed. Retry it from the order details.'
+                return 'Payment is already confirmed. The confirmation email was not sent again.'
+              }
+              if (result.emailStatus === 'sent') return 'Payment confirmed and order confirmation email sent successfully.'
+              if (result.emailStatus === 'already_sent') return 'Payment confirmed. Order confirmation email has already been sent.'
+              if (result.emailStatus === 'failed') return result.emailError || 'Payment confirmed, but the confirmation email could not be sent.'
+              return 'Payment confirmed. Confirmation email status: sending.'
+            })
+          }} onRetryEmail={order => {
+            void runAction(async () => {
+              return api<{ success: boolean; emailStatus: string; emailError?: string }>(`/api/admin/orders/${order.id}/confirmation-email`, { method: 'POST', body: '{}' })
+            }, result => result.emailStatus === 'sent'
+              ? 'Order confirmation email sent successfully.'
+              : result.emailStatus === 'already_sent'
+                ? 'Order confirmation email has already been sent.'
+                : result.emailStatus === 'sending'
+                  ? 'Order confirmation email is already being processed.'
+                : result.emailError || 'Payment remains confirmed, but the confirmation email could not be sent.')
           }} onUpdate={(order, status) => {
             void runAction(async () => {
               await api(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
@@ -1093,7 +1116,7 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
     {categories.length === 0 && <EmptyState text="No categories have been created yet." />}
   </section>
 }
-function OrdersPage({ orders, search, setSearch, onConfirmPayment, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; onConfirmPayment: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => void }) {
+function OrdersPage({ orders, search, setSearch, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; onConfirmPayment: (order: AdminOrder) => void; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => void }) {
   const [paymentFilter, setPaymentFilter] = useState('all')
   const [fulfillmentFilter, setFulfillmentFilter] = useState('all')
   const [fromDate, setFromDate] = useState('')
@@ -1231,9 +1254,12 @@ function OrdersPage({ orders, search, setSearch, onConfirmPayment, onUpdate }: {
           <p><strong>Email:</strong> {String(order.order_data.email ?? '—')}</p>
           <p><strong>Phone:</strong> {String(order.order_data.phoneNumber ?? '—')}</p>
           <p><strong>Address:</strong> {[order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'}</p>
+          <p><strong>Confirmation email:</strong> {statusLabel(order.confirmation_email_status)}{order.confirmation_email_sent_at ? ` · ${dateLabel(order.confirmation_email_sent_at)}` : ''}</p>
+          {order.confirmation_email_error && <p className="text-rose-700">{order.confirmation_email_error}</p>}
           <p><strong>Method:</strong> {order.payment_method.toUpperCase()}</p>
           <p><strong>Items:</strong></p><ul className="list-inside list-disc">{items.map((item, index) => <li key={`${String(item.productId)}-${index}`}>{String(item.name ?? 'Item')}{typeof item.variantName === 'string' ? ` — ${item.variantName}` : ''} × {String(item.quantity ?? 1)} · {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</li>)}</ul>
           {order.payment_status === 'pending' && order.order_status === 'pending_payment' && <button type="button" onClick={() => onConfirmPayment(order)} className="w-full rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800">Confirm Payment &amp; Confirm Order</button>}
+          {order.payment_status === 'paid' && ['confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status) && ['pending', 'failed'].includes(order.confirmation_email_status) && <button type="button" onClick={() => onRetryEmail(order)} className="w-full rounded-lg border border-[#a45f60]/40 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5">{order.confirmation_email_status === 'failed' ? 'Retry Confirmation Email' : 'Send Confirmation Email'}</button>}
           {order.paid_by && <p><strong>Verified by:</strong> {order.paid_by}</p>}
           <button type="button" onClick={() => printOrder(order)} className="rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs font-semibold text-[#a45f60]">Print order</button>
           {order.events?.length ? <div className="border-t border-[#eee5df] pt-2"><p className="font-semibold">Timeline</p><ol className="mt-1 space-y-1">{[...order.events].reverse().map(event => <li key={event.id} className="text-[10px] text-[#806b63]">{dateLabel(event.created_at)} · {event.summary}</li>)}</ol></div> : <p className="border-t border-[#eee5df] pt-2 text-[10px] text-[#9a8881]">No timeline events recorded yet.</p>}

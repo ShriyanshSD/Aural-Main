@@ -4,6 +4,7 @@ import { PRODUCTS } from './src/data/products.js'
 import type { Product, StorefrontContent } from './src/types/index.js'
 import { getSupabaseAuthKey, getSupabaseConfig, supabaseRequest } from './auth-handler.js'
 import { normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
+import { getConfirmationEmailStatus, sendOrderConfirmationEmail } from './email-service.js'
 
 interface AdminRequest extends IncomingMessage {
   body?: unknown
@@ -475,7 +476,7 @@ const toProductRecord = (product: Product): Omit<ProductRecord, 'created_at' | '
   is_published: true
 })
 
-const toPublicProduct = (record: ProductRecord): Product & { stockQuantity: number | null; isActive: boolean; isPublished: boolean } => ({
+const toPublicProduct = (record: ProductRecord): Product & { stockQuantity: number | null; lowStockThreshold: number; isActive: boolean; isPublished: boolean } => ({
   id: record.id,
   name: record.name,
   category: record.category as Product['category'],
@@ -493,6 +494,7 @@ const toPublicProduct = (record: ProductRecord): Product & { stockQuantity: numb
   isCustomizable: record.is_customizable,
   features: record.features,
   stockQuantity: record.stock_quantity,
+  lowStockThreshold: record.low_stock_threshold,
   isActive: record.is_active,
   isPublished: record.is_published
 })
@@ -500,7 +502,7 @@ const toPublicProduct = (record: ProductRecord): Product & { stockQuantity: numb
 const loadPublicCatalog = async () => {
   const [productRecords, categories, settingsRows, content, collectionRows, collectionProductRows, reviewAggregateRows, reviewRows] = await Promise.all([
     fetchAllRows<ProductRecord>('aurel_products', new URLSearchParams({
-      select: 'id,name,category,sub_category,price,rating,reviews_count,image_url,image_urls,variants,fallback_color,description,tagline,available_finishes,is_customizable,features,stock_quantity,is_active,is_published,created_at,updated_at',
+      select: 'id,name,category,sub_category,price,rating,reviews_count,image_url,image_urls,variants,fallback_color,description,tagline,available_finishes,is_customizable,features,stock_quantity,low_stock_threshold,is_active,is_published,created_at,updated_at',
       order: 'created_at.desc',
       limit: '1000'
     })),
@@ -1412,7 +1414,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (path === '/api/admin/orders' && method === 'GET') {
     const orders = await fetchAllRows<Record<string, unknown>>(
       'aurel_orders',
-      new URLSearchParams({ select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,paid_by', order: 'created_at.desc', limit: '500' })
+      new URLSearchParams({ select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
     )
     const orderIds = orders.map(order => Number(order.id)).filter(Number.isSafeInteger)
     const events = orderIds.length
@@ -1440,7 +1442,50 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     )
     if (result.reason === 'not_found') return sendJson(res, 404, { error: 'Order not found.' })
     if (!result.success) return sendJson(res, 409, { error: 'This order is no longer awaiting payment. Refresh the order before continuing.' })
-    return sendJson(res, 200, { success: true, alreadyConfirmed: Boolean(result.alreadyConfirmed) })
+    if (result.alreadyConfirmed) {
+      try {
+        const email = await getConfirmationEmailStatus(Number(paymentConfirmMatch[1]))
+        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: email.status })
+      } catch (error) {
+        console.error('Payment was already confirmed, but its email status could not be loaded.')
+        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: 'pending' })
+      }
+    }
+    try {
+      const email = await sendOrderConfirmationEmail(Number(paymentConfirmMatch[1]))
+      return sendJson(res, 200, {
+        success: true,
+        alreadyConfirmed: false,
+        emailStatus: email.status,
+        emailError: email.status === 'failed' ? email.error : undefined
+      })
+    } catch (error) {
+      console.error('Payment was confirmed, but the confirmation email could not be processed.')
+      return sendJson(res, 200, {
+        success: true,
+        alreadyConfirmed: false,
+        emailStatus: 'failed',
+        emailError: 'Payment confirmed, but the confirmation email could not be processed. Check the email configuration and order email status.'
+      })
+    }
+  }
+  const retryConfirmationEmailMatch = path.match(/^\/api\/admin\/orders\/(\d+)\/confirmation-email$/)
+  if (retryConfirmationEmailMatch && method === 'POST') {
+    try {
+      const email = await sendOrderConfirmationEmail(Number(retryConfirmationEmailMatch[1]))
+      return sendJson(res, 200, {
+        success: email.status !== 'failed',
+        emailStatus: email.status,
+        emailError: email.status === 'failed' ? email.error : undefined
+      })
+    } catch (error) {
+      console.error('Order confirmation email retry could not be processed.')
+      return sendJson(res, 200, {
+        success: false,
+        emailStatus: 'failed',
+        emailError: 'The email could not be processed. Confirm the order is paid and confirmed, then check the server email configuration.'
+      })
+    }
   }
   const orderMatch = path.match(/^\/api\/admin\/orders\/(\d+)$/)
   if (orderMatch && method === 'PATCH') {
