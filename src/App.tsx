@@ -1058,16 +1058,6 @@ function StorefrontApp() {
         onToggleWishlist={handleToggleWishlist}
         isAuthenticated={Boolean(authUser)}
         reviews={storeReviews.filter(review => review.productId === selectedProduct?.id)}
-        onLeaveReview={() => {
-          setSelectedProduct(null)
-          if (authUser) {
-            setAccountInitialSection('orders')
-            setIsProfileOpen(true)
-          } else {
-            setAuthMode('login')
-            setIsAuthOpen(true)
-          }
-        }}
       /></DeferredMount>
 
       <DeferredMount active={isWishlistOpen && Boolean(authUser)}><WishlistDrawer

@@ -12,7 +12,6 @@ interface ProductDetailModalProps {
   onToggleWishlist: (productId: string, e: React.MouseEvent) => void
   isAuthenticated: boolean
   reviews: StoreReview[]
-  onLeaveReview: () => void
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -23,8 +22,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isWishlisted,
   onToggleWishlist,
   isAuthenticated,
-  reviews,
-  onLeaveReview
+  reviews
 }) => {
   const [quantity, setQuantity] = useState(1)
   const [selectedFinish, setSelectedFinish] = useState<FinishType>(
@@ -34,10 +32,23 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [recipientName, setRecipientName] = useState('')
   const [customMessage, setCustomMessage] = useState('')
   const [isAddedFeedback, setIsAddedFeedback] = useState(false)
+  const [reviewFormOpen, setReviewFormOpen] = useState(false)
+  const [reviewerName, setReviewerName] = useState('')
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewBody, setReviewBody] = useState('')
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [reviewError, setReviewError] = useState('')
+  const [reviewSubmitted, setReviewSubmitted] = useState(false)
   useEffect(() => {
     setQuantity(1)
     setSelectedVariantId(product?.variants?.[0]?.id ?? '')
     setSelectedFinish(product?.availableFinishes?.[0] ?? 'matte')
+    setReviewFormOpen(false)
+    setReviewSubmitted(false)
+    setReviewError('')
+    setReviewerName('')
+    setReviewRating(5)
+    setReviewBody('')
   }, [product?.id])
 
   if (!product) return null
@@ -77,6 +88,42 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       setIsAddedFeedback(false)
       onClose()
     }, 900)
+  }
+
+  const submitReview = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!product || reviewSubmitting) return
+    setReviewSubmitting(true)
+    setReviewError('')
+    try {
+      const response = await fetch('/api/auth/reviews', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: product.id,
+          reviewerName: reviewerName.trim(),
+          rating: reviewRating,
+          title: '',
+          body: reviewBody.trim()
+        })
+      })
+      const responseText = await response.text()
+      let payload: { success?: boolean; error?: string }
+      try {
+        payload = JSON.parse(responseText) as { success?: boolean; error?: string }
+      } catch {
+        throw new Error(`Review submission returned an invalid response (HTTP ${response.status}).`)
+      }
+      if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to submit your review.')
+      setReviewSubmitted(true)
+      setReviewFormOpen(false)
+    } catch (submitError) {
+      setReviewError(submitError instanceof Error ? submitError.message : 'Unable to submit your review.')
+    } finally {
+      setReviewSubmitting(false)
+    }
   }
 
   return (
@@ -218,13 +265,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </span>
                 </div>
 
-                <p className="font-sans-body text-xs sm:text-sm text-[#705D57] dark:text-[#BEADA7] mt-3 leading-relaxed">
-                  {product.description}
-                </p>
-                <p className={`mt-4 rounded-xl border px-3.5 py-3 text-xs ${isDarkMode ? 'border-[#382C29] bg-[#221B1A]' : 'border-[#E8D4CB] bg-white'}`}>
-                  <span className="text-[#8E7973] dark:text-[#BCAAA4]">Availability: </span>
-                  <span className={`font-semibold ${availability === 'Out of stock' ? 'text-rose-700 dark:text-rose-300' : availability === 'Few left' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{availability}</span>
-                </p>
               </div>
 
               {product.variants && product.variants.length > 0 && (
@@ -308,42 +348,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               )}
 
-              {/* Features List */}
-              <div className="space-y-1.5 pt-1">
-                <span className="text-[11px] uppercase tracking-wider font-semibold text-[#8B7771] block">
-                  Crafting Highlights
-                </span>
-                {product.features.map((feat, idx) => (
-                  <div key={idx} className="flex items-center gap-2 text-xs text-[#6C5A54] dark:text-[#C4B3AC]">
-                    <Check className="w-3.5 h-3.5 text-[#B36D6D] shrink-0" />
-                    <span>{feat}</span>
-                  </div>
-                ))}
-              </div>
-
-              <section className="space-y-2 border-t border-black/5 pt-4 dark:border-white/10">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-medium">Reviews</h3>
-                  {product.reviewsCount > 0 && <span className="text-xs text-[#8E7973] dark:text-[#BCAAA4]">{product.reviewsCount}</span>}
-                </div>
-                {productReviews.length > 0 && <div className="space-y-3">
-                  {productReviews.slice(0, 3).map(review => <article key={review.id} className="border-t border-black/5 pt-3 first:border-0 first:pt-0 dark:border-white/10">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold">{review.title || review.customerName}</p>
-                      <span className="inline-flex items-center gap-1 text-xs text-[#B36D6D]"><Star className="h-3.5 w-3.5 fill-[#B36D6D]" />{review.rating}/5</span>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-[#705D57] dark:text-[#BEADA7]">{review.body}</p>
-                    <p className="mt-1 text-[10px] text-[#8E7973] dark:text-[#A89791]">{review.customerName}</p>
-                  </article>)}
-                </div>}
-                <button type="button" onClick={onLeaveReview} className="text-xs font-medium text-[#9A6560] underline decoration-[#B36D6D]/40 underline-offset-4 transition-colors hover:text-[#B36D6D] dark:text-[#D7A5A0]">
-                  Leave a review
-                </button>
-                <p className="text-[11px] text-[#8E7973] dark:text-[#BCAAA4]">Available after your order is delivered.</p>
-              </section>
-
               {/* Quantity Stepper & Add to Bag */}
-              <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center gap-4">
+              <div className="flex items-center gap-4 border-b border-black/5 pb-5 dark:border-white/10">
                 <div className={`flex items-center rounded-full border px-2 py-1 ${
                   isDarkMode ? 'border-[#3D302D] bg-[#221B1A]' : 'border-[#DEC5BB] bg-[#FFFFFF]'
                 }`}>
@@ -354,9 +360,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   >
                     <Minus className="w-3.5 h-3.5" />
                   </button>
-                  <span className="px-3 text-xs font-semibold tabular-nums">
-                    {quantity}
-                  </span>
+                  <span className="px-3 text-xs font-semibold tabular-nums">{quantity}</span>
                   <button
                     onClick={() => setQuantity(availableStock === null || availableStock === undefined
                       ? quantity + 1
@@ -386,6 +390,64 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   </span>
                 </motion.button>
               </div>
+
+              <p className={`rounded-xl border px-3.5 py-3 text-xs ${isDarkMode ? 'border-[#382C29] bg-[#221B1A]' : 'border-[#E8D4CB] bg-white'}`}>
+                <span className="text-[#8E7973] dark:text-[#BCAAA4]">Availability: </span>
+                <span className={`font-semibold ${availability === 'Out of stock' ? 'text-rose-700 dark:text-rose-300' : availability === 'Few left' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{availability}</span>
+              </p>
+
+              <p className="font-sans-body text-xs leading-relaxed text-[#705D57] dark:text-[#BEADA7] sm:text-sm">
+                {product.description}
+              </p>
+
+              {/* Features List */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] uppercase tracking-wider font-semibold text-[#8B7771] block">
+                  Crafting Highlights
+                </span>
+                {product.features.map((feat, idx) => (
+                  <div key={idx} className="flex items-center gap-2 text-xs text-[#6C5A54] dark:text-[#C4B3AC]">
+                    <Check className="w-3.5 h-3.5 text-[#B36D6D] shrink-0" />
+                    <span>{feat}</span>
+                  </div>
+                ))}
+              </div>
+
+              <section className="space-y-2 border-t border-black/5 pt-4 dark:border-white/10">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-medium">Reviews</h3>
+                  {product.reviewsCount > 0 && <span className="text-xs text-[#8E7973] dark:text-[#BCAAA4]">{product.reviewsCount}</span>}
+                </div>
+                {productReviews.length > 0 && <div className="space-y-3">
+                  {productReviews.slice(0, 3).map(review => <article key={review.id} className="border-t border-black/5 pt-3 first:border-0 first:pt-0 dark:border-white/10">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold">{review.title || review.customerName}</p>
+                      <span className="inline-flex items-center gap-1 text-xs text-[#B36D6D]"><Star className="h-3.5 w-3.5 fill-[#B36D6D]" />{review.rating}/5</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-[#705D57] dark:text-[#BEADA7]">{review.body}</p>
+                    <p className="mt-1 text-[10px] text-[#8E7973] dark:text-[#A89791]">{review.customerName}</p>
+                  </article>)}
+                </div>}
+                {reviewSubmitted
+                  ? <p role="status" className="text-xs text-emerald-700 dark:text-emerald-300">Thank you. Your review will appear after owner approval.</p>
+                  : <button type="button" onClick={() => { setReviewFormOpen(open => !open); setReviewError('') }} aria-expanded={reviewFormOpen} className="text-xs font-medium text-[#9A6560] underline decoration-[#B36D6D]/40 underline-offset-4 transition-colors hover:text-[#B36D6D] dark:text-[#D7A5A0]">
+                    {reviewFormOpen ? 'Close review form' : 'Leave a review'}
+                  </button>}
+                {reviewError && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{reviewError}</p>}
+                {reviewFormOpen && <form onSubmit={event => void submitReview(event)} className={`space-y-3 rounded-xl border p-3 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
+                  <label className="block text-[10px] font-medium">Name (optional)<input maxLength={80} value={reviewerName} onChange={event => setReviewerName(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-xs ${isDarkMode ? 'border-[#493936] bg-[#241D1B] text-[#F3EBE6]' : 'border-[#E7D5CE] bg-white text-[#2C2422]'}`} /></label>
+                  <div>
+                    <p className="text-[10px] font-medium">Your rating</p>
+                    <div className="mt-1 flex gap-1" role="group" aria-label="Product rating">
+                      {[1, 2, 3, 4, 5].map(rating => <button key={rating} type="button" aria-label={`${rating} stars`} aria-pressed={reviewRating === rating} onClick={() => setReviewRating(rating)} className="rounded p-1 text-[#B36D6D]">
+                        <Star className={`h-5 w-5 ${reviewRating >= rating ? 'fill-[#B36D6D]' : ''}`} />
+                      </button>)}
+                    </div>
+                  </div>
+                  <label className="block text-[10px] font-medium">Review<textarea required minLength={10} maxLength={3000} rows={3} value={reviewBody} onChange={event => setReviewBody(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-xs ${isDarkMode ? 'border-[#493936] bg-[#241D1B] text-[#F3EBE6]' : 'border-[#E7D5CE] bg-white text-[#2C2422]'}`} /></label>
+                  <button type="submit" disabled={reviewSubmitting} className="rounded-lg bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{reviewSubmitting ? 'Submitting…' : 'Submit review'}</button>
+                </form>}
+              </section>
 
             </div>
 

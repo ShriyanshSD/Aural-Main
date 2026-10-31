@@ -168,6 +168,7 @@ export interface AccountOrder {
   productionStatus?: string
   proofApproved?: boolean
   proofUrl?: string
+  orderExperienceRating?: number | null
   reviewedProductIds?: string[]
   events?: { event_type: string; summary: string; created_at: string }[]
 }

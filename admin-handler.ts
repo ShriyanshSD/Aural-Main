@@ -527,9 +527,9 @@ const loadPublicCatalog = async () => {
       'aurel_reviews',
       new URLSearchParams({ moderation_status: 'eq.approved', select: 'product_id,rating', order: 'created_at.desc' })
     ),
-    supabaseRequest<Array<{ id: number; product_id: string; user_id: string; rating: number; title: string; body: string; created_at: string }>>(
+    supabaseRequest<Array<{ id: number; product_id: string; user_id: string | null; reviewer_name: string; rating: number; title: string; body: string; created_at: string }>>(
       'aurel_reviews',
-      new URLSearchParams({ moderation_status: 'eq.approved', select: 'id,product_id,user_id,rating,title,body,created_at', order: 'created_at.desc', limit: '100' })
+      new URLSearchParams({ moderation_status: 'eq.approved', select: 'id,product_id,user_id,reviewer_name,rating,title,body,created_at', order: 'created_at.desc', limit: '100' })
     )
   ])
   const activeCategorySlugs = new Set(categories.map(category => category.slug))
@@ -546,7 +546,7 @@ const loadPublicCatalog = async () => {
       ? { ...product, rating: reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length, reviewsCount: reviews.length }
       : { ...product, rating: 0, reviewsCount: 0 }
   })
-  const reviewerIds = [...new Set(reviewRows.map(review => review.user_id))]
+  const reviewerIds = [...new Set(reviewRows.map(review => review.user_id).filter((id): id is string => Boolean(id)))]
   const reviewers = reviewerIds.length
     ? await supabaseRequest<Array<{ id: string; name: string }>>(
       'aurel_users',
@@ -572,7 +572,7 @@ const loadPublicCatalog = async () => {
       rating: review.rating,
       title: review.title,
       body: review.body,
-      customerName: reviewerNameById.get(review.user_id) ?? 'Customer',
+      customerName: (review.user_id ? reviewerNameById.get(review.user_id) : undefined) ?? review.reviewer_name ?? 'Customer',
       createdAt: review.created_at
     })),
     settings: resolveStoreSettings(storedSettings),
@@ -795,10 +795,11 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   }
 
   if (path === '/api/admin/notifications' && method === 'GET') {
-    const notifications = await supabaseRequest<Array<Record<string, unknown>>>(
+    const storedNotifications = await supabaseRequest<Array<Record<string, unknown>>>(
       'aurel_admin_notifications',
       new URLSearchParams({ select: 'id,notification_type,title,message,target_type,target_id,read_at,created_at', order: 'created_at.desc', limit: '100' })
     )
+    const notifications = storedNotifications.filter(item => !item.read_at)
     return sendJson(res, 200, { notifications, unreadCount: notifications.filter(item => !item.read_at).length })
   }
   if (path === '/api/admin/notifications/read-all' && method === 'POST') {
@@ -826,9 +827,9 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
 
   if (path === '/api/admin/reviews' && method === 'GET') {
     const [reviews, products, customers] = await Promise.all([
-      fetchAllRows<Array<{ id: number; order_id: number; user_id: string; product_id: string; rating: number; title: string; body: string; moderation_status: string; created_at: string }>[number]>(
+      fetchAllRows<Array<{ id: number; order_id: number | null; user_id: string | null; reviewer_name: string; product_id: string; rating: number; title: string; body: string; moderation_status: string; created_at: string }>[number]>(
         'aurel_reviews',
-        new URLSearchParams({ select: 'id,order_id,user_id,product_id,rating,title,body,moderation_status,created_at', order: 'created_at.desc', limit: '1000' })
+        new URLSearchParams({ select: 'id,order_id,user_id,reviewer_name,product_id,rating,title,body,moderation_status,created_at', order: 'created_at.desc', limit: '1000' })
       ),
       supabaseRequest<Array<{ id: string; name: string }>>('aurel_products', new URLSearchParams({ select: 'id,name', limit: '1000' })),
       supabaseRequest<Array<{ id: string; name: string; email: string }>>('aurel_users', new URLSearchParams({ select: 'id,name,email', limit: '1000' }))
@@ -839,8 +840,8 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       reviews: reviews.map(review => ({
         ...review,
         product_name: productNames.get(review.product_id) ?? review.product_id,
-        customer_name: customerById.get(review.user_id)?.name ?? 'Deleted customer',
-        customer_email: customerById.get(review.user_id)?.email ?? ''
+        customer_name: (review.user_id ? customerById.get(review.user_id)?.name : undefined) ?? review.reviewer_name ?? 'Customer',
+        customer_email: (review.user_id ? customerById.get(review.user_id)?.email : undefined) ?? ''
       }))
     })
   }
@@ -905,6 +906,10 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         bestsellers.set(key, current)
       }
     }
+    const orderStatusCounts = new Map<string, number>()
+    for (const order of orders) {
+      orderStatusCounts.set(order.order_status, (orderStatusCounts.get(order.order_status) ?? 0) + 1)
+    }
     return sendJson(res, 200, {
       metrics: {
         recordedPaidOrderValue: revenue,
@@ -914,7 +919,8 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         lowStock: products.filter(product => product.stock_quantity !== null && product.stock_quantity <= product.low_stock_threshold).length
       },
       recentOrders: orders.slice(0, 8),
-      bestsellers: [...bestsellers.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5)
+      bestsellers: [...bestsellers.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
+      orderStatuses: [...orderStatusCounts.entries()].map(([status, count]) => ({ status, count }))
     })
   }
 
@@ -1442,13 +1448,29 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     )
     if (result.reason === 'not_found') return sendJson(res, 404, { error: 'Order not found.' })
     if (!result.success) return sendJson(res, 409, { error: 'This order is no longer awaiting payment. Refresh the order before continuing.' })
+    let notificationError: string | undefined
+    try {
+      await supabaseRequest('aurel_admin_notifications', new URLSearchParams({
+        notification_type: 'eq.new_order',
+        target_type: 'eq.order',
+        target_id: `eq.${paymentConfirmMatch[1]}`,
+        read_at: 'is.null'
+      }), {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ read_at: new Date().toISOString() })
+      })
+    } catch (error) {
+      console.error(`Order ${paymentConfirmMatch[1]} was confirmed, but its new-order alert could not be cleared:`, error)
+      notificationError = 'The order was confirmed, but its new-order alert could not be cleared. Mark it read from Alerts.'
+    }
     if (result.alreadyConfirmed) {
       try {
         const email = await getConfirmationEmailStatus(Number(paymentConfirmMatch[1]))
-        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: email.status })
+        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: email.status, notificationError })
       } catch (error) {
         console.error('Payment was already confirmed, but its email status could not be loaded.')
-        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: 'pending' })
+        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: 'pending', notificationError })
       }
     }
     try {
@@ -1457,7 +1479,8 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         success: true,
         alreadyConfirmed: false,
         emailStatus: email.status,
-        emailError: email.status === 'failed' ? email.error : undefined
+        emailError: email.status === 'failed' ? email.error : undefined,
+        notificationError
       })
     } catch (error) {
       console.error('Payment was confirmed, but the confirmation email could not be processed.')
@@ -1465,7 +1488,8 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         success: true,
         alreadyConfirmed: false,
         emailStatus: 'failed',
-        emailError: 'Payment confirmed, but the confirmation email could not be processed. Check the email configuration and order email status.'
+        emailError: 'Payment confirmed, but the confirmation email could not be processed. Check the email configuration and order email status.',
+        notificationError
       })
     }
   }

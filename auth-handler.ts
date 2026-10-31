@@ -779,6 +779,7 @@ interface StoredAccountOrder {
   order_id: string
   order_data: Record<string, unknown>
   created_at: string
+  order_experience_rating?: number | null
   fulfillment_status?: string
   payment_status?: 'pending' | 'paid' | 'failed' | 'refunded'
   order_status?: 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -812,15 +813,44 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       } catch {
         return sendJson(res, 403, { error: 'The request origin could not be verified.' })
       }
-      const orderId = readBody(req).orderId
+      const body = readBody(req)
+      const orderId = body.orderId
       if (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)) {
         return sendJson(res, 400, { error: 'Provide a valid order number.' })
       }
-      const orders = await supabaseRequest<Array<{ id: number }>>(
+      const orders = await supabaseRequest<Array<{ id: number; fulfillment_status: string; order_experience_rating: number | null }>>(
         'aurel_orders',
-        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id', limit: '1' })
+        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,fulfillment_status,order_experience_rating', limit: '1' })
       )
       if (!orders[0]) return sendJson(res, 404, { error: 'Order not found in your account.' })
+      if (body.orderExperienceRating !== undefined) {
+        const rating = body.orderExperienceRating
+        if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+          return sendJson(res, 400, { error: 'Choose an order experience rating from 1 to 5 stars.' })
+        }
+        if (orders[0].fulfillment_status !== 'delivered') {
+          return sendJson(res, 409, { error: 'You can rate your order after it is marked delivered.' })
+        }
+        if (orders[0].order_experience_rating !== null) {
+          return sendJson(res, 409, { error: 'An order experience rating has already been submitted.' })
+        }
+        const updatedRating = await supabaseRequest<Array<{ id: number }>>(
+          'aurel_orders',
+          new URLSearchParams({
+            id: `eq.${orders[0].id}`,
+            user_id: `eq.${account.id}`,
+            order_experience_rating: 'is.null',
+            select: 'id'
+          }),
+          {
+            method: 'PATCH',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({ order_experience_rating: rating })
+          }
+        )
+        if (!updatedRating.length) return sendJson(res, 409, { error: 'An order experience rating has already been submitted.' })
+        return sendJson(res, 200, { success: true, orderExperienceRating: rating })
+      }
       const operations = await supabaseRequest<Array<{ production_status: string; customer_approved_at: string | null; proof_url: string }>>(
         'aurel_order_operations',
         new URLSearchParams({ order_id: `eq.${orders[0].id}`, select: 'production_status,customer_approved_at,proof_url', limit: '1' })
@@ -890,7 +920,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           new URLSearchParams({
             user_id: `eq.${account.id}`,
             order_id: `eq.${requestedOrderId}`,
-            select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at',
+            select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,order_experience_rating',
             limit: '1'
           })
         )
@@ -910,7 +940,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         'aurel_orders',
         new URLSearchParams({
           user_id: `eq.${account.id}`,
-          select: 'order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at',
+          select: 'order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,order_experience_rating',
           order: 'created_at.desc',
           limit: '100'
         })
@@ -961,6 +991,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
             paymentStatus: row.payment_status ?? 'pending',
             orderStatus: row.order_status ?? 'pending_payment',
             fulfillmentStatus: row.fulfillment_status ?? 'unfulfilled',
+            orderExperienceRating: row.order_experience_rating ?? null,
             productionStatus: operation?.production_status,
             proofApproved: Boolean(operation?.customer_approved_at),
             proofUrl: operation && isSecureProofUrl(operation.proof_url) ? operation.proof_url : undefined,
@@ -1249,7 +1280,6 @@ export async function paymentConfigHandler(req: IncomingMessage, res: ServerResp
 export async function accountReviewHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
   try {
     const account = await getSessionAccount(req)
-    if (!account) return sendJson(res, 401, { error: 'Sign in to submit a product review.' })
     if (req.method !== 'POST') {
       res.setHeader('Allow', 'POST')
       return sendJson(res, 405, { error: 'Method not allowed.' })
@@ -1269,63 +1299,84 @@ export async function accountReviewHandler(req: AuthRequest, res: ServerResponse
     const orderId = body.orderId
     const productId = body.productId
     const rating = body.rating
+    const reviewerName = typeof body.reviewerName === 'string' ? body.reviewerName.trim() : account?.name ?? ''
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     const reviewBody = typeof body.body === 'string' ? body.body.trim() : ''
-    if (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)
+    if ((orderId !== undefined && (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)))
       || typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(productId)
       || typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5
-      || title.length > 120 || reviewBody.length < 10 || reviewBody.length > 3000) {
-      return sendJson(res, 400, { error: 'Provide a valid order, product, 1–5 star rating, and review of at least 10 characters.' })
+      || reviewerName.length > 80 || title.length > 120 || reviewBody.length < 10 || reviewBody.length > 3000) {
+      return sendJson(res, 400, { error: 'Provide a valid product, reviewer name, 1–5 star rating, and review of at least 10 characters.' })
     }
-    const orders = await supabaseRequest<Array<{ id: number; order_data: Record<string, unknown>; fulfillment_status: string }>>(
-      'aurel_orders',
-      new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,order_data,fulfillment_status', limit: '1' })
-    )
-    const order = orders[0]
-    if (!order) return sendJson(res, 404, { error: 'Order not found in your account.' })
-    if (order.fulfillment_status !== 'delivered') {
-      return sendJson(res, 409, { error: 'Reviews can be submitted after the order is marked delivered.' })
+    let order: { id: number; order_data: Record<string, unknown>; fulfillment_status: string } | undefined
+    if (typeof orderId === 'string') {
+      if (!account) return sendJson(res, 401, { error: 'Sign in to submit a verified order review.' })
+      const orders = await supabaseRequest<Array<{ id: number; order_data: Record<string, unknown>; fulfillment_status: string }>>(
+        'aurel_orders',
+        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,order_data,fulfillment_status', limit: '1' })
+      )
+      order = orders[0]
+      if (!order) return sendJson(res, 404, { error: 'Order not found in your account.' })
+      if (order.fulfillment_status !== 'delivered') {
+        return sendJson(res, 409, { error: 'Verified order reviews can be submitted after delivery. You can also submit a storefront review without an order.' })
+      }
+      const items = Array.isArray(order.order_data.items) ? order.order_data.items as Array<Record<string, unknown>> : []
+      if (!items.some(item => item.productId === productId)) return sendJson(res, 403, { error: 'You can only review a product included in this delivered order.' })
+      const existing = await supabaseRequest<Array<{ id: number }>>(
+        'aurel_reviews',
+        new URLSearchParams({ order_id: `eq.${order.id}`, product_id: `eq.${productId}`, select: 'id', limit: '1' })
+      )
+      if (existing.length) return sendJson(res, 409, { error: 'A review for this product and order has already been submitted.' })
+    } else {
+      const products = await supabaseRequest<Array<{ id: string; name: string }>>(
+        'aurel_products',
+        new URLSearchParams({ id: `eq.${productId}`, is_active: 'eq.true', is_published: 'eq.true', select: 'id,name', limit: '1' })
+      )
+      if (!products[0]) return sendJson(res, 404, { error: 'This product is not available for review.' })
+      if (account) {
+        const existing = await supabaseRequest<Array<{ id: number }>>(
+          'aurel_reviews',
+          new URLSearchParams({ user_id: `eq.${account.id}`, order_id: 'is.null', product_id: `eq.${productId}`, select: 'id', limit: '1' })
+        )
+        if (existing.length) return sendJson(res, 409, { error: 'You have already submitted a storefront review for this product.' })
+      }
     }
-    const items = Array.isArray(order.order_data.items) ? order.order_data.items as Array<Record<string, unknown>> : []
-    if (!items.some(item => item.productId === productId)) return sendJson(res, 403, { error: 'You can only review a product included in this delivered order.' })
-    const existing = await supabaseRequest<Array<{ id: number }>>(
-      'aurel_reviews',
-      new URLSearchParams({ order_id: `eq.${order.id}`, product_id: `eq.${productId}`, select: 'id', limit: '1' })
-    )
-    if (existing.length) return sendJson(res, 409, { error: 'A review for this product and order has already been submitted.' })
     const inserted = await supabaseRequest<Array<{ id: number }>>('aurel_reviews', new URLSearchParams(), {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
-        order_id: order.id,
-        user_id: account.id,
+        order_id: order?.id ?? null,
+        user_id: account?.id ?? null,
         product_id: productId,
         rating,
+        reviewer_name: reviewerName || 'Customer',
         title,
         body: reviewBody,
         moderation_status: 'pending'
       })
     })
     if (!inserted[0]) return sendJson(res, 500, { error: 'Your review could not be submitted.' })
-    await supabaseRequest('aurel_order_events', new URLSearchParams(), {
-      method: 'POST',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        order_id: order.id,
-        actor_type: 'customer',
-        actor_user_id: account.id,
-        event_type: 'review_submitted',
-        summary: `Customer submitted a review for ${String(items.find(item => item.productId === productId)?.name ?? productId)}.`,
-        metadata: { reviewId: inserted[0].id }
+    if (order && account) {
+      await supabaseRequest('aurel_order_events', new URLSearchParams(), {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          order_id: order.id,
+          actor_type: 'customer',
+          actor_user_id: account.id,
+          event_type: 'review_submitted',
+          summary: `Customer submitted a review for ${productId}.`,
+          metadata: { reviewId: inserted[0].id }
+        })
       })
-    })
+    }
     await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
       method: 'POST',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
         notification_type: 'review_submitted',
         title: 'A product review needs moderation',
-        message: `A review was submitted for ${String(items.find(item => item.productId === productId)?.name ?? productId)}.`,
+        message: `A review was submitted for product ${productId}.`,
         target_type: 'review',
         target_id: String(inserted[0].id)
       })

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowLeft, CalendarDays, Check, CircleHelp, Heart, LoaderCircle, Lock,
-  LogOut, Mail, MapPin, Package, Pencil, Settings, ShieldCheck, Trash2, UserRound, X
+  LogOut, Mail, MapPin, Package, Pencil, Settings, ShieldCheck, Star, Trash2, UserRound, X
 } from 'lucide-react'
 import type { AccountOrder, AuthUser } from '../types'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
@@ -89,7 +89,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [deleteStep, setDeleteStep] = useState(0)
   const [orders, setOrders] = useState<AccountOrder[]>([])
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: number; title: string; body: string }>>({})
+  const [orderExperienceRatings, setOrderExperienceRatings] = useState<Record<string, number>>({})
+  const [openReviewOrderId, setOpenReviewOrderId] = useState('')
   const [submittingReviewKey, setSubmittingReviewKey] = useState('')
+  const [submittingOrderRatingId, setSubmittingOrderRatingId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const selectedState = useMemo(
@@ -370,6 +373,33 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     }
   }
 
+  const submitOrderRating = async (orderId: string) => {
+    if (submittingOrderRatingId) return
+    setError('')
+    setNotice('')
+    setSubmittingOrderRatingId(orderId)
+    try {
+      const response = await fetch('/api/auth/orders', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, orderExperienceRating: orderExperienceRatings[orderId] ?? 5 })
+      })
+      const data = await readApiResponse<{ success?: boolean; orderExperienceRating?: number; error?: string }>(response, 'Submitting your order rating')
+      const rating = data.orderExperienceRating
+      if (!response.ok || !data.success || typeof rating !== 'number') throw new Error(data.error || 'Unable to submit your order rating.')
+      setOrders(current => current.map(accountOrder => accountOrder.order.orderId === orderId
+        ? { ...accountOrder, orderExperienceRating: rating }
+        : accountOrder))
+      setNotice('Order rating submitted. Thank you for your feedback.')
+    } catch (ratingError) {
+      setError(ratingError instanceof Error ? ratingError.message : 'Unable to submit your order rating.')
+    } finally {
+      setSubmittingOrderRatingId('')
+    }
+  }
+
   const cancelProfileEdit = () => {
     setName(user.name)
     setUsername(user.username)
@@ -607,7 +637,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {orders.map(({ order, createdAt, productionStatus, proofApproved, proofUrl, fulfillmentStatus, reviewedProductIds }) => (
+                      {orders.map(({ order, createdAt, productionStatus, proofApproved, proofUrl, fulfillmentStatus, orderExperienceRating, reviewedProductIds }) => (
                         <article key={`${order.orderId}-${createdAt}`} className={`rounded-2xl border p-4 sm:p-5 ${inset}`}>
                           <div className="flex flex-wrap items-start justify-between gap-2 border-b border-black/5 pb-3 dark:border-white/10">
                             <div><p className="text-[10px] font-semibold uppercase tracking-wider text-[#9A8781]">Order</p><h3 className="font-semibold">{order.orderId}</h3></div>
@@ -638,21 +668,42 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                             </button>
                           </div>}
                           {proofApproved && <p className="mt-3 text-xs font-medium text-emerald-700">Proof approved for production</p>}
-                          {fulfillmentStatus === 'delivered' && uniqueOrderProducts(order.items).some(item => !(reviewedProductIds ?? []).includes(item.productId)) && <section className="mt-4 space-y-3 border-t border-black/5 pt-4 dark:border-white/10">
-                            <h4 className="text-xs font-semibold uppercase tracking-wider text-[#8E7973] dark:text-[#A79690]">Share a product review</h4>
-                            {uniqueOrderProducts(order.items).filter(item => !(reviewedProductIds ?? []).includes(item.productId)).map(item => {
-                              const key = `${order.orderId}:${item.productId}`
-                              const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
-                              return <form key={key} onSubmit={event => { event.preventDefault(); void submitReview(order.orderId, item.productId) }} className={`space-y-2 rounded-xl border p-3 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
-                                <p className="text-xs font-semibold">{item.name}</p>
-                                <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
-                                  <label className="text-[10px] font-medium">Rating<select value={draft.rating} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, rating: Number(event.target.value) } }))} className={inputClass}><option value={5}>5 stars</option><option value={4}>4 stars</option><option value={3}>3 stars</option><option value={2}>2 stars</option><option value={1}>1 star</option></select></label>
-                                  <label className="text-[10px] font-medium">Title (optional)<input maxLength={120} value={draft.title} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, title: event.target.value } }))} className={inputClass} /></label>
+                          {fulfillmentStatus === 'delivered' && (orderExperienceRating == null || uniqueOrderProducts(order.items).some(item => !(reviewedProductIds ?? []).includes(item.productId))) && <section className="mt-4 border-t border-black/5 pt-4 dark:border-white/10">
+                            <button type="button" onClick={() => setOpenReviewOrderId(current => current === order.orderId ? '' : order.orderId)} aria-expanded={openReviewOrderId === order.orderId} className="text-xs font-semibold text-[#9A6560] underline decoration-[#B36D6D]/40 underline-offset-4">
+                              {openReviewOrderId === order.orderId ? 'Close review' : 'Rate your order'}
+                            </button>
+                            {openReviewOrderId === order.orderId && <div className="mt-4 space-y-4">
+                              <div>
+                                <p className="text-xs font-medium">How was your order experience?</p>
+                                {orderExperienceRating != null
+                                  ? <p className="mt-1 text-xs text-[#8E7973] dark:text-[#A79690]">You rated this order {orderExperienceRating} out of 5 stars.</p>
+                                  : <><div className="mt-2 flex gap-1" role="group" aria-label="Order experience rating">
+                                  {[1, 2, 3, 4, 5].map(rating => <button key={rating} type="button" aria-label={`${rating} stars`} aria-pressed={(orderExperienceRatings[order.orderId] ?? 5) === rating} onClick={() => setOrderExperienceRatings(current => ({ ...current, [order.orderId]: rating }))} className="rounded p-1 text-[#B36D6D]">
+                                    <Star className={`h-5 w-5 ${(orderExperienceRatings[order.orderId] ?? 5) >= rating ? 'fill-[#B36D6D]' : ''}`} />
+                                  </button>)}
                                 </div>
-                                <label className="block text-[10px] font-medium">Your review<textarea required minLength={10} maxLength={3000} rows={3} value={draft.body} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, body: event.target.value } }))} className={inputClass} /></label>
-                                <button type="submit" disabled={Boolean(submittingReviewKey)} className="rounded-lg bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{submittingReviewKey === key ? 'Submitting…' : 'Submit for moderation'}</button>
-                              </form>
-                            })}
+                                <button type="button" disabled={submittingOrderRatingId === order.orderId} onClick={() => void submitOrderRating(order.orderId)} className="mt-2 rounded-lg border border-[#B36D6D]/40 px-3 py-2 text-xs font-semibold text-[#9A6560] disabled:opacity-50">
+                                  {submittingOrderRatingId === order.orderId ? 'Submitting…' : 'Submit order rating'}
+                                </button></>}
+                              </div>
+                              {uniqueOrderProducts(order.items).filter(item => !(reviewedProductIds ?? []).includes(item.productId)).map(item => {
+                                const key = `${order.orderId}:${item.productId}`
+                                const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
+                                return <form key={key} onSubmit={event => { event.preventDefault(); void submitReview(order.orderId, item.productId) }} className={`space-y-3 rounded-xl border p-3 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
+                                  <p className="text-xs font-semibold">{item.name}</p>
+                                  <div>
+                                    <p className="text-[10px] font-medium">Product experience</p>
+                                    <div className="mt-1 flex gap-1" role="group" aria-label={`${item.name} rating`}>
+                                      {[1, 2, 3, 4, 5].map(rating => <button key={rating} type="button" aria-label={`${rating} stars`} aria-pressed={draft.rating === rating} onClick={() => setReviewDrafts(current => ({ ...current, [key]: { ...draft, rating } }))} className="rounded p-1 text-[#B36D6D]">
+                                        <Star className={`h-5 w-5 ${draft.rating >= rating ? 'fill-[#B36D6D]' : ''}`} />
+                                      </button>)}
+                                    </div>
+                                  </div>
+                                  <label className="block text-[10px] font-medium">Review<textarea required minLength={10} maxLength={3000} rows={3} value={draft.body} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, body: event.target.value } }))} className={inputClass} /></label>
+                                  <button type="submit" disabled={Boolean(submittingReviewKey)} className="rounded-lg bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{submittingReviewKey === key ? 'Submitting…' : 'Submit review'}</button>
+                                </form>
+                              })}
+                            </div>}
                           </section>}
                           {(reviewedProductIds ?? []).length > 0 && <p className="mt-3 text-xs text-[#8E7973] dark:text-[#A79690]">Submitted reviews appear publicly only after owner approval.</p>}
                         </article>

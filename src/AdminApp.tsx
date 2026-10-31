@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, Check, ChevronDown, CircleAlert, ClipboardList, ImagePlus,
+  ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, Check, ChevronDown, CircleAlert, ImagePlus,
   Bell, LayoutDashboard, LoaderCircle, LogOut, Package, Plus, Search, Settings, ShieldCheck, ShoppingBag,
   Star, Store, Trash2, Users, X
 } from 'lucide-react'
@@ -8,7 +8,7 @@ import type { Product } from './types'
 import type { StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
 
-type Section = 'dashboard' | 'products' | 'inventory' | 'categories' | 'orders' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
+type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 type Fulfillment = 'unfulfilled' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 interface AdminCategory {
@@ -26,17 +26,6 @@ interface AdminProduct extends Product {
   lowStockThreshold: number
   isActive: boolean
   isPublished: boolean
-}
-interface AdminInventoryMovement {
-  id: number
-  product_id: string | null
-  product_name: string
-  actor_user_id: string | null
-  quantity_change: number
-  previous_quantity: number
-  new_quantity: number
-  reason: string
-  created_at: string
 }
 interface CustomOrderOperation {
   order_id: number
@@ -95,10 +84,11 @@ interface AdminOrderEvent {
 }
 interface AdminReview {
   id: number
-  order_id: number
-  user_id: string
+  order_id: number | null
+  user_id: string | null
   product_id: string
   product_name: string
+  reviewer_name: string
   customer_name: string
   customer_email: string
   rating: number
@@ -150,14 +140,14 @@ interface Overview {
   metrics: { recordedPaidOrderValue: number; orders: number; customers: number; products: number; lowStock: number }
   recentOrders: AdminOrder[]
   bestsellers: { name: string; quantity: number }[]
+  orderStatuses: { status: string; count: number }[]
 }
 
 const sections: { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-  { id: 'products', label: 'Products', icon: Package },
-  { id: 'inventory', label: 'Inventory', icon: ClipboardList },
-  { id: 'categories', label: 'Categories', icon: Boxes },
   { id: 'orders', label: 'Orders', icon: ShoppingBag },
+  { id: 'products', label: 'Products', icon: Package },
+  { id: 'categories', label: 'Categories', icon: Boxes },
   { id: 'custom-orders', label: 'Custom orders', icon: Package },
   { id: 'customers', label: 'Customers', icon: Users },
   { id: 'reviews', label: 'Reviews', icon: Star },
@@ -265,7 +255,6 @@ export default function AdminApp() {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(readAnalyticsRange)
   const [products, setProducts] = useState<AdminProduct[]>([])
-  const [inventoryMovements, setInventoryMovements] = useState<AdminInventoryMovement[]>([])
   const [customOrders, setCustomOrders] = useState<AdminCustomOrder[]>([])
   const [activityEntries, setActivityEntries] = useState<AdminAuditEntry[]>([])
   const [contentDraft, setContentDraft] = useState<StorefrontContent>(initialContent)
@@ -328,11 +317,6 @@ export default function AdminApp() {
         setCategories(categoryResult.categories)
         if (!result.products.length) setNotice('Import the existing storefront catalog to begin managing products.')
       }
-      if (target === 'inventory') {
-        const result = await api<{ products: AdminProduct[]; movements: AdminInventoryMovement[] }>('/api/admin/inventory')
-        setProducts(result.products)
-        setInventoryMovements(result.movements)
-      }
       if (target === 'custom-orders') setCustomOrders((await api<{ orders: AdminCustomOrder[] }>('/api/admin/custom-orders')).orders)
       if (target === 'categories') {
         const categoryResult = await api<{ categories: AdminCategory[] }>('/api/admin/categories')
@@ -386,7 +370,7 @@ export default function AdminApp() {
     `${product.name} ${product.id} ${product.category}`.toLowerCase().includes(search.toLowerCase())
   ), [products, search])
   const filteredOrders = useMemo(() => orders.filter(order =>
-    `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''}`.toLowerCase().includes(search.toLowerCase())
+    `${order.id} ${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''}`.toLowerCase().includes(search.toLowerCase())
   ), [orders, search])
   const filteredCustomers = useMemo(() => customers.filter(customer =>
     `${customer.name} ${customer.username} ${customer.email} ${customer.phone}`.toLowerCase().includes(search.toLowerCase())
@@ -448,8 +432,7 @@ export default function AdminApp() {
     if (notification.read_at) return
     try {
       await api(`/api/admin/notifications/${notification.id}/read`, { method: 'POST', body: '{}' })
-      const readAt = new Date().toISOString()
-      setNotifications(current => current.map(item => item.id === notification.id ? { ...item, read_at: readAt } : item))
+      setNotifications(current => current.filter(item => item.id !== notification.id))
       setUnreadNotificationCount(count => Math.max(0, count - 1))
     } catch (readError) {
       setError(readError instanceof Error ? readError.message : 'Unable to mark the notification as read.')
@@ -457,16 +440,18 @@ export default function AdminApp() {
     }
   }
   const openNotification = async (notification: AdminNotification) => {
-    await markNotificationRead(notification)
+    if (notification.notification_type !== 'new_order') await markNotificationRead(notification)
     setNotificationsOpen(false)
-    if (notification.target_type === 'order') navigateSection('orders')
+    if (notification.target_type === 'order') {
+      setSearch(notification.target_id ?? '')
+      navigateSection('orders')
+    }
     else if (notification.target_type === 'review') navigateSection('reviews')
   }
   const markAllNotificationsRead = async () => {
     try {
       await api('/api/admin/notifications/read-all', { method: 'POST', body: '{}' })
-      const readAt = new Date().toISOString()
-      setNotifications(current => current.map(item => ({ ...item, read_at: item.read_at ?? readAt })))
+      setNotifications([])
       setUnreadNotificationCount(0)
     } catch (readError) {
       setError(readError instanceof Error ? readError.message : 'Unable to mark notifications as read.')
@@ -592,30 +577,6 @@ export default function AdminApp() {
               }
             }}
           />}
-          {section === 'inventory' && <InventoryPage
-            products={products} movements={inventoryMovements} search={search} setSearch={setSearch}
-            onAdjust={product => {
-              const quantityText = window.prompt(`Enter the stock change for ${product.name} (positive to add, negative to remove):`)
-              if (quantityText === null) return
-              if (!/^-?\d+$/.test(quantityText) || Number(quantityText) === 0) {
-                setError('Enter a non-zero whole number for the stock change.')
-                return
-              }
-              if (Number(quantityText) < 0 && !window.confirm(`Remove ${Math.abs(Number(quantityText))} units from ${product.name}? Current stock: ${product.stockQuantity}.`)) return
-              const reason = window.prompt('Enter a reason for this stock adjustment:')
-              if (reason === null) return
-              void runAction(async () => {
-                await api(`/api/admin/inventory/${encodeURIComponent(product.id)}/adjust`, {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    quantityChange: Number(quantityText),
-                    reason,
-                    requestId: crypto.randomUUID()
-                  })
-                })
-              }, `Inventory updated for ${product.name}.`)
-            }}
-          />}
           {section === 'categories' && <CategoriesPage
             categories={categories}
             onCreate={() => setCategoryDraft({ slug: '', name: '', description: '', image_url: '', is_active: true, display_order: categories.length, is_featured: false })}
@@ -629,17 +590,28 @@ export default function AdminApp() {
           {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} onConfirmPayment={order => {
             if (!window.confirm(`Confirm that ₹${money(order.order_data.total)} for ${order.order_id} has arrived in the receiving Google Pay or bank account?`)) return
             void runAction(async () => {
-              return api<{ alreadyConfirmed: boolean; emailStatus: string; emailError?: string }>(`/api/admin/orders/${order.id}/confirm-payment`, { method: 'POST', body: '{}' })
-            }, result => {
-              if (result.alreadyConfirmed) {
-                if (result.emailStatus === 'sent') return 'Order confirmation email has already been sent.'
-                if (result.emailStatus === 'failed') return 'Payment is already confirmed, but the confirmation email failed. Retry it from the order details.'
-                return 'Payment is already confirmed. The confirmation email was not sent again.'
+              const result = await api<{ alreadyConfirmed: boolean; emailStatus: string; emailError?: string; notificationError?: string }>(`/api/admin/orders/${order.id}/confirm-payment`, { method: 'POST', body: '{}' })
+              if (!result.notificationError) {
+                const clearedCount = notifications.filter(notification =>
+                  notification.notification_type === 'new_order' && notification.target_id === String(order.id)
+                ).length
+                setNotifications(current => current.filter(notification =>
+                  notification.notification_type !== 'new_order' || notification.target_id !== String(order.id)
+                ))
+                setUnreadNotificationCount(count => Math.max(0, count - clearedCount))
               }
-              if (result.emailStatus === 'sent') return 'Payment confirmed and order confirmation email sent successfully.'
-              if (result.emailStatus === 'already_sent') return 'Payment confirmed. Order confirmation email has already been sent.'
-              if (result.emailStatus === 'failed') return result.emailError || 'Payment confirmed, but the confirmation email could not be sent.'
-              return 'Payment confirmed. Confirmation email status: sending.'
+              return result
+            }, result => {
+              const notificationNotice = result.notificationError ? `${result.notificationError} ` : ''
+              if (result.alreadyConfirmed) {
+                if (result.emailStatus === 'sent') return `${notificationNotice}Order confirmation email has already been sent.`
+                if (result.emailStatus === 'failed') return `${notificationNotice}Payment is already confirmed, but the confirmation email failed. Retry it from the order details.`
+                return `${notificationNotice}Payment is already confirmed. The confirmation email was not sent again.`
+              }
+              if (result.emailStatus === 'sent') return `${notificationNotice}Payment confirmed and order confirmation email sent successfully.`
+              if (result.emailStatus === 'already_sent') return `${notificationNotice}Payment confirmed. Order confirmation email has already been sent.`
+              if (result.emailStatus === 'failed') return `${notificationNotice}${result.emailError || 'Payment confirmed, but the confirmation email could not be sent.'}`
+              return `${notificationNotice}Payment confirmed. Confirmation email status: sending.`
             })
           }} onRetryEmail={order => {
             void runAction(async () => {
@@ -916,10 +888,10 @@ function ReviewsPage({ reviews, onModerate }: {
   const [filter, setFilter] = useState('pending')
   const visible = filter === 'all' ? reviews : reviews.filter(review => review.moderation_status === filter)
   return <section>
-    <PageHeading title="Review moderation" description="Only reviews attached to a delivered customer order can be submitted. Approved reviews appear publicly." />
+    <PageHeading title="Review moderation" description="Storefront reviews are open to everyone and appear publicly only after owner approval." />
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#8f7c75]">{reviews.filter(review => review.moderation_status === 'pending').length} awaiting moderation</p><select value={filter} onChange={event => setFilter(event.target.value)} className="rounded-xl border border-[#e9dfda] bg-white px-3 py-2 text-sm"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All reviews</option></select></div>
     {visible.length ? <div className="space-y-3">{visible.map(review => <article key={review.id} className="rounded-2xl border border-[#eee5df] bg-white p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-1 text-[#a45f60]">{Array.from({ length: review.rating }, (_, i) => <Star key={i} className="h-4 w-4 fill-current" />)}</div><h3 className="mt-2 font-semibold">{review.title || review.product_name}</h3><p className="mt-1 text-xs text-[#8f7c75]">{review.product_name} · Order #{review.order_id} · {review.customer_name} {review.customer_email && `(${review.customer_email})`}</p></div><span className="rounded-full bg-[#f8eeeb] px-2.5 py-1 text-[10px] font-semibold">{statusLabel(review.moderation_status)}</span></div>
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-1 text-[#a45f60]">{Array.from({ length: review.rating }, (_, i) => <Star key={i} className="h-4 w-4 fill-current" />)}</div><h3 className="mt-2 font-semibold">{review.title || review.product_name}</h3><p className="mt-1 text-xs text-[#8f7c75]">{review.product_name} · {review.order_id ? `Verified order #${review.order_id}` : 'Storefront review'} · {review.customer_name}{review.customer_email && ` (${review.customer_email})`}</p></div><span className="rounded-full bg-[#f8eeeb] px-2.5 py-1 text-[10px] font-semibold">{statusLabel(review.moderation_status)}</span></div>
       <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[#5e4d47]">{review.body}</p>
       <div className="mt-4 flex justify-end gap-2 border-t border-[#f1ebe7] pt-3">{review.moderation_status !== 'approved' && <button onClick={() => onModerate(review, 'approved')} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Approve</button>}{review.moderation_status !== 'rejected' && <button onClick={() => onModerate(review, 'rejected')} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">Reject</button>}</div>
     </article>)}</div> : <EmptyState text="No reviews match this moderation filter." />}
@@ -934,7 +906,21 @@ function NotificationBell({ notifications, unreadCount, open, onToggle, onRead, 
   onReadAll: () => void
   onOpen: (notification: AdminNotification) => void
 }) {
-  const recent = notifications.slice(0, 10)
+  const [tab, setTab] = useState<'new' | 'verified'>('new')
+  const newOrders = notifications.filter(notification => notification.notification_type === 'new_order').slice(0, 10)
+  const verifiedOrders = notifications.filter(notification => notification.notification_type === 'order_payment_confirmed').slice(0, 10)
+  const otherAlerts = notifications.filter(notification => !['new_order', 'order_payment_confirmed'].includes(notification.notification_type)).slice(0, 10)
+  const renderNotification = (notification: AdminNotification) => <article key={notification.id} className={`border-b border-[#f4eeeb] p-3 last:border-0 ${notification.read_at ? '' : 'bg-[#fcf7f4]'}`}>
+    <div className="flex gap-2.5">
+      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.read_at ? 'bg-transparent' : 'bg-[#a45f60]'}`} />
+      <button type="button" onClick={() => onOpen(notification)} className="min-w-0 flex-1 text-left">
+        <span className="block text-xs font-semibold text-[#40332f]">{notification.title}</span>
+        <span className="mt-1 block text-xs leading-5 text-[#76645e]">{notification.message}</span>
+        <time className="mt-1 block text-[10px] text-[#9a8881]" dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString()}</time>
+      </button>
+      {!notification.read_at && <button type="button" aria-label={`Mark ${notification.title} read`} onClick={() => void onRead(notification).catch(() => undefined)} className="self-start rounded-md px-2 py-1 text-[10px] font-semibold text-[#a45f60] hover:bg-[#f8eeeb]">Read</button>}
+    </div>
+  </article>
   return <div className="relative">
     <button type="button" onClick={onToggle} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`} aria-expanded={open} className="relative rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] transition hover:bg-[#faf6f3]">
       <Bell className="h-5 w-5" />
@@ -942,18 +928,23 @@ function NotificationBell({ notifications, unreadCount, open, onToggle, onRead, 
     </button>
     {open && <div role="dialog" aria-label="Owner notifications" className="absolute right-0 top-full z-50 mt-3 w-[min(92vw,400px)] overflow-hidden rounded-2xl border border-[#eadfd9] bg-white shadow-xl">
       <header className="flex items-center justify-between border-b border-[#f1ebe7] px-4 py-3"><div><h2 className="text-sm font-semibold">Alerts</h2><p className="text-[10px] text-[#92817b]">{unreadCount} unread</p></div><button type="button" onClick={onReadAll} disabled={!unreadCount} className="text-xs font-semibold text-[#a45f60] disabled:text-[#b9aaa5]">Mark all read</button></header>
+      <div role="tablist" aria-label="Order alerts" className="grid grid-cols-2 border-b border-[#f1ebe7] p-2">
+        {([
+          ['new', 'New orders', newOrders.length],
+          ['verified', 'Verified orders', verifiedOrders.length]
+        ] as const).map(([id, label, count]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${tab === id ? 'bg-[#f8eeeb] text-[#934f51]' : 'text-[#897770] hover:bg-[#faf7f5]'}`}>
+          {label}<span className={`ml-1.5 ${id === 'new' && count ? 'font-bold text-rose-600' : ''}`}>{count}</span>
+        </button>)}
+      </div>
       <div className="max-h-[min(65vh,480px)] overflow-y-auto">
-        {recent.length ? recent.map(notification => <article key={notification.id} className={`border-b border-[#f4eeeb] p-3 last:border-0 ${notification.read_at ? '' : 'bg-[#fcf7f4]'}`}>
-          <div className="flex gap-2.5">
-            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.read_at ? 'bg-transparent' : 'bg-[#a45f60]'}`} />
-            <button type="button" onClick={() => onOpen(notification)} className="min-w-0 flex-1 text-left">
-              <span className="block text-xs font-semibold text-[#40332f]">{notification.title}</span>
-              <span className="mt-1 block text-xs leading-5 text-[#76645e]">{notification.message}</span>
-              <time className="mt-1 block text-[10px] text-[#9a8881]" dateTime={notification.created_at}>{new Date(notification.created_at).toLocaleString()}</time>
-            </button>
-            {!notification.read_at && <button type="button" aria-label={`Mark ${notification.title} read`} onClick={() => void onRead(notification).catch(() => undefined)} className="self-start rounded-md px-2 py-1 text-[10px] font-semibold text-[#a45f60] hover:bg-[#f8eeeb]">Read</button>}
-          </div>
-        </article>) : <p className="px-5 py-8 text-center text-xs text-[#8f7c75]">You’re all caught up. New order, review, and customer alerts will appear here.</p>}
+        {tab === 'new'
+          ? <>{newOrders.map(renderNotification)}
+            {otherAlerts.length > 0 && <><p className="border-y border-[#f1ebe7] bg-[#fbf8f6] px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-[#9a827a]">Other alerts</p>{otherAlerts.map(renderNotification)}</>}
+            {!newOrders.length && !otherAlerts.length && <p className="px-5 py-8 text-center text-xs text-[#8f7c75]">No new-order alerts.</p>}
+          </>
+          : verifiedOrders.length
+            ? verifiedOrders.map(renderNotification)
+            : <p className="px-5 py-8 text-center text-xs text-[#8f7c75]">No verified-order alerts yet.</p>}
       </div>
     </div>}
   </div>
@@ -974,11 +965,45 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
     ['Customers', String(metrics?.customers ?? 0), 'Registered customer accounts'],
     ['Products', String(metrics?.products ?? 0), `${metrics?.lowStock ?? 0} at or below their low-stock threshold`]
   ]
+  const statusColors: Record<string, string> = {
+    pending_payment: '#d69a58',
+    confirmed: '#83a98b',
+    processing: '#7d9bb5',
+    shipped: '#8b82ad',
+    delivered: '#a45f60',
+    cancelled: '#c4b8b2'
+  }
+  const statusSlices = (overview?.orderStatuses ?? []).filter(item => item.count > 0)
+  const statusTotal = statusSlices.reduce((total, item) => total + item.count, 0)
+  let chartAngle = 0
+  const chartGradient = statusSlices.map(item => {
+    const start = chartAngle
+    chartAngle += item.count / Math.max(1, statusTotal) * 360
+    return `${statusColors[item.status] ?? '#b9aaa5'} ${start}deg ${chartAngle}deg`
+  }).join(', ')
   return <div className="space-y-7">
     <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-serif-title text-2xl">Welcome to your studio</h2><p className="mt-1 text-sm text-[#887770]">A live snapshot of your storefront and operations.</p></div><div className="flex items-center gap-3"><label className="text-xs font-medium text-[#887770]">Period<select value={range} onChange={event => onRangeChange(event.target.value as typeof range)} className="ml-2 rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2 text-xs"><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="all">All time</option></select></label><a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-[#a45f60]">Open storefront <ArrowUpRight className="h-4 w-4" /></a></div></div>
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, detail]) => <div key={label} className="rounded-2xl border border-[#eee5df] bg-white p-5 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[.12em] text-[#9a827a]">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-xs text-[#988780]">{detail}</p></div>)}</div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, detail]) => <div key={label} className="rounded-2xl border border-[#eee5df] bg-white p-5"><p className="text-xs font-semibold uppercase tracking-[.12em] text-[#9a827a]">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-2 text-xs text-[#988780]">{detail}</p></div>)}</div>
+    <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div><h3 className="font-semibold">Order breakdown</h3><p className="mt-1 text-xs text-[#9a8881]">Orders by status in the selected period</p></div>
+        <span className="rounded-full bg-[#f8eeeb] px-3 py-1.5 text-xs font-semibold text-[#934f51]">{statusTotal} orders</span>
+      </div>
+      {statusTotal ? <div className="grid items-center gap-5 sm:grid-cols-[132px_minmax(0,1fr)]">
+        <div role="img" aria-label={`Order status breakdown: ${statusSlices.map(item => `${statusLabel(item.status)} ${item.count}`).join(', ')}`} className="relative mx-auto h-32 w-32 rounded-full" style={{ background: `conic-gradient(${chartGradient})` }}>
+          <div className="absolute inset-[18px] flex flex-col items-center justify-center rounded-full bg-white"><span className="text-2xl font-semibold leading-none">{statusTotal}</span><span className="mt-1 text-[10px] text-[#988780]">orders</span></div>
+        </div>
+        <ul className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
+          {statusSlices.map(item => <li key={item.status} className="flex min-w-0 items-center gap-2 text-xs">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: statusColors[item.status] ?? '#b9aaa5' }} />
+            <span className="min-w-0 flex-1 truncate text-[#76645e]">{statusLabel(item.status)}</span>
+            <span className="shrink-0 font-semibold text-[#40332f]">{item.count}</span>
+          </li>)}
+        </ul>
+      </div> : <EmptyState text="Orders will appear here for the selected period." />}
+    </section>
     <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-      <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><div><h3 className="font-semibold">Recent orders</h3><p className="mt-1 text-xs text-[#9a8881]">Payment state is customer-submitted and is not independently verified.</p></div><button onClick={() => onOpenSection('orders')} className="text-xs font-semibold text-[#a45f60]">All orders</button></div>
+      <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><div><h3 className="font-semibold">Recent orders</h3><p className="mt-1 text-xs text-[#9a8881]">Latest customer orders</p></div><button onClick={() => onOpenSection('orders')} className="text-xs font-semibold text-[#a45f60]">All orders</button></div>
         {overview?.recentOrders.length ? <div className="divide-y divide-[#f2ece8]">{overview.recentOrders.map(order => <div key={order.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate text-sm font-medium">{order.order_id}</p><p className="mt-1 truncate text-xs text-[#97857e]">{String(order.order_data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.order_data.total)}</p><p className="mt-1 text-[10px] text-[#97857e]">{statusLabel(order.order_status)} · {statusLabel(order.payment_status)}</p></div></div>)}</div> : <EmptyState text="Orders will appear here once they are placed." />}
       </section>
       <section className="rounded-2xl border border-[#eee5df] bg-white p-5 sm:p-6"><div className="mb-5"><h3 className="font-semibold">Top sellers</h3><p className="mt-1 text-xs text-[#9a8881]">Based on recorded paid order items.</p></div>
@@ -1046,66 +1071,6 @@ function ProductsPage({ products, categories, search, setSearch, onRefresh, onEd
     </div>
   </section>
 }
-function InventoryPage({ products, movements, search, setSearch, onAdjust }: {
-  products: AdminProduct[]; movements: AdminInventoryMovement[]; search: string
-  setSearch: (value: string) => void; onAdjust: (product: AdminProduct) => void
-}) {
-  const filteredProducts = useMemo(() => products.filter(product =>
-    `${product.name} ${product.id} ${product.category}`.toLowerCase().includes(search.toLowerCase())
-  ), [products, search])
-  const { page, setPage, pageCount, visibleItems } = usePagination(filteredProducts)
-  const trackedProducts = products.filter(product => product.stockQuantity !== null)
-  const lowStockCount = trackedProducts.filter(product => product.stockQuantity! <= product.lowStockThreshold).length
-  const outOfStockCount = trackedProducts.filter(product => product.stockQuantity === 0).length
-
-  return <section className="space-y-5">
-    <PageHeading title="Inventory" description="Review tracked stock and record auditable manual adjustments." />
-    <div className="grid gap-3 sm:grid-cols-3">
-      {[
-        ['Tracked products', trackedProducts.length],
-        ['At or below threshold', lowStockCount],
-        ['Out of stock', outOfStockCount]
-      ].map(([label, value]) => <div key={label} className="rounded-2xl border border-[#eee5df] bg-white p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#9a827a]">{label}</p>
-        <p className="mt-2 text-2xl font-semibold">{value}</p>
-      </div>)}
-    </div>
-    <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search product name, category or ID" />
-    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">
-      {filteredProducts.length ? <>
-        <div className="overflow-x-auto"><table className="w-full min-w-[700px] text-left text-sm">
-          <thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr>
-            <th className="px-5 py-3">Product</th><th className="px-5 py-3">Available</th>
-            <th className="px-5 py-3">Low-stock threshold</th><th className="px-5 py-3">Status</th>
-            <th className="px-5 py-3 text-right">Action</th>
-          </tr></thead>
-          <tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(product => {
-            const stock = product.stockQuantity
-            const low = stock !== null && stock <= product.lowStockThreshold
-            return <tr key={product.id}>
-              <td className="px-5 py-4"><p className="font-medium">{product.name}</p><p className="mt-1 text-xs text-[#9a8881]">{product.id}</p></td>
-              <td className="px-5 py-4">{stock === null ? 'Not tracked' : stock}</td>
-              <td className="px-5 py-4">{stock === null ? '—' : product.lowStockThreshold}</td>
-              <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${stock === null ? 'bg-[#f4efec] text-[#88766f]' : low ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-700'}`}>{stock === null ? 'Untracked' : stock === 0 ? 'Out of stock' : low ? 'Restock needed' : 'In stock'}</span></td>
-              <td className="px-5 py-4 text-right"><button disabled={stock === null} onClick={() => onAdjust(product)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef] disabled:opacity-40">Adjust stock</button></td>
-            </tr>
-          })}</tbody>
-        </table></div>
-        <TablePager page={page} pageCount={pageCount} total={filteredProducts.length} onChange={setPage} />
-      </> : <EmptyState text="No products match your search." />}
-    </div>
-    <section className="rounded-2xl border border-[#eee5df] bg-white p-5">
-      <h3 className="font-semibold">Recent stock movements</h3>
-      <p className="mt-1 text-xs text-[#9a8881]">The latest 100 manual adjustments, including who made them and why.</p>
-      {movements.length ? <div className="mt-4 divide-y divide-[#f2ece8]">{movements.map(movement =>
-        <div key={movement.id} className="flex flex-col justify-between gap-1 py-3 text-sm sm:flex-row sm:items-center">
-          <div><p className="font-medium">{movement.product_name} <span className={movement.quantity_change > 0 ? 'text-emerald-700' : 'text-rose-700'}>{movement.quantity_change > 0 ? '+' : ''}{movement.quantity_change}</span></p><p className="mt-1 text-xs text-[#897770]">{movement.reason} · {movement.previous_quantity} → {movement.new_quantity}</p></div>
-          <time className="text-xs text-[#897770]" dateTime={movement.created_at}>{dateLabel(movement.created_at)}</time>
-        </div>
-      )}</div> : <div className="mt-4"><EmptyState text="No stock adjustments have been recorded." /></div>}
-    </section>
-  </section>
-}
 function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
   categories: AdminCategory[]; onCreate: () => void
   onEdit: (category: AdminCategory) => void; onDelete: (category: AdminCategory) => void
@@ -1117,18 +1082,17 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
   </section>
 }
 function OrdersPage({ orders, search, setSearch, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; onConfirmPayment: (order: AdminOrder) => void; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => void }) {
-  const [paymentFilter, setPaymentFilter] = useState('all')
-  const [fulfillmentFilter, setFulfillmentFilter] = useState('all')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
-  const filteredOrders = useMemo(() => orders.filter(order => {
-    const date = order.created_at.slice(0, 10)
-    return (paymentFilter === 'all' || order.payment_status === paymentFilter)
-      && (fulfillmentFilter === 'all' || order.order_status === fulfillmentFilter)
-      && (!fromDate || date >= fromDate)
-      && (!toDate || date <= toDate)
-  }), [orders, paymentFilter, fulfillmentFilter, fromDate, toDate])
+  const [tab, setTab] = useState<'awaiting' | 'paid' | 'all'>('awaiting')
+  const tabOrders = useMemo(() => orders.filter(order => {
+    if (tab === 'paid') return order.payment_status === 'paid'
+    if (tab === 'awaiting') return order.payment_status === 'pending' && order.order_status === 'pending_payment'
+    return true
+  }), [orders, tab])
+  const filteredOrders = useMemo(() => tabOrders.filter(order =>
+    `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''}`.toLowerCase().includes(search.toLowerCase())
+  ), [tabOrders, search])
   const { page, setPage, pageCount, visibleItems } = usePagination(filteredOrders)
+  const awaitingCount = orders.filter(order => order.payment_status === 'pending' && order.order_status === 'pending_payment').length
   const exportCsv = () => {
     const columns = ['Order ID', 'Created at', 'Customer', 'Email', 'Payment status', 'Order status', 'Paid at', 'Total']
     const escape = (value: unknown) => {
@@ -1217,55 +1181,97 @@ function OrdersPage({ orders, search, setSearch, onConfirmPayment, onRetryEmail,
     printWindow.print()
   }
   return <section>
-    <PageHeading title="Orders" description="Verify incoming UPI payments, then track fulfilment from confirmation through delivery." action={<button onClick={exportCsv} disabled={!filteredOrders.length} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] disabled:opacity-50">Export CSV</button>} />
-    <div className="mb-4 space-y-3">
-      <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search order, customer or email" />
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="text-xs font-medium text-[#887770]">Payment status<select value={paymentFilter} onChange={event => { setPaymentFilter(event.target.value); setPage(0) }} className="form-input mt-1"><option value="all">All</option><option value="pending">Pending payment</option><option value="paid">Paid</option></select></label>
-        <label className="text-xs font-medium text-[#887770]">Order status<select value={fulfillmentFilter} onChange={event => { setFulfillmentFilter(event.target.value); setPage(0) }} className="form-input mt-1"><option value="all">All</option>{(['pending_payment', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'] as OrderStatus[]).map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}</select></label>
-        <label className="text-xs font-medium text-[#887770]">From date<input type="date" value={fromDate} onChange={event => { setFromDate(event.target.value); setPage(0) }} className="form-input mt-1" /></label>
-        <label className="text-xs font-medium text-[#887770]">To date<input type="date" value={toDate} onChange={event => { setToDate(event.target.value); setPage(0) }} className="form-input mt-1" /></label>
+    <PageHeading title="Orders" description="Review payment confirmations, customer details and fulfilment in one place." action={<button onClick={exportCsv} disabled={!filteredOrders.length} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] disabled:opacity-50">Export CSV</button>} />
+    <div className="mb-5 space-y-4">
+      <div role="tablist" aria-label="Order status" className="flex gap-2 overflow-x-auto border-b border-[#eee5df]">
+        {([
+          ['awaiting', 'Awaiting confirmation', awaitingCount],
+          ['paid', 'Paid', orders.filter(order => order.payment_status === 'paid').length],
+          ['all', 'All', orders.length]
+        ] as const).map(([id, label, count]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setPage(0) }} className={`shrink-0 border-b-2 px-3 py-3 text-xs font-semibold transition ${tab === id ? 'border-[#a45f60] text-[#934f51]' : 'border-transparent text-[#897770] hover:text-[#5c4943]'}`}>
+          {label}<span className={`ml-2 inline-flex min-w-6 items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold ${id === 'awaiting' && count > 0 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/25' : tab === id ? 'bg-[#a45f60]/10' : 'bg-[#f4efec]'}`}>{count}</span>
+        </button>)}
       </div>
+      <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search order, customer or email" />
     </div>
-    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{filteredOrders.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Order</th><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Order status</th><th className="px-5 py-3">Placed</th><th className="px-5 py-3">Details & actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(order => {
-      const items = Array.isArray(order.order_data.items) ? order.order_data.items as Record<string, unknown>[] : []
-      return <tr key={order.id} className="align-top">
-        <td className="px-5 py-4 font-semibold">{order.order_id}</td>
-        <td className="px-5 py-4"><p>{String(order.order_data.customerName ?? 'Customer')}</p><p className="mt-1 text-xs text-[#9a8881]">{String(order.order_data.email ?? '')}</p><p className="mt-1 text-xs text-[#9a8881]">{String(order.order_data.phoneNumber ?? '')}</p></td>
-        <td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${order.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabel(order.payment_status)}</span><p className="mt-1 max-w-36 text-[10px] text-[#9a8881]">{order.paid_at ? `Verified ${dateLabel(order.paid_at)}` : order.payment_method.toUpperCase()}</p></td>
-        <td className="px-5 py-4 font-medium">{money(order.order_data.total)}</td>
-        <td className="px-5 py-4">
-          <span className="mb-2 inline-flex rounded-full bg-[#a45f60]/10 px-2.5 py-1 text-[10px] font-semibold text-[#8c4e50]">{statusLabel(order.order_status)}</span>
-          <select aria-label={`Update ${order.order_id} status`} value={order.order_status} onChange={event => {
-            const target = event.target.value as OrderStatus
-            if (target === 'cancelled' && !window.confirm(`Cancel order ${order.order_id}?`)) return
-            onUpdate(order, target)
-          }} className="block rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2 text-xs outline-none focus:border-[#a45f60]">
-            <option value={order.order_status}>{statusLabel(order.order_status)}</option>
-            {order.order_status === 'confirmed' && <option value="processing">Processing</option>}
-            {order.order_status === 'processing' && <option value="shipped">Shipped</option>}
-            {order.order_status === 'shipped' && <option value="delivered">Delivered</option>}
-            {!['cancelled', 'delivered'].includes(order.order_status) && <option value="cancelled">Cancelled</option>}
-          </select>
-        </td>
-        <td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(order.created_at)}</td>
-        <td className="px-5 py-4"><details className="max-w-72"><summary className="cursor-pointer text-xs font-semibold text-[#a45f60]">View order</summary><div className="mt-3 space-y-2 rounded-xl bg-[#fbf8f6] p-3 text-xs">
-          <p><strong>Customer:</strong> {String(order.order_data.customerName ?? 'Customer')}</p>
-          <p><strong>Email:</strong> {String(order.order_data.email ?? '—')}</p>
-          <p><strong>Phone:</strong> {String(order.order_data.phoneNumber ?? '—')}</p>
-          <p><strong>Address:</strong> {[order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'}</p>
-          <p><strong>Confirmation email:</strong> {statusLabel(order.confirmation_email_status)}{order.confirmation_email_sent_at ? ` · ${dateLabel(order.confirmation_email_sent_at)}` : ''}</p>
-          {order.confirmation_email_error && <p className="text-rose-700">{order.confirmation_email_error}</p>}
-          <p><strong>Method:</strong> {order.payment_method.toUpperCase()}</p>
-          <p><strong>Items:</strong></p><ul className="list-inside list-disc">{items.map((item, index) => <li key={`${String(item.productId)}-${index}`}>{String(item.name ?? 'Item')}{typeof item.variantName === 'string' ? ` — ${item.variantName}` : ''} × {String(item.quantity ?? 1)} · {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</li>)}</ul>
-          {order.payment_status === 'pending' && order.order_status === 'pending_payment' && <button type="button" onClick={() => onConfirmPayment(order)} className="w-full rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800">Confirm Payment &amp; Confirm Order</button>}
-          {order.payment_status === 'paid' && ['confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status) && ['pending', 'failed'].includes(order.confirmation_email_status) && <button type="button" onClick={() => onRetryEmail(order)} className="w-full rounded-lg border border-[#a45f60]/40 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5">{order.confirmation_email_status === 'failed' ? 'Retry Confirmation Email' : 'Send Confirmation Email'}</button>}
-          {order.paid_by && <p><strong>Verified by:</strong> {order.paid_by}</p>}
-          <button type="button" onClick={() => printOrder(order)} className="rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs font-semibold text-[#a45f60]">Print order</button>
-          {order.events?.length ? <div className="border-t border-[#eee5df] pt-2"><p className="font-semibold">Timeline</p><ol className="mt-1 space-y-1">{[...order.events].reverse().map(event => <li key={event.id} className="text-[10px] text-[#806b63]">{dateLabel(event.created_at)} · {event.summary}</li>)}</ol></div> : <p className="border-t border-[#eee5df] pt-2 text-[10px] text-[#9a8881]">No timeline events recorded yet.</p>}
-        </div></details></td>
-      </tr>
-    })}</tbody></table></div><TablePager page={page} pageCount={pageCount} total={filteredOrders.length} onChange={setPage} /></> : <EmptyState text="No matching orders found." />}</div>
+    <div className="space-y-3">
+      {visibleItems.map(order => {
+        const items = Array.isArray(order.order_data.items) ? order.order_data.items as Record<string, unknown>[] : []
+        const address = [order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'
+        if (tab === 'awaiting') return <article key={order.id} className="flex flex-col justify-between gap-4 rounded-2xl border border-[#eee5df] bg-white p-4 sm:flex-row sm:items-center sm:p-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <p className="text-sm font-semibold">{order.order_id}</p>
+              <span className="text-xs text-[#938079]">{dateLabel(order.created_at)}</span>
+            </div>
+            <p className="mt-1 text-sm text-[#5e4d47]">{String(order.order_data.customerName ?? 'Customer')} <span className="text-[#a18c84]">· {String(order.order_data.phoneNumber ?? order.order_data.email ?? 'No contact details')}</span></p>
+            <p className="mt-2 line-clamp-2 text-xs text-[#897770]">{items.map(item => `${String(item.name ?? 'Item')} × ${String(item.quantity ?? 1)}`).join(' · ') || 'Order items unavailable'}</p>
+          </div>
+          <div className="flex shrink-0 items-center justify-between gap-4 sm:justify-end">
+            <span className="text-lg font-semibold">{money(order.order_data.total)}</span>
+            <button type="button" onClick={() => onConfirmPayment(order)} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800">Confirm payment</button>
+          </div>
+        </article>
+        return <article key={order.id} className="rounded-2xl border border-[#eee5df] bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col justify-between gap-3 border-b border-[#f1ebe7] pb-4 sm:flex-row sm:items-start">
+            <div>
+              <p className="font-semibold">{order.order_id}</p>
+              <p className="mt-1 text-xs text-[#938079]">Placed {dateLabel(order.created_at)} · {order.payment_method.toUpperCase()}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${order.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabel(order.payment_status)}</span>
+              <span className="rounded-full bg-[#a45f60]/10 px-2.5 py-1 text-[10px] font-semibold text-[#8c4e50]">{statusLabel(order.order_status)}</span>
+              <span className="text-lg font-semibold">{money(order.order_data.total)}</span>
+            </div>
+          </div>
+          <div className="grid gap-4 py-4 sm:grid-cols-2">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[#9a827a]">Customer & delivery</h3>
+              <p className="mt-2 text-sm font-medium">{String(order.order_data.customerName ?? 'Customer')}</p>
+              <p className="mt-1 break-all text-xs text-[#897770]">{String(order.order_data.email ?? '—')}</p>
+              <p className="mt-1 text-xs text-[#897770]">{String(order.order_data.phoneNumber ?? '—')}</p>
+              <p className="mt-2 text-xs leading-5 text-[#6f5c55]">{address}</p>
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[#9a827a]">Items</h3>
+              <ul className="mt-2 space-y-2">{items.map((item, index) => <li key={`${String(item.productId)}-${index}`} className="flex justify-between gap-3 text-xs">
+                <span>{String(item.name ?? 'Item')}{typeof item.variantName === 'string' ? ` — ${item.variantName}` : ''} × {String(item.quantity ?? 1)}</span>
+                <span className="shrink-0 font-medium">{money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</span>
+              </li>)}</ul>
+            </div>
+          </div>
+          <div className="flex flex-col justify-between gap-3 border-t border-[#f1ebe7] pt-4 sm:flex-row sm:items-center">
+            <div className="space-y-1 text-xs text-[#897770]">
+              <p>Confirmation email: <strong className="text-[#66534d]">{statusLabel(order.confirmation_email_status)}</strong>{order.confirmation_email_sent_at ? ` · ${dateLabel(order.confirmation_email_sent_at)}` : ''}</p>
+              {order.confirmation_email_error && <p className="max-w-xl text-rose-700">{order.confirmation_email_error}</p>}
+              {order.paid_by && <p>Verified by {order.paid_by}{order.paid_at ? ` · ${dateLabel(order.paid_at)}` : ''}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {order.payment_status === 'pending' && order.order_status === 'pending_payment' && <button type="button" onClick={() => onConfirmPayment(order)} className="rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800">Confirm payment</button>}
+              {order.payment_status === 'paid' && ['confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status) && ['pending', 'failed'].includes(order.confirmation_email_status) && <button type="button" onClick={() => onRetryEmail(order)} className="rounded-lg border border-[#a45f60]/40 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5">{order.confirmation_email_status === 'failed' ? 'Retry email' : 'Send email'}</button>}
+              <select aria-label={`Update ${order.order_id} status`} value={order.order_status} onChange={event => {
+                const target = event.target.value as OrderStatus
+                if (target === 'cancelled' && !window.confirm(`Cancel order ${order.order_id}?`)) return
+                onUpdate(order, target)
+              }} className="rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2.5 text-xs outline-none focus:border-[#a45f60]">
+                <option value={order.order_status}>{statusLabel(order.order_status)}</option>
+                {order.order_status === 'confirmed' && <option value="processing">Processing</option>}
+                {order.order_status === 'processing' && <option value="shipped">Shipped</option>}
+                {order.order_status === 'shipped' && <option value="delivered">Delivered</option>}
+                {!['cancelled', 'delivered'].includes(order.order_status) && <option value="cancelled">Cancelled</option>}
+              </select>
+              <button type="button" onClick={() => printOrder(order)} className="rounded-lg border border-[#e8d9d2] px-3 py-2.5 text-xs font-semibold text-[#a45f60]">Print</button>
+            </div>
+          </div>
+          {order.events?.length ? <details className="mt-3 border-t border-[#f1ebe7] pt-3">
+            <summary className="cursor-pointer text-xs font-semibold text-[#a45f60]">Order timeline</summary>
+            <ol className="mt-2 space-y-1">{[...order.events].reverse().map(event => <li key={event.id} className="text-[10px] text-[#806b63]">{dateLabel(event.created_at)} · {event.summary}</li>)}</ol>
+          </details> : null}
+        </article>
+      })}
+      {!visibleItems.length && <EmptyState text="No matching orders in this tab." />}
+      {filteredOrders.length > 0 && <TablePager page={page} pageCount={pageCount} total={filteredOrders.length} onChange={setPage} />}
+    </div>
   </section>
 }
 function CustomersPage({ customers, search, setSearch, onEdit, onToggleStatus, onDelete }: { customers: AdminCustomer[]; search: string; setSearch: (value: string) => void; onEdit: (customer: AdminCustomer) => void; onToggleStatus: (customer: AdminCustomer) => void; onDelete: (customer: AdminCustomer) => void }) {
