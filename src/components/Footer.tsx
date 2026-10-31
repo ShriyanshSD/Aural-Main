@@ -1,5 +1,5 @@
 import React from 'react'
-import { ProductCategory, StoreSettings } from '../types'
+import { ProductCategory, StoreSettings, StorefrontContent } from '../types'
 import { BrandLogo } from './BrandLogo'
 
 interface FooterProps {
@@ -8,6 +8,7 @@ interface FooterProps {
   onOpenStory: () => void
   onOpenConcierge: () => void
   settings: StoreSettings
+  content: StorefrontContent
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -15,7 +16,8 @@ export const Footer: React.FC<FooterProps> = ({
   onSelectCategory,
   onOpenStory,
   onOpenConcierge,
-  settings
+  settings,
+  content
 }) => {
   return (
     <footer className={`border-t py-16 transition-colors duration-500 ${
@@ -35,8 +37,16 @@ export const Footer: React.FC<FooterProps> = ({
             <p className="font-sans-body text-xs text-[#826F69] dark:text-[#A79791] max-w-sm leading-relaxed">
               {settings.description}
             </p>
-            <div className="pt-2 text-xs text-[#8E7973]">
-              Concierge: <a href="mailto:aruelstudio22@gmail.com" className="hover:text-[#B36D6D]">aruelstudio22@gmail.com</a>
+            <div className="space-y-1 pt-2 text-xs text-[#8E7973]">
+              {settings.contactEmail && <div>
+                Concierge: <a href={`mailto:${settings.contactEmail}`} className="hover:text-[#B36D6D]">{settings.contactEmail}</a>
+              </div>}
+              {settings.phone && <div>
+                Phone: <a href={`tel:${settings.phone}`} className="hover:text-[#B36D6D]">{settings.phone}</a>
+              </div>}
+              {settings.whatsappNumber && <div>
+                <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">WhatsApp concierge</a>
+              </div>}
             </div>
           </div>
 
@@ -100,6 +110,14 @@ export const Footer: React.FC<FooterProps> = ({
               <li>
                 <span className="opacity-70">{settings.deliveryNote}</span>
               </li>
+              {content.deliveryPolicy && <li><details className="cursor-pointer">
+                <summary className="hover:text-[#B36D6D]">Delivery policy</summary>
+                <p className="mt-2 max-w-xs whitespace-pre-wrap leading-relaxed">{content.deliveryPolicy}</p>
+              </details></li>}
+              {content.returnsPolicy && <li><details className="cursor-pointer">
+                <summary className="hover:text-[#B36D6D]">Returns and cancellations</summary>
+                <p className="mt-2 max-w-xs whitespace-pre-wrap leading-relaxed">{content.returnsPolicy}</p>
+              </details></li>}
             </ul>
           </div>
 
@@ -109,16 +127,8 @@ export const Footer: React.FC<FooterProps> = ({
               Follow Us
             </h4>
             <ul className="space-y-2 text-xs text-[#6F5C56] dark:text-[#C5B4AD]">
-              <li>
-                <a
-                  href="https://www.instagram.com/_.aurelstudio._?psln=YnRvcGt3dTNyM2V3"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hover:text-[#B36D6D]"
-                >
-                  Instagram
-                </a>
-              </li>
+              {settings.instagramUrl && <li><a href={settings.instagramUrl} target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">Instagram</a></li>}
+              {settings.facebookUrl && <li><a href={settings.facebookUrl} target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">Facebook</a></li>}
             </ul>
           </div>
 

@@ -159,6 +159,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           Finish: {item.finish}
                         </span>
                       )}
+                      {item.variantName && (
+                        <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block">
+                          Option: {item.variantName}
+                        </span>
+                      )}
                       {item.recipientName && (
                         <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block truncate">
                           For: {item.recipientName}
@@ -231,7 +236,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </motion.button>
 
                 <p className="text-[11px] text-center text-[#9A8781]">
-                  Secured with Razorpay & Instant UPI Confirmation
+                  Payment is not processed in the bag
                 </p>
               </div>
             )}

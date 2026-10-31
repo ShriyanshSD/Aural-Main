@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { X, Star, Heart, Check, Minus, Plus, ShoppingBag, Sparkles, ArrowLeft, ShieldCheck, Truck } from 'lucide-react'
 import { Product, FinishType, CartItem } from '../types'
@@ -22,15 +22,25 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onToggleWishlist,
   isAuthenticated
 }) => {
-  if (!product) return null
-
   const [quantity, setQuantity] = useState(1)
   const [selectedFinish, setSelectedFinish] = useState<FinishType>(
-    product.availableFinishes ? product.availableFinishes[0] : 'matte'
+    product?.availableFinishes ? product.availableFinishes[0] : 'matte'
   )
+  const [selectedVariantId, setSelectedVariantId] = useState(product?.variants?.[0]?.id ?? '')
   const [recipientName, setRecipientName] = useState('')
   const [customMessage, setCustomMessage] = useState('')
   const [isAddedFeedback, setIsAddedFeedback] = useState(false)
+  useEffect(() => {
+    setQuantity(1)
+    setSelectedVariantId(product?.variants?.[0]?.id ?? '')
+    setSelectedFinish(product?.availableFinishes?.[0] ?? 'matte')
+  }, [product?.id])
+
+  if (!product) return null
+
+  const selectedVariant = product.variants?.find(variant => variant.id === selectedVariantId)
+  const unitPrice = selectedVariant?.price ?? product.price
+  const availableStock = selectedVariant ? selectedVariant.stockQuantity : product.stockQuantity
 
   const livePreviewHeading = recipientName.trim()
     ? `${recipientName.toUpperCase()}’S EDITION`
@@ -41,9 +51,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       cartId: `${product.id}_${Date.now()}`,
       productId: product.id,
       name: product.name,
-      price: product.price,
+      price: unitPrice,
       quantity,
       imageUrl: product.imageUrl,
+      variantId: selectedVariant?.id,
+      variantName: selectedVariant?.name,
       finish: product.availableFinishes ? selectedFinish : undefined,
       recipientName: recipientName.trim() || undefined,
       customMessage: customMessage.trim() || undefined
@@ -185,12 +197,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       <span className="ml-1 font-semibold">{product.rating.toFixed(1)}</span>
                     </div>
                     <span className="text-[#8E7A74] dark:text-[#A89791]">
-                      ({product.reviewsCount} verified reviews)
+                      ({product.reviewsCount} {product.reviewsCount === 1 ? 'review' : 'reviews'})
                     </span>
                   </div>
 
                   <span className="font-serif-title text-2xl font-bold text-[#B36D6D] tabular-nums">
-                    ₹{product.price.toLocaleString('en-IN')}
+                    ₹{unitPrice.toLocaleString('en-IN')}
                   </span>
                 </div>
 
@@ -198,6 +210,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   {product.description}
                 </p>
               </div>
+
+              {product.variants && product.variants.length > 0 && (
+                <div>
+                  <label htmlFor="product-variant" className="mb-2 block text-xs font-semibold uppercase tracking-wider text-[#8B7771] dark:text-[#BCAAA4]">Choose an option</label>
+                  <select id="product-variant" value={selectedVariantId} onChange={event => { setSelectedVariantId(event.target.value); setQuantity(1) }} className={`w-full rounded-xl border px-3.5 py-3 text-sm ${isDarkMode ? 'border-[#382C29] bg-[#221B1A] text-[#F3EBE6]' : 'border-[#DFC6BD] bg-white text-[#2C2422]'}`}>
+                    {product.variants.map(variant => <option key={variant.id} value={variant.id}>{variant.name} · ₹{variant.price.toLocaleString('en-IN')}{variant.stockQuantity === 0 ? ' · Out of stock' : ''}</option>)}
+                  </select>
+                </div>
+              )}
 
               {/* Finish Options (if Magazine) */}
               {product.availableFinishes && (
@@ -300,10 +321,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     {quantity}
                   </span>
                   <button
-                    onClick={() => setQuantity(product.stockQuantity === null || product.stockQuantity === undefined
+                    onClick={() => setQuantity(availableStock === null || availableStock === undefined
                       ? quantity + 1
-                      : Math.min(product.stockQuantity, quantity + 1))}
-                    disabled={product.stockQuantity === 0 || (product.stockQuantity !== null && product.stockQuantity !== undefined && quantity >= product.stockQuantity)}
+                      : Math.min(availableStock, quantity + 1))}
+                    disabled={availableStock === 0 || (availableStock !== null && availableStock !== undefined && quantity >= availableStock)}
                     className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
                     aria-label="Increase quantity"
                   >
@@ -312,7 +333,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
 
                 <motion.button
-                  disabled={product.stockQuantity === 0}
+                  disabled={availableStock === 0 || Boolean(product.variants?.length && !selectedVariant)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={handleAdd}
@@ -324,7 +345,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 >
                   <ShoppingBag className="w-4 h-4" />
                   <span>
-                    {isAddedFeedback ? 'Added to Bag' : product.stockQuantity === 0 ? 'Out of stock' : `Add to Bag · ₹${(product.price * quantity).toLocaleString('en-IN')}`}
+                    {isAddedFeedback ? 'Added to Bag' : availableStock === 0 ? 'Out of stock' : `Add to Bag · ₹${(unitPrice * quantity).toLocaleString('en-IN')}`}
                   </span>
                 </motion.button>
               </div>

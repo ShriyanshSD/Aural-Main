@@ -771,6 +771,16 @@ interface StoredAccountOrder {
   order_id: string
   order_data: Record<string, unknown>
   created_at: string
+  fulfillment_status?: string
+}
+
+const isSecureProofUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && !url.username && !url.password
+  } catch {
+    return false
+  }
 }
 
 export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
@@ -778,23 +788,145 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
     const account = await getSessionAccount(req)
     if (!account) return sendJson(res, 401, { error: 'Sign in to view your orders.' })
 
+    if (req.method === 'PATCH') {
+      const origin = req.headers.origin
+      const forwardedHost = req.headers['x-forwarded-host']
+      const requestHost = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? req.headers.host
+      if (!origin || !requestHost) return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+      try {
+        if (new URL(origin).host.toLowerCase() !== requestHost.toLowerCase()) {
+          return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+        }
+      } catch {
+        return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+      }
+      const orderId = readBody(req).orderId
+      if (typeof orderId !== 'string' || !/^AUREL[A-Z0-9]{5,16}$/.test(orderId)) {
+        return sendJson(res, 400, { error: 'Provide a valid order number.' })
+      }
+      const orders = await supabaseRequest<Array<{ id: number }>>(
+        'aurel_orders',
+        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id', limit: '1' })
+      )
+      if (!orders[0]) return sendJson(res, 404, { error: 'Order not found in your account.' })
+      const operations = await supabaseRequest<Array<{ production_status: string; customer_approved_at: string | null; proof_url: string }>>(
+        'aurel_order_operations',
+        new URLSearchParams({ order_id: `eq.${orders[0].id}`, select: 'production_status,customer_approved_at,proof_url', limit: '1' })
+      )
+      const operation = operations[0]
+      if (operation?.customer_approved_at) {
+        return sendJson(res, 200, { success: true, alreadyApproved: true })
+      }
+      if (!operation || operation.production_status !== 'awaiting_customer_approval' || !isSecureProofUrl(operation.proof_url)) {
+        return sendJson(res, 409, { error: 'This order does not currently have a proof awaiting your approval.' })
+      }
+      const approvedAt = new Date().toISOString()
+      const updated = await supabaseRequest<Array<{ order_id: number }>>(
+        'aurel_order_operations',
+        new URLSearchParams({
+          order_id: `eq.${orders[0].id}`,
+          production_status: 'eq.awaiting_customer_approval',
+          proof_url: `eq.${operation.proof_url}`,
+          select: 'order_id'
+        }),
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({
+            customer_approved_at: approvedAt,
+            customer_approved_by: account.id,
+            production_status: 'approved_for_production',
+            updated_at: approvedAt
+          })
+        }
+      )
+      if (!updated.length) return sendJson(res, 409, { error: 'This proof is no longer awaiting approval. Refresh your orders and try again.' })
+      await supabaseRequest('aurel_order_events', new URLSearchParams(), {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          order_id: orders[0].id,
+          actor_type: 'customer',
+          actor_user_id: account.id,
+          event_type: 'proof_approved',
+          summary: 'Customer approved the submitted proof.',
+          metadata: {}
+        })
+      })
+      await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          notification_type: 'proof_approved',
+          title: 'Customer approved a proof',
+          message: `Order ${orderId} is approved to move forward in production.`,
+          target_type: 'order',
+          target_id: String(orders[0].id)
+        })
+      })
+      return sendJson(res, 200, { success: true })
+    }
+
     if (req.method === 'GET') {
       const rows = await supabaseRequest<StoredAccountOrder[]>(
         'aurel_orders',
         new URLSearchParams({
           user_id: `eq.${account.id}`,
-          select: 'order_id,order_data,created_at',
+          select: 'order_id,order_data,created_at,fulfillment_status',
           order: 'created_at.desc',
           limit: '100'
         })
       )
+      const orderIds = rows.map(row => row.order_id)
+      const orderRecords = orderIds.length
+        ? await supabaseRequest<Array<{ id: number; order_id: string }>>(
+          'aurel_orders',
+          new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `in.(${orderIds.join(',')})`, select: 'id,order_id', limit: '100' })
+        )
+        : []
+      const orderIdByOrderNumber = new Map(orderRecords.map(row => [row.order_id, row.id]))
+      const databaseIds = [...orderIdByOrderNumber.values()]
+      const [operations, reviews, events] = databaseIds.length
+        ? await Promise.all([
+          supabaseRequest<Array<{ order_id: number; production_status: string; customer_approved_at: string | null; proof_url: string }>>(
+            'aurel_order_operations',
+            new URLSearchParams({ order_id: `in.(${databaseIds.join(',')})`, select: 'order_id,production_status,customer_approved_at,proof_url' })
+          ),
+          supabaseRequest<Array<{ order_id: number; product_id: string }>>(
+            'aurel_reviews',
+            new URLSearchParams({ order_id: `in.(${databaseIds.join(',')})`, user_id: `eq.${account.id}`, select: 'order_id,product_id' })
+          ),
+          supabaseRequest<Array<{ order_id: number; event_type: string; summary: string; created_at: string }>>(
+            'aurel_order_events',
+            new URLSearchParams({ order_id: `in.(${databaseIds.join(',')})`, select: 'order_id,event_type,summary,created_at', order: 'created_at.desc', limit: '1000' })
+          )
+        ])
+        : [[], [], []]
+      const operationByOrderId = new Map(operations.map(operation => [operation.order_id, operation]))
+      const reviewsByOrderId = new Map<number, string[]>()
+      for (const review of reviews) reviewsByOrderId.set(review.order_id, [...(reviewsByOrderId.get(review.order_id) ?? []), review.product_id])
+      const eventsByOrderId = new Map<number, typeof events>()
+      for (const event of events) eventsByOrderId.set(event.order_id, [...(eventsByOrderId.get(event.order_id) ?? []), event])
       return sendJson(res, 200, {
-        orders: rows.map(row => ({ order: row.order_data, createdAt: row.created_at }))
+        orders: rows.map(row => {
+          const databaseOrderId = orderIdByOrderNumber.get(row.order_id)
+          const operation = databaseOrderId ? operationByOrderId.get(databaseOrderId) : undefined
+          return {
+            order: row.order_data,
+            createdAt: row.created_at,
+            fulfillmentStatus: row.fulfillment_status ?? 'unfulfilled',
+            productionStatus: operation?.production_status,
+            proofApproved: Boolean(operation?.customer_approved_at),
+            proofUrl: operation && isSecureProofUrl(operation.proof_url) ? operation.proof_url : undefined,
+            reviewedProductIds: databaseOrderId ? reviewsByOrderId.get(databaseOrderId) ?? [] : [],
+            events: databaseOrderId ? eventsByOrderId.get(databaseOrderId) ?? [] : []
+          }
+        })
       })
     }
 
     if (req.method !== 'POST') {
-      res.setHeader('Allow', 'GET, POST')
+      res.setHeader('Allow', 'GET, POST, PATCH')
       return sendJson(res, 405, { error: 'Method not allowed.' })
     }
 
@@ -821,15 +953,22 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         && typeof item.name === 'string' && item.name.trim().length > 0 && item.name.length <= 160
         && typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0 && item.price <= 10000000
         && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 99
-        && typeof item.imageUrl === 'string' && item.imageUrl.length <= 2048)
+        && typeof item.imageUrl === 'string' && item.imageUrl.length <= 2048
+        && ((item.variantId === undefined && item.variantName === undefined)
+          || (typeof item.variantId === 'string' && /^[a-zA-Z0-9_-]{1,60}$/.test(item.variantId)
+            && typeof item.variantName === 'string' && item.variantName.trim().length > 0 && item.variantName.length <= 100)))
       || typeof data.subtotal !== 'number' || !Number.isFinite(data.subtotal) || data.subtotal < 0
       || typeof data.shipping !== 'number' || !Number.isFinite(data.shipping) || data.shipping < 0
       || typeof data.total !== 'number' || !Number.isFinite(data.total) || data.total !== data.subtotal + data.shipping
-      || data.status !== 'paid'
+      || (data.status !== 'paid' && data.status !== 'pending')
     ) {
       return sendJson(res, 400, { error: 'The order details are incomplete or invalid.' })
     }
 
+    const existingOrders = await supabaseRequest<Array<{ id: number }>>(
+      'aurel_orders',
+      new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${data.orderId}`, select: 'id', limit: '1' })
+    )
     const stored = await supabaseRequest<StoredAccountOrder[]>(
       'aurel_orders',
       new URLSearchParams({ on_conflict: 'user_id,order_id', select: 'order_id,order_data,created_at' }),
@@ -840,9 +979,130 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       }
     )
     if (!stored[0]) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
+    if (!existingOrders.length) {
+      const savedOrderId = await supabaseRequest<Array<{ id: number }>>(
+        'aurel_orders',
+        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${data.orderId}`, select: 'id', limit: '1' })
+      )
+      if (savedOrderId[0]) {
+        await supabaseRequest('aurel_order_events', new URLSearchParams(), {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            order_id: savedOrderId[0].id,
+            actor_type: 'customer',
+            actor_user_id: account.id,
+            event_type: 'order_submitted',
+            summary: 'Order was submitted. Payment status has not been independently verified.',
+            metadata: { recordedPaymentStatus: data.status }
+          })
+        })
+        await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            notification_type: 'new_order',
+            title: 'New order received',
+            message: `Order ${data.orderId} was submitted. Its recorded payment status is ${data.status}.`,
+            target_type: 'order',
+            target_id: String(savedOrderId[0].id)
+          })
+        })
+      }
+    }
     return sendJson(res, 201, { order: stored[0].order_data, createdAt: stored[0].created_at })
   } catch (error) {
     handleFailure(res, error, 'Unable to load or save your orders right now.')
+  }
+}
+
+export async function accountReviewHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  try {
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to submit a product review.' })
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST')
+      return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+    const origin = req.headers.origin
+    const forwardedHost = req.headers['x-forwarded-host']
+    const requestHost = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? req.headers.host
+    if (!origin || !requestHost) return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+    try {
+      if (new URL(origin).host.toLowerCase() !== requestHost.toLowerCase()) {
+        return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+      }
+    } catch {
+      return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+    }
+    const body = readBody(req)
+    const orderId = body.orderId
+    const productId = body.productId
+    const rating = body.rating
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    const reviewBody = typeof body.body === 'string' ? body.body.trim() : ''
+    if (typeof orderId !== 'string' || !/^AUREL[A-Z0-9]{5,16}$/.test(orderId)
+      || typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(productId)
+      || typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5
+      || title.length > 120 || reviewBody.length < 10 || reviewBody.length > 3000) {
+      return sendJson(res, 400, { error: 'Provide a valid order, product, 1–5 star rating, and review of at least 10 characters.' })
+    }
+    const orders = await supabaseRequest<Array<{ id: number; order_data: Record<string, unknown>; fulfillment_status: string }>>(
+      'aurel_orders',
+      new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,order_data,fulfillment_status', limit: '1' })
+    )
+    const order = orders[0]
+    if (!order) return sendJson(res, 404, { error: 'Order not found in your account.' })
+    if (order.fulfillment_status !== 'delivered') {
+      return sendJson(res, 409, { error: 'Reviews can be submitted after the order is marked delivered.' })
+    }
+    const items = Array.isArray(order.order_data.items) ? order.order_data.items as Array<Record<string, unknown>> : []
+    if (!items.some(item => item.productId === productId)) return sendJson(res, 403, { error: 'You can only review a product included in this delivered order.' })
+    const existing = await supabaseRequest<Array<{ id: number }>>(
+      'aurel_reviews',
+      new URLSearchParams({ order_id: `eq.${order.id}`, product_id: `eq.${productId}`, select: 'id', limit: '1' })
+    )
+    if (existing.length) return sendJson(res, 409, { error: 'A review for this product and order has already been submitted.' })
+    const inserted = await supabaseRequest<Array<{ id: number }>>('aurel_reviews', new URLSearchParams(), {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        order_id: order.id,
+        user_id: account.id,
+        product_id: productId,
+        rating,
+        title,
+        body: reviewBody,
+        moderation_status: 'pending'
+      })
+    })
+    if (!inserted[0]) return sendJson(res, 500, { error: 'Your review could not be submitted.' })
+    await supabaseRequest('aurel_order_events', new URLSearchParams(), {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        order_id: order.id,
+        actor_type: 'customer',
+        actor_user_id: account.id,
+        event_type: 'review_submitted',
+        summary: `Customer submitted a review for ${String(items.find(item => item.productId === productId)?.name ?? productId)}.`,
+        metadata: { reviewId: inserted[0].id }
+      })
+    })
+    await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        notification_type: 'review_submitted',
+        title: 'A product review needs moderation',
+        message: `A review was submitted for ${String(items.find(item => item.productId === productId)?.name ?? productId)}.`,
+        target_type: 'review',
+        target_id: String(inserted[0].id)
+      })
+    })
+    return sendJson(res, 201, { success: true, reviewId: inserted[0].id, moderationStatus: 'pending' })
+  } catch (error) {
+    handleFailure(res, error, 'Unable to submit your review right now.')
   }
 }
 

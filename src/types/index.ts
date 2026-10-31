@@ -20,6 +20,7 @@ export interface Product {
   reviewsCount: number
   imageUrl: string
   imageUrls?: string[]
+  variants?: ProductVariant[]
   fallbackColor: string
   description: string
   tagline: string
@@ -31,11 +32,41 @@ export interface Product {
   isPublished?: boolean
 }
 
+export interface ProductVariant {
+  id: string
+  name: string
+  sku: string
+  price: number
+  stockQuantity: number | null
+}
+
+export interface StoreCollection {
+  id: string
+  name: string
+  description: string
+  imageUrl: string
+  productIds: string[]
+  displayOrder: number
+}
+
+export interface StoreReview {
+  id: number
+  productId: string
+  productName: string
+  rating: number
+  title: string
+  body: string
+  customerName: string
+  createdAt: string
+}
+
 export interface StoreCategory {
   slug: string
   name: string
   description?: string
   image_url?: string
+  display_order?: number
+  is_featured?: boolean
 }
 
 export interface StoreSettings {
@@ -50,6 +81,20 @@ export interface StoreSettings {
   deliveryNote: string
 }
 
+export interface StorefrontContent {
+  heroEyebrow: string
+  heroTitle: string
+  heroSubtitle: string
+  heroDescription: string
+  heroCtaLabel: string
+  secondaryCtaLabel: string
+  heroImageUrl: string
+  announcement: string
+  aboutText: string
+  deliveryPolicy: string
+  returnsPolicy: string
+}
+
 export interface CartItem {
   cartId: string
   productId: string
@@ -57,6 +102,8 @@ export interface CartItem {
   price: number
   quantity: number
   imageUrl: string
+  variantId?: string
+  variantName?: string
   finish?: FinishType
   recipientName?: string
   customMessage?: string
@@ -110,6 +157,12 @@ export interface AuthUser {
 export interface AccountOrder {
   order: OrderDetails
   createdAt: string
+  fulfillmentStatus?: string
+  productionStatus?: string
+  proofApproved?: boolean
+  proofUrl?: string
+  reviewedProductIds?: string[]
+  events?: { event_type: string; summary: string; created_at: string }[]
 }
 
 export interface SecurityScanReport {

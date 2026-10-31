@@ -8,6 +8,7 @@ import {
   loginHandler,
   logoutHandler,
   accountOrdersHandler,
+  accountReviewHandler,
   changePasswordHandler,
   deleteAccountHandler,
   chatHistoryHandler,
@@ -61,6 +62,7 @@ app.get('/api/locations/states', (req, res) => indiaStatesHandler(req, res))
 app.get('/api/locations/cities', (req, res) => indiaCitiesHandler(req, res))
 app.post('/api/auth/change-email', (req, res) => requestEmailChangeHandler(req, res))
 app.all('/api/auth/orders', (req, res) => accountOrdersHandler(req, res))
+app.post('/api/auth/reviews', (req, res) => accountReviewHandler(req, res))
 app.post('/api/auth/change-password', (req, res) => changePasswordHandler(req, res))
 app.delete('/api/auth/delete-account', (req, res) => deleteAccountHandler(req, res))
 app.post('/api/auth/confirm-email-change', (req, res) => confirmEmailChangeHandler(req, res))

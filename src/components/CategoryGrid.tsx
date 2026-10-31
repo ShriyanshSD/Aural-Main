@@ -86,8 +86,30 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     }
   ]
   const activeCategorySlugs = new Set(categories.map(category => category.slug))
-  const visibleTopCategories = topCategories.filter(category => activeCategorySlugs.has(category.id))
-  const visibleBottomCategories = bottomCategories.filter(category => activeCategorySlugs.has(category.id))
+  const presets = [...topCategories, ...bottomCategories]
+  const categoryCards = categories
+    .map((category, index) => {
+      const preset = presets.find(item => item.id === category.slug)
+      return {
+        id: category.slug,
+        title: category.name || preset?.title || category.slug,
+        subtitle: category.description || preset?.subtitle || 'Thoughtful finds, curated for meaningful moments.',
+        tag: preset?.tag || (category.is_featured ? 'Featured collection' : 'Curated collection'),
+        imageUrl: category.image_url || preset?.imageUrl || '/hero-image.png',
+        cols: preset?.cols || 'lg:col-span-4',
+        order: category.display_order ?? index,
+        featured: category.is_featured === true
+      }
+    })
+    .filter(category => activeCategorySlugs.has(category.id))
+    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title))
+  const explicitFeatured = categoryCards.filter(category => category.featured)
+  const legacyFeaturedIds = new Set(topCategories.map(category => category.id))
+  const visibleTopCategories = explicitFeatured.length
+    ? explicitFeatured.slice(0, 2)
+    : categoryCards.filter(category => legacyFeaturedIds.has(category.id))
+  const topIds = new Set(visibleTopCategories.map(category => category.id))
+  const visibleBottomCategories = categoryCards.filter(category => !topIds.has(category.id))
 
   return (
     <section className={`theme-surface py-20 sm:py-28 ${

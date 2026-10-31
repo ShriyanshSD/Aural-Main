@@ -1,17 +1,19 @@
 import React, { useState } from 'react'
 import { motion } from 'motion/react'
 import { Sparkles, Check, ArrowRight, BookOpen, Layers } from 'lucide-react'
-import { FinishType, Product } from '../types'
+import { FinishType, Product, StoreSettings } from '../types'
 import { BrandLogo } from './BrandLogo'
 
 interface MagazineShowcaseProps {
   isDarkMode: boolean
   onCustomizeMagazine: (finish: FinishType, recipientName: string) => void
+  settings: StoreSettings
 }
 
 export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
   isDarkMode,
-  onCustomizeMagazine
+  onCustomizeMagazine,
+  settings
 }) => {
   const [selectedFinish, setSelectedFinish] = useState<FinishType>('matte')
   const [recipientName, setRecipientName] = useState('Ananya')
@@ -96,7 +98,7 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                   </div>
                   <BrandLogo isDarkMode={isDarkMode} className="mx-auto mt-2 block h-16 w-32 object-contain" />
                   <p className="font-editorial text-center text-xs tracking-widest text-[#8F5A54] dark:text-[#D5AEA7] italic mt-1">
-                    Made With Love For You
+                    {settings.tagline}
                   </p>
                 </div>
 

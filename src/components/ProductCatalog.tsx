@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { Star, Heart, Plus, ChevronDown, Check, SlidersHorizontal, ArrowLeft } from 'lucide-react'
-import { Product, ProductCategory, SortOption, StoreCategory } from '../types'
+import { Product, ProductCategory, SortOption, StoreCategory, StoreCollection } from '../types'
 import { PRODUCTS } from '../data/products'
 
 const ProductCardImage: React.FC<{ product: Product; isDarkMode: boolean }> = ({ product, isDarkMode }) => {
@@ -68,6 +68,9 @@ interface ProductCatalogProps {
   searchQuery: string
   products: Product[]
   categories: StoreCategory[]
+  collections: StoreCollection[]
+  activeCollectionId: string
+  onSelectCollection: (collectionId: string) => void
 }
 
 export const ProductCatalog: React.FC<ProductCatalogProps> = ({
@@ -80,7 +83,10 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   onToggleWishlist,
   searchQuery = '',
   products,
-  categories
+  categories,
+  collections,
+  activeCollectionId,
+  onSelectCollection
 }) => {
   const categoryScrollRef = useRef<HTMLDivElement>(null)
   const categoryTrackRef = useRef<HTMLDivElement>(null)
@@ -282,6 +288,10 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
         p.tagline,
         p.description
       ].some(value => value?.toLowerCase().includes(normalizedQuery))) return false
+      if (activeCollectionId) {
+        const collection = collections.find(item => item.id === activeCollectionId)
+        if (!collection?.productIds.includes(p.id)) return false
+      }
       if (activeCategory === 'all') return true
       if (activeCategory === 'hair-accessories') {
         if (selectedHairSubCategory === 'all') return p.category === 'hair-accessories'
@@ -305,7 +315,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
       default:
         return list
     }
-  }, [activeCategory, currentSort, products, searchQuery, selectedHairSubCategory])
+  }, [activeCategory, activeCollectionId, collections, currentSort, products, searchQuery, selectedHairSubCategory])
 
   const handleQuickAddClick = (product: Product, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -382,6 +392,24 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
             <p className="font-sans-body mt-2 text-xs text-[#7D6B65] dark:text-[#BAAAA3] sm:text-sm">
               Made to be given · Designed to be remembered
             </p>
+          </div>
+        )}
+
+        {collections.length > 0 && activeCategory !== 'hair-accessories' && (
+          <div className="mb-8">
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div><p className="font-editorial text-[10px] uppercase tracking-[.2em] text-[#B36D6D]">Curated edits</p><h3 className="mt-1 font-serif-title text-xl">Shop a collection</h3></div>
+              {activeCollectionId && <button onClick={() => onSelectCollection('')} className="text-xs font-semibold text-[#9E5B5B] underline">Clear collection</button>}
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {collections.map(collection => (
+                <button key={collection.id} type="button" onClick={() => onSelectCollection(activeCollectionId === collection.id ? '' : collection.id)} aria-pressed={activeCollectionId === collection.id} className={`group relative h-28 min-w-52 overflow-hidden rounded-xl border text-left sm:min-w-64 ${activeCollectionId === collection.id ? 'border-[#B36D6D] ring-2 ring-[#B36D6D]/30' : 'border-black/10'}`}>
+                  <img src={collection.imageUrl || '/hero-image.png'} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition-transform group-hover:scale-105" />
+                  <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                  <span className="absolute inset-x-3 bottom-3 text-white"><span className="block font-serif-title text-lg">{collection.name}</span><span className="mt-0.5 block text-[10px] text-white/80">{collection.productIds.length} curated products</span></span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

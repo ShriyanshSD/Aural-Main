@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { X, ShieldCheck, CheckCircle2, AlertCircle, Lock, Smartphone, CreditCard, ArrowRight, Sparkles, Copy, Check, QrCode, Building2, RefreshCw } from 'lucide-react'
+import { X, ShieldCheck, CheckCircle2, AlertCircle, Lock, ArrowRight, Copy, Check, RefreshCw } from 'lucide-react'
 import confetti from 'canvas-confetti'
-import { AuthUser, CartItem, OrderDetails } from '../types'
+import { AuthUser, CartItem, OrderDetails, StoreSettings } from '../types'
 import { sanitizeInput, validateCheckoutForm } from '../utils/security'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
 
@@ -12,10 +12,9 @@ interface CheckoutModalProps {
   isDarkMode: boolean
   cartItems: CartItem[]
   authUser: AuthUser | null
+  settings: StoreSettings
   onOrderSuccess: (order: OrderDetails) => Promise<void>
 }
-
-type RazorpayPaymentTab = 'upi' | 'card' | 'netbanking'
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
@@ -23,6 +22,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isDarkMode,
   cartItems,
   authUser,
+  settings,
   onOrderSuccess
 }) => {
   // Form State
@@ -35,17 +35,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [postalCode, setPostalCode] = useState(authUser?.postalCode ?? '')
   const [notes, setNotes] = useState('')
 
-  // Razorpay Gateway State
-  const [isRazorpayPopupOpen, setIsRazorpayPopupOpen] = useState(false)
-  const [razorpayTab, setRazorpayTab] = useState<RazorpayPaymentTab>('upi')
-  const [selectedUpiApp, setSelectedUpiApp] = useState('Google Pay')
-  const [customUpiId, setCustomUpiId] = useState('')
-  const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8821')
-  const [cardExpiry, setCardExpiry] = useState('08/29')
-  const [cardCvv, setCardCvv] = useState('382')
-  const [selectedBank, setSelectedBank] = useState('HDFC Bank')
+  const [isPaymentPreviewOpen, setIsPaymentPreviewOpen] = useState(false)
 
-  const [isGatewayProcessing, setIsGatewayProcessing] = useState(false)
+  const [isSavingDemoOrder, setIsSavingDemoOrder] = useState(false)
   const [formErrors, setFormErrors] = useState<string[]>([])
   const [completedOrder, setCompletedOrder] = useState<OrderDetails | null>(null)
   const [copiedMessage, setCopiedMessage] = useState(false)
@@ -114,15 +106,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return true
   }
 
-  // Open the payment popup after validating checkout details.
-  const handleInitiateRazorpay = () => {
+  const handleOpenPaymentPreview = () => {
     if (!validateCurrentCheckout()) return
-    setIsRazorpayPopupOpen(true)
+    setIsPaymentPreviewOpen(true)
   }
 
-  // Complete Payment inside Razorpay Gateway
-  const handleConfirmRazorpayPayment = () => {
-    setIsGatewayProcessing(true)
+  const handleSaveDemoOrder = () => {
+    setIsSavingDemoOrder(true)
 
     setTimeout(() => {
       const now = new Date()
@@ -132,12 +122,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       })
 
       const generatedOrderId = `AUREL${crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase()}`
-      const paymentMethodLabel = razorpayTab === 'upi' 
-        ? `Razorpay UPI (${selectedUpiApp}${customUpiId ? ' ' + customUpiId : ''})`
-        : razorpayTab === 'card'
-          ? 'Razorpay Secure Card'
-          : `Razorpay Netbanking (${selectedBank})`
-
       const orderData: OrderDetails = {
         orderId: generatedOrderId,
         customerName: customerName.trim(),
@@ -147,18 +131,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         city: city.trim(),
         state: sanitizeInput(state),
         postalCode: postalCode.trim(),
-        paymentMethod: paymentMethodLabel,
+        paymentMethod: 'Not processed — demo checkout only',
         paymentTimestamp: formattedTimestamp,
         items: [...cartItems],
         subtotal,
         shipping: deliveryFee,
         total: grandTotal,
-        status: 'paid'
+        status: 'pending'
       }
 
       void onOrderSuccess(orderData).then(() => {
-        setIsGatewayProcessing(false)
-        setIsRazorpayPopupOpen(false)
+        setIsSavingDemoOrder(false)
+        setIsPaymentPreviewOpen(false)
         setCompletedOrder(orderData)
         confetti({
           particleCount: 90,
@@ -168,8 +152,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         })
       }).catch(error => {
         console.error('Unable to save completed order:', error)
-        setIsGatewayProcessing(false)
-        setFormErrors([error instanceof Error ? error.message : 'Payment completed, but your order could not be saved to your account. Please contact support before retrying payment.'])
+        setIsSavingDemoOrder(false)
+        setFormErrors([error instanceof Error ? error.message : 'The demo order request could not be saved. No payment was processed. Please try again.'])
       })
     }, 1600)
   }
@@ -183,12 +167,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }).join('\n')
 
     return [
-      '✨ *NEW AUREL ORDER CONFIRMATION* ✨',
+      `✨ *NEW ${settings.storeName || 'AUREL'} ORDER REQUEST* ✨`,
       '',
       `*Order ID:* ${order.orderId}`,
-      `*Payment Timestamp:* ${order.paymentTimestamp}`,
-      `*Payment Status:* Paid via ${order.paymentMethod}`,
-      `*Amount Paid:* ₹${order.total}`,
+      `*Order Submitted:* ${order.paymentTimestamp}`,
+      `*Payment Status:* ${order.status === 'paid' ? 'Recorded as paid; not independently verified' : 'Not processed — pending payment'}`,
+      `*Order Total:* ₹${order.total}`,
       '',
       '*CUSTOMER DETAILS*',
       `*Name:* ${order.customerName}`,
@@ -200,12 +184,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       '*ITEMS ORDERED*',
       itemsSummary,
       '',
-      'Made With Love For You · AUREL Bespoke Archives'
+      `${settings.tagline || 'Made With Love For You'} · ${settings.storeName || 'AUREL'} Bespoke Archives`
     ].filter(Boolean).join('\n')
   }
 
   const getWhatsAppUrl = (order: OrderDetails) => {
-    const brandWhatsAppNumber = '919999200913'
+    const brandWhatsAppNumber = settings.whatsappNumber.replace(/\D/g, '') || '919999200913'
     const message = formatWhatsAppMessage(order)
     return `https://wa.me/${brandWhatsAppNumber}?text=${encodeURIComponent(message)}`
   }
@@ -241,10 +225,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </span>
               <div>
                 <h3 className="font-serif-title text-xl font-normal tracking-wide">
-                  {completedOrder ? 'Payment Verified & Confirmed' : 'Checkout & Razorpay Payment'}
+                  {completedOrder ? 'Order Request Received' : 'Checkout'}
                 </h3>
                 <span className="text-[11px] text-[#8E7973] dark:text-[#A79690] block">
-                  {completedOrder ? 'Order received with gratitude' : 'End to end encrypted order with WhatsApp concierge dispatch'}
+                  {completedOrder ? 'This demo checkout did not process a payment' : 'Enter your details to prepare an order request'}
                 </span>
               </div>
             </div>
@@ -277,13 +261,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <div>
                   <span className="text-xs uppercase tracking-widest text-[#B36D6D] font-semibold">
-                    Payment Successful · {completedOrder.orderId}
+                    Order Saved · {completedOrder.orderId}
                   </span>
                   <h2 className="font-serif-title text-3xl font-light mt-1">
                     Thank you, {completedOrder.customerName}
                   </h2>
                   <p className="font-editorial text-base text-[#7D6B65] dark:text-[#BBAAA3] mt-2 max-w-md mx-auto">
-                    Your bespoke keepsake order has been verified at {completedOrder.paymentTimestamp}
+                    Your order request was saved at {completedOrder.paymentTimestamp}. No payment was processed by this demo checkout.
                   </p>
                 </div>
 
@@ -292,13 +276,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   isDarkMode ? 'bg-[#221B1A] border-[#382C29]' : 'bg-[#FFFFFF] border-[#E8D4CB]'
                 }`}>
                   <div className="flex justify-between pb-2 border-b border-black/5 dark:border-white/5 font-semibold text-sm">
-                    <span>Amount Transacted</span>
+                    <span>Order Total</span>
                     <span className="text-[#B36D6D] font-serif-title text-lg tabular-nums">
                       ₹{completedOrder.total.toLocaleString('en-IN')}
                     </span>
                   </div>
                   <div className="flex justify-between text-[#8E7973]">
-                    <span>Payment Method</span>
+                    <span>Payment status</span>
                     <span className="text-[#2C2422] dark:text-[#EAE0DA] font-medium">{completedOrder.paymentMethod}</span>
                   </div>
                   <div className="flex justify-between text-[#8E7973]">
@@ -323,7 +307,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 <div className="max-w-lg mx-auto text-left">
                   <div className="flex items-center justify-between mb-1.5 px-1">
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[#B36D6D]">
-                      WhatsApp Transmitted Message
+                      WhatsApp message preview
                     </span>
                     <button
                       onClick={() => handleCopyWhatsAppMessage(completedOrder)}
@@ -372,7 +356,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </div>
               </div>
             ) : (
-              /* Checkout Form & Razorpay Trigger */
+              /* Checkout form and demo-order handoff */
               <div className="space-y-6">
                 
                 {/* Test Helper Bar */}
@@ -574,27 +558,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <span>{deliveryFee === 0 ? 'Complimentary' : `₹${deliveryFee}`}</span>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-black/5 dark:border-white/5 font-serif-title text-base font-semibold">
-                    <span>Payable Amount</span>
+                    <span>Order total (not charged)</span>
                     <span className="text-xl text-[#B36D6D] tabular-nums">
                       ₹{grandTotal.toLocaleString('en-IN')}
                     </span>
                   </div>
                 </div>
 
-                {/* Action: Open Razorpay Gateway Modal */}
+                {/* Open order-request confirmation */}
                 <div>
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={handleInitiateRazorpay}
+                    onClick={handleOpenPaymentPreview}
                     className="w-full py-4 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] text-white text-xs font-semibold uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2"
                   >
                     <Lock className="w-4 h-4" />
-                    <span>Open Razorpay & UPI Payment Popup · ₹{grandTotal.toLocaleString('en-IN')}</span>
+                    <span>Continue to demo checkout (no payment processing)</span>
                   </motion.button>
 
                   <p className="text-[10px] text-center text-[#9A8781] mt-2">
-                    Secured by Razorpay Standard Gateway with instant WhatsApp order receipt
+                    Demo checkout only. This app is not connected to a payment provider.
                   </p>
                 </div>
 
@@ -604,9 +588,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
         </motion.div>
 
-        {/* Razorpay Standard Payment Gateway Modal Popup */}
+        {/* Payment UI preview; no provider request is made. */}
         <AnimatePresence>
-          {isRazorpayPopupOpen && (
+          {isPaymentPreviewOpen && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -620,25 +604,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                 className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden text-neutral-900 border border-neutral-200"
               >
-                {/* Razorpay Brand Header */}
-                <div className="bg-[#0C2340] text-white p-5 flex items-center justify-between">
+                <div className="bg-[#302622] text-white p-5 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white font-bold text-base">
-                      R
+                    <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white">
+                      <ShieldCheck className="h-5 w-5" />
                     </div>
                     <div>
-                      <div className="text-[10px] uppercase tracking-widest text-[#528FF0] font-semibold">
-                        Razorpay Trusted Gateway
+                      <div className="text-[10px] uppercase tracking-widest text-amber-200 font-semibold">
+                        Demo only · no payment connection
                       </div>
                       <h4 className="font-serif text-base font-medium text-white">
-                        AUREL Keepsakes
+                        Order request
                       </h4>
                     </div>
                   </div>
 
                   <div className="text-right">
                     <span className="text-[10px] text-white/70 block uppercase">
-                      Amount Due
+                      Order total · not charged
                     </span>
                     <span className="font-semibold text-lg text-white tabular-nums">
                       ₹{grandTotal.toLocaleString('en-IN')}
@@ -646,173 +629,34 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </div>
                 </div>
 
-                {/* Gateway Tabs */}
-                <div className="flex border-b border-neutral-200 bg-neutral-50 text-xs font-medium">
-                  <button
-                    type="button"
-                    onClick={() => setRazorpayTab('upi')}
-                    className={`flex-1 py-3 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
-                      razorpayTab === 'upi'
-                        ? 'border-[#0C2340] text-[#0C2340] font-semibold bg-white'
-                        : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                    }`}
-                  >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span>UPI Apps</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRazorpayTab('card')}
-                    className={`flex-1 py-3 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
-                      razorpayTab === 'card'
-                        ? 'border-[#0C2340] text-[#0C2340] font-semibold bg-white'
-                        : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                    }`}
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Cards</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRazorpayTab('netbanking')}
-                    className={`flex-1 py-3 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5 ${
-                      razorpayTab === 'netbanking'
-                        ? 'border-[#0C2340] text-[#0C2340] font-semibold bg-white'
-                        : 'border-transparent text-neutral-500 hover:text-neutral-800'
-                    }`}
-                  >
-                    <Building2 className="w-3.5 h-3.5" />
-                    <span>Netbanking</span>
-                  </button>
-                </div>
-
-                {/* Gateway Tab Body */}
                 <div className="p-5 space-y-4">
-                  {razorpayTab === 'upi' && (
-                    <div className="space-y-3">
-                      <div className="text-[11px] text-neutral-500 uppercase tracking-wider font-semibold">
-                        Select UPI Application
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {['Google Pay', 'PhonePe', 'Paytm', 'BHIM UPI', 'Cred', 'QR Code'].map((app) => (
-                          <button
-                            key={app}
-                            type="button"
-                            onClick={() => setSelectedUpiApp(app)}
-                            className={`p-2.5 rounded-xl border text-xs text-center transition-all ${
-                              selectedUpiApp === app
-                                ? 'border-[#0C2340] bg-[#0C2340]/5 font-semibold text-[#0C2340] ring-1 ring-[#0C2340]'
-                                : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'
-                            }`}
-                          >
-                            {app}
-                          </button>
-                        ))}
-                      </div>
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs leading-relaxed text-amber-950">
+                    This app is not connected to a payment provider. Do not enter UPI, card, bank, or payment credentials here. Saving this request records an order with pending payment status only.
+                  </div>
 
-                      <div className="pt-2">
-                        <label className="block text-[11px] text-neutral-500 uppercase tracking-wider mb-1">
-                          Or Enter UPI ID / VPA
-                        </label>
-                        <input
-                          type="text"
-                          value={customUpiId}
-                          onChange={(e) => setCustomUpiId(e.target.value)}
-                          placeholder="e.g. mobile@upi or name@okhdfcbank"
-                          className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs focus:outline-hidden focus:border-[#0C2340]"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {razorpayTab === 'card' && (
-                    <div className="space-y-3">
-                      <div className="text-[11px] text-neutral-500 uppercase tracking-wider font-semibold">
-                        Card Information
-                      </div>
-                      <div>
-                        <label className="block text-[10px] text-neutral-500 uppercase mb-0.5">Card Number</label>
-                        <input
-                          type="text"
-                          value={cardNumber}
-                          onChange={(e) => setCardNumber(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="block text-[10px] text-neutral-500 uppercase mb-0.5">Expiry Date</label>
-                          <input
-                            type="text"
-                            value={cardExpiry}
-                            onChange={(e) => setCardExpiry(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] text-neutral-500 uppercase mb-0.5">CVV</label>
-                          <input
-                            type="password"
-                            maxLength={4}
-                            value={cardCvv}
-                            onChange={(e) => setCardCvv(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {razorpayTab === 'netbanking' && (
-                    <div className="space-y-3">
-                      <div className="text-[11px] text-neutral-500 uppercase tracking-wider font-semibold">
-                        Popular Banks
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank'].map((b) => (
-                          <button
-                            key={b}
-                            type="button"
-                            onClick={() => setSelectedBank(b)}
-                            className={`p-2.5 rounded-xl border text-xs text-left transition-all ${
-                              selectedBank === b
-                                ? 'border-[#0C2340] bg-[#0C2340]/5 font-semibold text-[#0C2340] ring-1 ring-[#0C2340]'
-                                : 'border-neutral-200 text-neutral-700 hover:bg-neutral-50'
-                            }`}
-                          >
-                            {b}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Gateway Action Buttons */}
                   <div className="pt-2 space-y-2">
                     <button
                       type="button"
-                      disabled={isGatewayProcessing}
-                      onClick={handleConfirmRazorpayPayment}
-                      className="w-full py-3.5 rounded-2xl bg-[#0C2340] hover:bg-[#163863] text-white text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-md"
+                      disabled={isSavingDemoOrder}
+                      onClick={handleSaveDemoOrder}
+                      className="w-full py-3.5 rounded-2xl bg-[#302622] hover:bg-[#4a3932] text-white text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-md"
                     >
-                      {isGatewayProcessing ? (
+                      {isSavingDemoOrder ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Processing Razorpay Handshake...</span>
+                          <span>Saving demo order request...</span>
                         </>
                       ) : (
                         <>
                           <Lock className="w-3.5 h-3.5" />
-                          <span>Simulate Razorpay Payment · ₹{grandTotal.toLocaleString('en-IN')}</span>
+                          <span>Save demo order request · ₹{grandTotal.toLocaleString('en-IN')}</span>
                         </>
                       )}
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => setIsRazorpayPopupOpen(false)}
+                      onClick={() => setIsPaymentPreviewOpen(false)}
                       className="w-full py-2.5 text-xs text-neutral-500 hover:text-neutral-800 transition-colors"
                     >
                       Cancel and return
@@ -822,7 +666,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 {/* Footer security branding */}
                 <div className="bg-neutral-100 p-3 text-center text-[10px] text-neutral-500 border-t border-neutral-200">
-                  PCI DSS Level 1 Certified · 256 Bit Encryption Powered by Razorpay
+                  Do not enter real payment credentials. No payment is processed here.
                 </div>
               </motion.div>
             </motion.div>

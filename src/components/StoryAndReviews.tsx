@@ -1,22 +1,31 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { Star, Heart, Sparkles, Send, CheckCircle2, Mail, MessageCircle, Shield, Award } from 'lucide-react'
-import { REVIEWS } from '../data/products'
+import { Star, Heart, Sparkles, Send, CheckCircle2, Mail, MessageCircle, Phone, Shield, Award } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
+import type { StoreReview, StoreSettings } from '../types'
 
 interface StoryAndReviewsProps {
   isDarkMode: boolean
   onExploreGifts: () => void
+  settings: StoreSettings
+  aboutText?: string
+  reviews: StoreReview[]
 }
 
 export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
   isDarkMode,
-  onExploreGifts
+  onExploreGifts,
+  settings,
+  aboutText,
+  reviews
 }) => {
   const [activeReviewIndex, setActiveReviewIndex] = useState(0)
   const [supportMessageSent, setSupportMessageSent] = useState(false)
   const [supportEmail, setSupportEmail] = useState('')
   const [supportNote, setSupportNote] = useState('')
+  useEffect(() => {
+    setActiveReviewIndex(index => reviews.length ? index % reviews.length : 0)
+  }, [reviews.length])
 
   const trustPillars = [
     {
@@ -97,7 +106,7 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
               <span className="italic font-normal text-[#B36D6D]">It is the thought behind it.</span>
             </h2>
             <p className="font-sans-body text-sm text-[#7D6B65] dark:text-[#BAAAA3] mt-4 leading-relaxed">
-              At AUREL, we believe the best gifts are not simply bought. They are thought about, personalized, and given with meaning. Every piece is created to make someone smile, feel loved, and cherish the moment long after the gift is opened.
+              {aboutText || 'At AUREL, we believe the best gifts are not simply bought. They are thought about, personalized, and given with meaning. Every piece is created to make someone smile, feel loved, and cherish the moment long after the gift is opened.'}
             </p>
           </div>
 
@@ -147,31 +156,31 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
           </h2>
 
           {/* Active Review Spotlight */}
-          <div className="min-h-[160px] flex flex-col justify-center max-w-3xl mx-auto">
+          {reviews.length ? <div className="min-h-[160px] flex flex-col justify-center max-w-3xl mx-auto">
             <p className="font-editorial text-xl sm:text-2xl lg:text-3xl font-light italic leading-relaxed text-[#2C2321] dark:text-[#F3EBE6]">
-              “{REVIEWS[activeReviewIndex].comment}”
+              “{reviews[activeReviewIndex].body}”
             </p>
 
             <div className="mt-6 flex flex-col items-center justify-center gap-1">
               <div className="flex items-center gap-1 text-[#B36D6D]">
-                {[...Array(5)].map((_, i) => (
+                {[...Array(reviews[activeReviewIndex].rating)].map((_, i) => (
                   <Star key={i} className="w-4 h-4 fill-[#B36D6D]" />
                 ))}
               </div>
               <span className="font-serif-title text-base font-semibold mt-1">
-                {REVIEWS[activeReviewIndex].name} · {REVIEWS[activeReviewIndex].city}
+                {reviews[activeReviewIndex].customerName}
               </span>
               <span className="text-xs text-[#8E7973] dark:text-[#A79690]">
-                {REVIEWS[activeReviewIndex].occasion} · {REVIEWS[activeReviewIndex].productName}
+                {reviews[activeReviewIndex].title || reviews[activeReviewIndex].productName} · {reviews[activeReviewIndex].productName}
               </span>
             </div>
-          </div>
+          </div> : <p className="mx-auto max-w-xl rounded-2xl border border-[#E8D4CB] bg-white/70 px-5 py-8 text-sm text-[#7D6B65] dark:bg-[#201A19] dark:text-[#BAAAA3]">Customer reviews will appear here after they are submitted and approved.</p>}
 
           {/* Review Switcher Dots */}
-          <div className="flex justify-center items-center gap-2 mt-8">
-            {REVIEWS.map((_, idx) => (
+          {reviews.length > 1 && <div className="flex justify-center items-center gap-2 mt-8">
+            {reviews.map((review, idx) => (
               <button
-                key={idx}
+                key={review.id}
                 onClick={() => setActiveReviewIndex(idx)}
                 aria-label={`View review ${idx + 1}`}
                 className={`h-2 rounded-full transition-all duration-300 ${
@@ -181,11 +190,11 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
                 }`}
               />
             ))}
-          </div>
+          </div>}
 
-          <div className="mt-8 text-xs text-[#8E7973] dark:text-[#A89690] tracking-wider uppercase font-medium">
-            ★★★★★ 4.9 / 5 Overall Rating Based on 200+ Cherished Deliveries
-          </div>
+          {reviews.length > 0 && <div className="mt-8 text-xs text-[#8E7973] dark:text-[#A89690] tracking-wider uppercase font-medium">
+            {`Average ${((reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length)).toFixed(1)} / 5 from ${reviews.length} customer review${reviews.length === 1 ? '' : 's'}`}
+          </div>}
 
         </div>
       </section>
@@ -256,23 +265,22 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
               </p>
 
               <div className="mt-6 space-y-3 text-xs">
-                <div className="flex items-center gap-2.5">
+                {settings.contactEmail && <div className="flex items-center gap-2.5">
                   <Mail className="w-4 h-4 text-[#B36D6D]" />
-                  <a href="mailto:aruelstudio22@gmail.com" className="font-medium hover:text-[#B36D6D]">
-                    aruelstudio22@gmail.com
+                  <a href={`mailto:${settings.contactEmail}`} className="font-medium hover:text-[#B36D6D]">
+                    {settings.contactEmail}
                   </a>
-                </div>
-                <div className="flex items-start gap-2.5">
+                </div>}
+                {settings.whatsappNumber && <div className="flex items-start gap-2.5">
                   <MessageCircle className="w-4 h-4 text-[#B36D6D]" />
-                  <div className="flex flex-col gap-2 font-medium">
-                    <a href="https://wa.me/919999200913" target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">
-                      WhatsApp: +91 99992 00913
-                    </a>
-                    <a href="https://wa.me/917042640417" target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">
-                      WhatsApp: +91 70426 40417
-                    </a>
-                  </div>
-                </div>
+                  <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:text-[#B36D6D]">
+                    WhatsApp concierge: {settings.whatsappNumber}
+                  </a>
+                </div>}
+                {settings.phone && <div className="flex items-center gap-2.5">
+                  <Phone className="w-4 h-4 text-[#B36D6D]" />
+                  <a href={`tel:${settings.phone}`} className="font-medium hover:text-[#B36D6D]">Phone: {settings.phone}</a>
+                </div>}
               </div>
             </div>
 

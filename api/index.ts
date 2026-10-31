@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   accountOrdersHandler,
+  accountReviewHandler,
   changePasswordHandler,
   chatHistoryHandler,
   confirmEmailChangeHandler,
@@ -37,6 +38,7 @@ const routes: Record<string, ApiHandler> = {
   '/api/auth/profile': profileHandler,
   '/api/auth/change-email': requestEmailChangeHandler,
   '/api/auth/orders': accountOrdersHandler,
+  '/api/auth/reviews': accountReviewHandler,
   '/api/auth/change-password': changePasswordHandler,
   '/api/auth/delete-account': deleteAccountHandler,
   '/api/auth/confirm-email-change': confirmEmailChangeHandler,

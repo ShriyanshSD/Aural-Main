@@ -42,6 +42,9 @@ const readApiResponse = async <T,>(response: Response, action: string): Promise<
   }
 }
 
+const uniqueOrderProducts = (items: AccountOrder['order']['items']) =>
+  Array.from(new Map(items.map(item => [item.productId, item])).values())
+
 export const AccountModal: React.FC<AccountModalProps> = ({
   isOpen,
   initialSection,
@@ -81,9 +84,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [isDeleting, setIsDeleting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isLoadingOrders, setIsLoadingOrders] = useState(false)
+  const [approvingOrderId, setApprovingOrderId] = useState('')
   const [isEditingEmail, setIsEditingEmail] = useState(false)
   const [deleteStep, setDeleteStep] = useState(0)
   const [orders, setOrders] = useState<AccountOrder[]>([])
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: number; title: string; body: string }>>({})
+  const [submittingReviewKey, setSubmittingReviewKey] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const selectedState = useMemo(
@@ -303,6 +309,64 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete your account.')
     } finally {
       setIsDeleting(false)
+    }
+  }
+
+  const approveProof = async (orderId: string) => {
+    if (approvingOrderId) return
+    setError('')
+    setNotice('')
+    setApprovingOrderId(orderId)
+    try {
+      const response = await fetch('/api/auth/orders', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId })
+      })
+      const data = await readApiResponse<{ success?: boolean; error?: string }>(response, 'Approving the proof')
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to approve this proof.')
+      setOrders(current => current.map(item => item.order.orderId === orderId
+        ? { ...item, productionStatus: 'approved_for_production', proofApproved: true }
+        : item))
+      setNotice('Proof approved. Your order can now move into production.')
+    } catch (approvalError) {
+      setError(approvalError instanceof Error ? approvalError.message : 'Unable to approve this proof.')
+    } finally {
+      setApprovingOrderId('')
+    }
+  }
+
+  const submitReview = async (orderId: string, productId: string) => {
+    const key = `${orderId}:${productId}`
+    const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
+    if (draft.body.trim().length < 10) {
+      setError('Reviews must contain at least 10 characters.')
+      return
+    }
+    if (submittingReviewKey) return
+    setError('')
+    setNotice('')
+    setSubmittingReviewKey(key)
+    try {
+      const response = await fetch('/api/auth/reviews', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, productId, rating: draft.rating, title: draft.title.trim(), body: draft.body.trim() })
+      })
+      const data = await readApiResponse<{ success?: boolean; error?: string }>(response, 'Submitting your review')
+      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to submit your review.')
+      setOrders(current => current.map(accountOrder => accountOrder.order.orderId === orderId
+        ? { ...accountOrder, reviewedProductIds: [...new Set([...(accountOrder.reviewedProductIds ?? []), productId])] }
+        : accountOrder))
+      setNotice('Review submitted. It will appear publicly after owner approval.')
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : 'Unable to submit your review.')
+    } finally {
+      setSubmittingReviewKey('')
     }
   }
 
@@ -543,16 +607,41 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {orders.map(({ order, createdAt }) => (
+                      {orders.map(({ order, createdAt, productionStatus, proofApproved, proofUrl, fulfillmentStatus, reviewedProductIds }) => (
                         <article key={`${order.orderId}-${createdAt}`} className={`rounded-2xl border p-4 sm:p-5 ${inset}`}>
                           <div className="flex flex-wrap items-start justify-between gap-2 border-b border-black/5 pb-3 dark:border-white/10">
                             <div><p className="text-[10px] font-semibold uppercase tracking-wider text-[#9A8781]">Order</p><h3 className="font-semibold">{order.orderId}</h3></div>
                             <div className="text-right"><p className="text-sm font-semibold">₹{order.total.toLocaleString('en-IN')}</p><p className="text-[10px] text-[#8E7973] dark:text-[#A79690]">{new Date(createdAt).toLocaleDateString()}</p></div>
                           </div>
                           <ul className="mt-3 space-y-2 text-xs">
-                            {order.items.map((item, index) => <li key={`${item.productId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 truncate">{item.name} × {item.quantity}</span><span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span></li>)}
+                            {order.items.map((item, index) => <li key={`${item.productId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 truncate">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span><span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span></li>)}
                           </ul>
                           <p className="mt-3 flex items-start gap-1.5 text-[11px] text-[#8E7973] dark:text-[#A79690]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{[order.address, order.city, order.state, order.postalCode].filter(Boolean).join(', ')}</p>
+                          {productionStatus === 'awaiting_customer_approval' && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+                            <span className="text-xs">A proof is awaiting your review.</span>
+                            {proofUrl && <a href={proofUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-[#9E5B5B] underline">Open proof</a>}
+                            <button type="button" disabled={Boolean(approvingOrderId)} onClick={() => void approveProof(order.orderId)} className="rounded-lg bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                              {approvingOrderId === order.orderId ? 'Approving…' : 'Approve proof'}
+                            </button>
+                          </div>}
+                          {proofApproved && <p className="mt-3 text-xs font-medium text-emerald-700">Proof approved for production</p>}
+                          {fulfillmentStatus === 'delivered' && uniqueOrderProducts(order.items).some(item => !(reviewedProductIds ?? []).includes(item.productId)) && <section className="mt-4 space-y-3 border-t border-black/5 pt-4 dark:border-white/10">
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-[#8E7973] dark:text-[#A79690]">Share a product review</h4>
+                            {uniqueOrderProducts(order.items).filter(item => !(reviewedProductIds ?? []).includes(item.productId)).map(item => {
+                              const key = `${order.orderId}:${item.productId}`
+                              const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
+                              return <form key={key} onSubmit={event => { event.preventDefault(); void submitReview(order.orderId, item.productId) }} className={`space-y-2 rounded-xl border p-3 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
+                                <p className="text-xs font-semibold">{item.name}</p>
+                                <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+                                  <label className="text-[10px] font-medium">Rating<select value={draft.rating} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, rating: Number(event.target.value) } }))} className={inputClass}><option value={5}>5 stars</option><option value={4}>4 stars</option><option value={3}>3 stars</option><option value={2}>2 stars</option><option value={1}>1 star</option></select></label>
+                                  <label className="text-[10px] font-medium">Title (optional)<input maxLength={120} value={draft.title} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, title: event.target.value } }))} className={inputClass} /></label>
+                                </div>
+                                <label className="block text-[10px] font-medium">Your review<textarea required minLength={10} maxLength={3000} rows={3} value={draft.body} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, body: event.target.value } }))} className={inputClass} /></label>
+                                <button type="submit" disabled={Boolean(submittingReviewKey)} className="rounded-lg bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{submittingReviewKey === key ? 'Submitting…' : 'Submit for moderation'}</button>
+                              </form>
+                            })}
+                          </section>}
+                          {(reviewedProductIds ?? []).length > 0 && <p className="mt-3 text-xs text-[#8E7973] dark:text-[#A79690]">Submitted reviews appear publicly only after owner approval.</p>}
                         </article>
                       ))}
                     </div>

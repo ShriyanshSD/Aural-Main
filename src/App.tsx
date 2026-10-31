@@ -10,7 +10,7 @@ import { ArrowUp, Sparkles } from 'lucide-react'
 import { Navigation } from './components/Navigation'
 import { Hero } from './components/Hero'
 import type { AuthMode } from './components/AuthModal'
-import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser, StoreCategory, StoreSettings } from './types'
+import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser, StoreCategory, StoreSettings, StorefrontContent, StoreCollection, StoreReview } from './types'
 import { PRODUCTS } from './data/products'
 
 const AdminApp = React.lazy(() => import('./AdminApp'))
@@ -98,6 +98,9 @@ const isCartItem = (value: unknown): value is CartItem => {
     && Number.isInteger(item.quantity)
     && item.quantity > 0
     && typeof item.imageUrl === 'string'
+    && ((item.variantId === undefined && item.variantName === undefined)
+      || (typeof item.variantId === 'string' && item.variantId.length > 0
+        && typeof item.variantName === 'string' && item.variantName.length > 0))
     && (item.finish === undefined || item.finish === 'matte' || item.finish === 'gloss')
     && (item.recipientName === undefined || typeof item.recipientName === 'string')
     && (item.customMessage === undefined || typeof item.customMessage === 'string')
@@ -142,9 +145,22 @@ const initialStoreSettings: StoreSettings = {
   contactEmail: 'aruelstudio22@gmail.com',
   phone: '',
   whatsappNumber: '919999200913',
-  instagramUrl: '',
+  instagramUrl: 'https://www.instagram.com/_.aurelstudio._?psln=YnRvcGt3dTNyM2V3',
   facebookUrl: '',
   deliveryNote: 'Pan India Delivery'
+}
+const initialStorefrontContent: StorefrontContent = {
+  heroEyebrow: 'A memory becomes a gift becomes a keepsake',
+  heroTitle: 'Make moments worth keeping.',
+  heroSubtitle: 'Thoughtful gifts, made personal.',
+  heroDescription: 'From custom magazines and beautiful bouquets to curated hampers and thoughtful keepsakes, AUREL helps you turn your favourite moments into something unforgettable.',
+  heroCtaLabel: 'Explore AUREL',
+  secondaryCtaLabel: 'Create a Memory',
+  heroImageUrl: '/hero-image.png',
+  announcement: '',
+  aboutText: 'At AUREL, we believe the best gifts are thought about, personalized, and given with meaning.',
+  deliveryPolicy: '',
+  returnsPolicy: ''
 }
 
 const readSignupResumeState = (): SignupResumeState | null => {
@@ -187,7 +203,11 @@ function StorefrontApp() {
   const [activeCategory, setActiveCategory] = useState<ProductCategory>(signupResume?.activeCategory ?? 'all')
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(PRODUCTS)
   const [storeCategories, setStoreCategories] = useState<StoreCategory[]>(initialCategories)
+  const [storeCollections, setStoreCollections] = useState<StoreCollection[]>([])
+  const [storeReviews, setStoreReviews] = useState<StoreReview[]>([])
+  const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(initialStoreSettings)
+  const [storefrontContent, setStorefrontContent] = useState<StorefrontContent>(initialStorefrontContent)
   const [isCatalogLoaded, setIsCatalogLoaded] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -258,14 +278,20 @@ function StorefrontApp() {
         const data = await response.json() as {
           products?: Product[]
           categories?: StoreCategory[]
+          collections?: StoreCollection[]
+          reviews?: StoreReview[]
           settings?: Partial<StoreSettings>
+          content?: Partial<StorefrontContent>
         }
         if (!Array.isArray(data.products) || !Array.isArray(data.categories)) {
           throw new Error('The catalog service returned an invalid response.')
         }
         setCatalogProducts(data.products)
         setStoreCategories(data.categories)
+        setStoreCollections(Array.isArray(data.collections) ? data.collections : [])
+        setStoreReviews(Array.isArray(data.reviews) ? data.reviews : [])
         setStoreSettings(current => ({ ...current, ...data.settings }))
+        setStorefrontContent(current => ({ ...current, ...data.content }))
       } catch (error) {
         console.error('Unable to load the database storefront catalog, using the bundled catalog:', error)
       } finally {
@@ -274,6 +300,10 @@ function StorefrontApp() {
     }
     void loadCatalog()
   }, [])
+
+  useEffect(() => {
+    document.title = `${storeSettings.storeName || 'AUREL'} · ${storeSettings.tagline || 'Made With Love For You'}`
+  }, [storeSettings.storeName, storeSettings.tagline])
 
   useEffect(() => {
     if (activeCategory !== 'all' && !storeCategories.some(category => category.slug === activeCategory)) {
@@ -507,6 +537,7 @@ function StorefrontApp() {
   }
 
   const handleSelectCategory = (category: ProductCategory) => {
+    setSelectedCollectionId('')
     setActiveCategory(category)
     setActiveTab('shop')
     requestAnimationFrame(() => {
@@ -532,15 +563,21 @@ function StorefrontApp() {
   const handleAddToCart = (item: CartItem): boolean => {
     const product = catalogProducts.find(candidate => candidate.id === item.productId)
     const currentQuantity = cartItems
-      .filter(cartItem => cartItem.productId === item.productId)
+      .filter(cartItem => cartItem.productId === item.productId && cartItem.variantId === item.variantId)
       .reduce((total, cartItem) => total + cartItem.quantity, 0)
-    if (typeof product?.stockQuantity === 'number' && currentQuantity + item.quantity > product.stockQuantity) {
+    const variant = product?.variants?.find(candidate => candidate.id === item.variantId)
+    if (product?.variants?.length && !variant) {
+      setSelectedProduct(product)
+      return false
+    }
+    const stockLimit = variant ? variant.stockQuantity : product?.stockQuantity
+    if (typeof stockLimit === 'number' && currentQuantity + item.quantity > stockLimit) {
       setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'unavailable' })
       return false
     }
     setCartItems(prev => {
       const existing = prev.find(
-        i => i.productId === item.productId && i.finish === item.finish && i.recipientName === item.recipientName
+        i => i.productId === item.productId && i.variantId === item.variantId && i.finish === item.finish && i.recipientName === item.recipientName
       )
       if (existing) {
         return prev.map(i => 
@@ -557,6 +594,10 @@ function StorefrontApp() {
 
   const handleQuickAdd = (product: Product, e: React.MouseEvent): boolean => {
     e.stopPropagation()
+    if (product.variants?.length) {
+      setSelectedProduct(product)
+      return false
+    }
     if (product.stockQuantity === 0) {
       setCartFeedback({ productName: product.name, timestamp: Date.now(), kind: 'unavailable' })
       return false
@@ -574,6 +615,11 @@ function StorefrontApp() {
   }
 
   const handleAddWishlistItemToBag = (product: Product) => {
+    if (product.variants?.length) {
+      setIsWishlistOpen(false)
+      setSelectedProduct(product)
+      return
+    }
     const addedToBag = handleAddToCart({
       cartId: `${product.id}_${Date.now()}`,
       productId: product.id,
@@ -593,10 +639,12 @@ function StorefrontApp() {
   const handleUpdateQuantity = (cartId: string, delta: number) => {
     const item = cartItems.find(cartItem => cartItem.cartId === cartId)
     const product = item && catalogProducts.find(candidate => candidate.id === item.productId)
-    const currentProductQuantity = item
-      ? cartItems.filter(cartItem => cartItem.productId === item.productId).reduce((total, cartItem) => total + cartItem.quantity, 0)
+    const currentVariantQuantity = item
+      ? cartItems.filter(cartItem => cartItem.productId === item.productId && cartItem.variantId === item.variantId).reduce((total, cartItem) => total + cartItem.quantity, 0)
       : 0
-    if (item && typeof product?.stockQuantity === 'number' && currentProductQuantity + delta > product.stockQuantity) {
+    const variant = product?.variants?.find(candidate => candidate.id === item?.variantId)
+    const stockLimit = variant ? variant.stockQuantity : product?.stockQuantity
+    if (item && typeof stockLimit === 'number' && currentVariantQuantity + delta > stockLimit) {
       setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'unavailable' })
       return
     }
@@ -846,12 +894,16 @@ function StorefrontApp() {
                 {/* Hero Section */}
                 <Hero
                   isDarkMode={isDarkMode}
+                  content={storefrontContent}
                   onExplore={() => {
                     const el = document.getElementById('collection-grid')
                     if (el) smoothScrollTo(el)
                   }}
                   onCreateMemory={() => setActiveTab('builder')}
                 />
+                {storefrontContent.announcement && <div role="status" className="border-y border-[#E8D4CB] bg-[#F4E7E1] px-4 py-3 text-center text-sm text-[#714F49]">
+                  {storefrontContent.announcement}
+                </div>}
 
                 {/* Moments Section */}
                 <LazyViewport minHeight={300}>
@@ -871,8 +923,14 @@ function StorefrontApp() {
                 isDarkMode={isDarkMode}
                 products={catalogProducts}
                 categories={storeCategories}
+                collections={storeCollections}
+                activeCollectionId={selectedCollectionId}
+                onSelectCollection={collectionId => {
+                  setSelectedCollectionId(collectionId)
+                  setActiveCategory('all')
+                }}
                 activeCategory={activeCategory}
-                onSelectCategory={setActiveCategory}
+                onSelectCategory={category => { setSelectedCollectionId(''); setActiveCategory(category) }}
                 onSelectProduct={prod => setSelectedProduct(prod)}
                 onQuickAdd={handleQuickAdd}
                 wishlist={wishlist}
@@ -885,13 +943,16 @@ function StorefrontApp() {
               <>
                 {/* Magazine Feature Section with Live Preview */}
                 <LazyViewport minHeight={620}>
-                  <MagazineShowcase isDarkMode={isDarkMode} onCustomizeMagazine={handleCustomizeMagazine} />
+                  <MagazineShowcase isDarkMode={isDarkMode} settings={storeSettings} onCustomizeMagazine={handleCustomizeMagazine} />
                 </LazyViewport>
 
                 {/* Trust, Story, Testimonials & Concierge Support */}
                 <LazyViewport minHeight={760}>
                   <StoryAndReviews
                     isDarkMode={isDarkMode}
+                    settings={storeSettings}
+                    aboutText={storefrontContent.aboutText}
+                    reviews={storeReviews}
                     onExploreGifts={() => {
                       const el = document.getElementById('collection-grid')
                       if (el) smoothScrollTo(el)
@@ -957,13 +1018,14 @@ function StorefrontApp() {
         }}
       /></DeferredMount>
 
-      {/* Razorpay and WhatsApp Checkout Modal */}
+      {/* Demo checkout and WhatsApp order handoff */}
       <DeferredMount active={isCheckoutOpen}><CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         isDarkMode={isDarkMode}
         cartItems={cartItems}
         authUser={authUser}
+        settings={storeSettings}
         onOrderSuccess={handleOrderSuccess}
       /></DeferredMount>
 
@@ -1078,6 +1140,7 @@ function StorefrontApp() {
         <Footer
           isDarkMode={isDarkMode}
           settings={storeSettings}
+          content={storefrontContent}
           onSelectCategory={handleSelectCategory}
           onOpenStory={() => {
             setActiveTab('home')

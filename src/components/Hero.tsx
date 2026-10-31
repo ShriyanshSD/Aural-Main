@@ -1,17 +1,20 @@
 import React, { useState } from 'react'
 import { motion, useMotionValue, useSpring, useTransform } from 'motion/react'
 import { Sparkles, ArrowRight, BookOpen, Gift, Heart } from 'lucide-react'
+import type { StorefrontContent } from '../types'
 
 interface HeroProps {
   isDarkMode: boolean
   onExplore: () => void
   onCreateMemory: () => void
+  content: StorefrontContent
 }
 
 export const Hero: React.FC<HeroProps> = ({
   isDarkMode,
   onExplore,
-  onCreateMemory
+  onCreateMemory,
+  content
 }) => {
   // Gentle mouse parallax calculation
   const mouseX = useMotionValue(0)
@@ -78,11 +81,7 @@ export const Hero: React.FC<HeroProps> = ({
                 color: '#B36D6D'
               }}
             >
-              <span>A memory</span>
-              <span className="text-[#B36D6D]">→</span>
-              <span>becomes a gift</span>
-              <span className="text-[#B36D6D]">→</span>
-              <span>becomes a keepsake</span>
+              <span>{content.heroEyebrow}</span>
             </motion.div>
 
             {/* Display Headline */}
@@ -92,8 +91,7 @@ export const Hero: React.FC<HeroProps> = ({
               transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
               className="hero-headline font-serif-title text-4xl tracking-tight leading-[1.12] sm:text-5xl lg:text-6xl"
             >
-              Make moments <br />
-              <span className="italic font-normal text-[#B36D6D]">worth keeping.</span>
+              {content.heroTitle}
             </motion.h1>
 
             <motion.p
@@ -102,7 +100,7 @@ export const Hero: React.FC<HeroProps> = ({
               transition={{ duration: 0.9, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
               className="font-editorial text-xl sm:text-2xl text-[#8E5E58] dark:text-[#D5AFA7] font-light"
             >
-              Thoughtful gifts, made personal.
+              {content.heroSubtitle}
             </motion.p>
 
             <motion.p
@@ -113,7 +111,7 @@ export const Hero: React.FC<HeroProps> = ({
                 isDarkMode ? 'text-[#C9B9B3]' : 'text-[#67544F]'
               }`}
             >
-              From custom magazines and beautiful bouquets to curated hampers and thoughtful keepsakes, AUREL helps you turn your favourite moments into something unforgettable.
+              {content.heroDescription}
             </motion.p>
 
             {/* CTA Buttons */}
@@ -129,7 +127,7 @@ export const Hero: React.FC<HeroProps> = ({
                 onClick={onExplore}
                 className="px-7 py-3.5 rounded-full text-sm font-medium tracking-wide text-white bg-[#B36D6D] hover:bg-[#9E5B5B] shadow-md hover:shadow-lg transition-all flex items-center gap-2 group"
               >
-                <span>Explore AUREL</span>
+                <span>{content.heroCtaLabel}</span>
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
               </motion.button>
 
@@ -144,7 +142,7 @@ export const Hero: React.FC<HeroProps> = ({
                 }`}
               >
                 <Sparkles className="w-4 h-4 text-[#B36D6D]" />
-                <span>Create a Memory</span>
+                <span>{content.secondaryCtaLabel}</span>
               </motion.button>
             </motion.div>
 
@@ -178,7 +176,7 @@ export const Hero: React.FC<HeroProps> = ({
                 className="relative w-full max-w-sm aspect-[9/16] rounded-3xl overflow-hidden shadow-2xl border border-black/5 dark:border-white/10"
               >
                 <img
-                  src="/hero-image.png"
+                  src={content.heroImageUrl || '/hero-image.png'}
                   alt="AUREL bespoke memory magazine opened on a limestone table with florals"
                   referrerPolicy="no-referrer"
                   fetchPriority="high"
