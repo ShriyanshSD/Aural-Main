@@ -24,6 +24,8 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
   const [error, setError] = useState('')
   const [pollingError, setPollingError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isSubmittingWhatsApp, setIsSubmittingWhatsApp] = useState(false)
+  const [whatsAppError, setWhatsAppError] = useState('')
 
   const loadOrder = useCallback(async () => {
     const response = await fetch(`/api/auth/orders?orderId=${encodeURIComponent(orderId)}`, {
@@ -77,6 +79,31 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
   const paymentVerified = order?.paymentStatus === 'paid'
   const paidAndConfirmed = paymentVerified && order?.orderStatus === 'confirmed'
 
+  const proceedToWhatsApp = async () => {
+    if (!order || !config || isSubmittingWhatsApp) return
+    setIsSubmittingWhatsApp(true)
+    setWhatsAppError('')
+    const whatsappWindow = window.open('about:blank', '_blank')
+    try {
+      const response = await fetch('/api/auth/orders', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.orderId, submitForPayment: true })
+      })
+      const data = await readResponse<{ success?: boolean; error?: string }>(response)
+      if (!response.ok || !data.success) throw new Error(data.error || 'Your order could not be sent to AUREL. Please try again.')
+      const whatsappUrl = createWhatsAppUrl(order, config)
+      if (whatsappWindow && !whatsappWindow.closed) whatsappWindow.location.replace(whatsappUrl)
+      else window.location.assign(whatsappUrl)
+    } catch (submitError) {
+      whatsappWindow?.close()
+      setWhatsAppError(submitError instanceof Error ? submitError.message : 'Your order could not be sent to AUREL. Please try again.')
+      setIsSubmittingWhatsApp(false)
+    }
+  }
+
   return <main className={`min-h-screen px-4 py-8 sm:px-6 sm:py-12 ${surface}`}>
     <div className="mx-auto max-w-5xl">
       <header className="mb-8 flex items-center justify-between border-b border-[#B36D6D]/15 pb-5">
@@ -123,7 +150,7 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
                       <p className="mt-2 text-center font-serif-title text-2xl text-[#B36D6D]">₹{order.total.toLocaleString('en-IN')}</p>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-[#8E7973]">Open any UPI app on your mobile, scan this QR code and complete your payment.</p>
-                    <a href={createWhatsAppUrl(order, config)} target="_blank" rel="noopener noreferrer" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-3.5 text-center text-sm font-semibold text-white">After Payment - Proceed to WhatsApp <ArrowRight className="h-4 w-4" /></a>
+                    <button type="button" onClick={() => void proceedToWhatsApp()} disabled={isSubmittingWhatsApp} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-3.5 text-center text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70">{isSubmittingWhatsApp ? <><LoaderCircle className="h-4 w-4 animate-spin" />Preparing your WhatsApp message…</> : <>After Payment - Proceed to WhatsApp <ArrowRight className="h-4 w-4" /></>}</button>
                   </div>
                   <div className="md:hidden">
                     <h2 className="mb-3 font-serif-title text-xl">Pay using a UPI app</h2>
@@ -132,10 +159,11 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({
                       <p className="mt-2 font-serif-title text-3xl text-[#B36D6D]">₹{order.total.toLocaleString('en-IN')}</p>
                       <a href={createUpiPaymentUrl(order, config)} className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#B36D6D] px-5 py-4 text-sm font-semibold text-white">Pay Using UPI App <ArrowRight className="h-4 w-4" /></a>
                     </div>
-                    <a href={createWhatsAppUrl(order, config)} target="_blank" rel="noopener noreferrer" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-4 text-center text-sm font-semibold text-white">After Payment - Proceed to WhatsApp <ArrowRight className="h-4 w-4" /></a>
+                    <button type="button" onClick={() => void proceedToWhatsApp()} disabled={isSubmittingWhatsApp} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-4 text-center text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-wait disabled:opacity-70">{isSubmittingWhatsApp ? <><LoaderCircle className="h-4 w-4 animate-spin" />Preparing your WhatsApp message…</> : <>After Payment - Proceed to WhatsApp <ArrowRight className="h-4 w-4" /></>}</button>
                   </div>
                 </>}
               </div>
+              {whatsAppError && <p role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{whatsAppError}</p>}
               {!paymentVerified && order.orderStatus !== 'cancelled' && <p className={`mt-6 rounded-xl border p-4 text-xs leading-5 ${isDarkMode ? 'border-[#493936] bg-[#2A2320] text-[#D4C1B8]' : 'border-[#E8D8D0] bg-[#F7F0EC] text-[#705B54]'}`}>A confirmation email will also be sent after your payment is verified. Page refreshes every 5 seconds.</p>}
               {pollingError && <p role="status" className="mt-3 text-xs text-[#8E7973]">Could not refresh status just now. We&apos;ll try again automatically. {pollingError}</p>}
               {paymentVerified && <p className="mt-6 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200">{paidAndConfirmed ? 'Your payment has been verified and your order is confirmed.' : `Your payment is verified. Order status: ${order.orderStatus?.replaceAll('_', ' ')}.`}</p>}

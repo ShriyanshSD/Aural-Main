@@ -91,8 +91,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: number; title: string; body: string }>>({})
   const [orderExperienceRatings, setOrderExperienceRatings] = useState<Record<string, number>>({})
   const [openReviewOrderId, setOpenReviewOrderId] = useState('')
-  const [submittingReviewKey, setSubmittingReviewKey] = useState('')
-  const [submittingOrderRatingId, setSubmittingOrderRatingId] = useState('')
+  const [submittingFeedbackOrderId, setSubmittingFeedbackOrderId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const selectedState = useMemo(
@@ -341,62 +340,65 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     }
   }
 
-  const submitReview = async (orderId: string, productId: string) => {
-    const key = `${orderId}:${productId}`
-    const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
-    if (draft.body.trim().length < 10) {
-      setError('Reviews must contain at least 10 characters.')
+  const submitOrderFeedback = async (accountOrder: AccountOrder) => {
+    const { order, orderExperienceRating, reviewedProductIds = [] } = accountOrder
+    const orderId = order.orderId
+    if (submittingFeedbackOrderId) return
+    if (accountOrder.fulfillmentStatus !== 'delivered') {
+      setError('You can rate your order after it has been delivered.')
       return
     }
-    if (submittingReviewKey) return
     setError('')
     setNotice('')
-    setSubmittingReviewKey(key)
+    setSubmittingFeedbackOrderId(orderId)
     try {
-      const response = await fetch('/api/auth/reviews', {
-        method: 'POST',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, productId, rating: draft.rating, title: draft.title.trim(), body: draft.body.trim() })
-      })
-      const data = await readApiResponse<{ success?: boolean; error?: string }>(response, 'Submitting your review')
-      if (!response.ok || !data.success) throw new Error(data.error || 'Unable to submit your review.')
-      setOrders(current => current.map(accountOrder => accountOrder.order.orderId === orderId
-        ? { ...accountOrder, reviewedProductIds: [...new Set([...(accountOrder.reviewedProductIds ?? []), productId])] }
-        : accountOrder))
-      setNotice('Review submitted. It will appear publicly after owner approval.')
-    } catch (reviewError) {
-      setError(reviewError instanceof Error ? reviewError.message : 'Unable to submit your review.')
-    } finally {
-      setSubmittingReviewKey('')
-    }
-  }
+      if (orderExperienceRating == null) {
+        const response = await fetch('/api/auth/orders', {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, orderExperienceRating: orderExperienceRatings[orderId] ?? 5 })
+        })
+        const data = await readApiResponse<{ success?: boolean; orderExperienceRating?: number; error?: string }>(response, 'Submitting your order rating')
+        if (!response.ok || !data.success || typeof data.orderExperienceRating !== 'number') throw new Error(data.error || 'Unable to submit your order rating.')
+        setOrders(current => current.map(item => item.order.orderId === orderId
+          ? { ...item, orderExperienceRating: data.orderExperienceRating }
+          : item))
+      }
 
-  const submitOrderRating = async (orderId: string) => {
-    if (submittingOrderRatingId) return
-    setError('')
-    setNotice('')
-    setSubmittingOrderRatingId(orderId)
-    try {
-      const response = await fetch('/api/auth/orders', {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, orderExperienceRating: orderExperienceRatings[orderId] ?? 5 })
-      })
-      const data = await readApiResponse<{ success?: boolean; orderExperienceRating?: number; error?: string }>(response, 'Submitting your order rating')
-      const rating = data.orderExperienceRating
-      if (!response.ok || !data.success || typeof rating !== 'number') throw new Error(data.error || 'Unable to submit your order rating.')
-      setOrders(current => current.map(accountOrder => accountOrder.order.orderId === orderId
-        ? { ...accountOrder, orderExperienceRating: rating }
-        : accountOrder))
-      setNotice('Order rating submitted. Thank you for your feedback.')
-    } catch (ratingError) {
-      setError(ratingError instanceof Error ? ratingError.message : 'Unable to submit your order rating.')
+      const unreviewedProducts = uniqueOrderProducts(order.items).filter(item => !reviewedProductIds.includes(item.productId))
+      const results = await Promise.allSettled(unreviewedProducts.map(async item => {
+        const key = `${orderId}:${item.productId}`
+        const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
+        const body = draft.body.trim()
+        if (body.length > 0 && body.length < 10) throw new Error(`${item.name}: a written review needs at least 10 characters.`)
+        const response = await fetch('/api/auth/reviews', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, productId: item.productId, rating: draft.rating, title: draft.title.trim(), body })
+        })
+        const data = await readApiResponse<{ success?: boolean; error?: string }>(response, 'Submitting your product feedback')
+        if (!response.ok || !data.success) throw new Error(data.error || `Unable to submit feedback for ${item.name}.`)
+        setOrders(current => current.map(savedOrder => savedOrder.order.orderId === orderId
+          ? { ...savedOrder, reviewedProductIds: [...new Set([...(savedOrder.reviewedProductIds ?? []), item.productId])] }
+          : savedOrder))
+      }))
+      const failedReviews = results.filter(result => result.status === 'rejected')
+      if (failedReviews.length) {
+        const firstError = failedReviews[0]
+        throw firstError.status === 'rejected' && firstError.reason instanceof Error
+          ? new Error(`${failedReviews.length} product review${failedReviews.length === 1 ? '' : 's'} could not be saved. ${firstError.reason.message}`)
+          : new Error('Some product feedback could not be saved. Please try again.')
+      }
+      setNotice('Thank you! Your order and product feedback has been saved for the AUREL team.')
+      setOpenReviewOrderId('')
+    } catch (feedbackError) {
+      setError(feedbackError instanceof Error ? feedbackError.message : 'Unable to submit your feedback.')
     } finally {
-      setSubmittingOrderRatingId('')
+      setSubmittingFeedbackOrderId('')
     }
   }
 
@@ -668,10 +670,11 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                             </button>
                           </div>}
                           {proofApproved && <p className="mt-3 text-xs font-medium text-emerald-700">Proof approved for production</p>}
-                          {fulfillmentStatus === 'delivered' && (orderExperienceRating == null || uniqueOrderProducts(order.items).some(item => !(reviewedProductIds ?? []).includes(item.productId))) && <section className="mt-4 border-t border-black/5 pt-4 dark:border-white/10">
-                            <button type="button" onClick={() => setOpenReviewOrderId(current => current === order.orderId ? '' : order.orderId)} aria-expanded={openReviewOrderId === order.orderId} className="text-xs font-semibold text-[#9A6560] underline decoration-[#B36D6D]/40 underline-offset-4">
-                              {openReviewOrderId === order.orderId ? 'Close review' : 'Rate your order'}
+                          <section className="mt-4 border-t border-black/5 pt-4 dark:border-white/10">
+                            <button type="button" disabled={fulfillmentStatus !== 'delivered'} onClick={() => setOpenReviewOrderId(current => current === order.orderId ? '' : order.orderId)} aria-expanded={openReviewOrderId === order.orderId} className="rounded-full border border-[#B36D6D]/35 px-4 py-2 text-xs font-semibold text-[#9A6560] transition-colors hover:bg-[#B36D6D]/10 disabled:cursor-not-allowed disabled:opacity-50">
+                              {openReviewOrderId === order.orderId ? 'Close rating' : 'Rate it'}
                             </button>
+                            {fulfillmentStatus !== 'delivered' && <p className="mt-2 text-[11px] text-[#8E7973] dark:text-[#A79690]">Rating becomes available after delivery.</p>}
                             {openReviewOrderId === order.orderId && <div className="mt-4 space-y-4">
                               <div>
                                 <p className="text-xs font-medium">How was your order experience?</p>
@@ -681,15 +684,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                                   {[1, 2, 3, 4, 5].map(rating => <button key={rating} type="button" aria-label={`${rating} stars`} aria-pressed={(orderExperienceRatings[order.orderId] ?? 5) === rating} onClick={() => setOrderExperienceRatings(current => ({ ...current, [order.orderId]: rating }))} className="rounded p-1 text-[#B36D6D]">
                                     <Star className={`h-5 w-5 ${(orderExperienceRatings[order.orderId] ?? 5) >= rating ? 'fill-[#B36D6D]' : ''}`} />
                                   </button>)}
-                                </div>
-                                <button type="button" disabled={submittingOrderRatingId === order.orderId} onClick={() => void submitOrderRating(order.orderId)} className="mt-2 rounded-lg border border-[#B36D6D]/40 px-3 py-2 text-xs font-semibold text-[#9A6560] disabled:opacity-50">
-                                  {submittingOrderRatingId === order.orderId ? 'Submitting…' : 'Submit order rating'}
-                                </button></>}
+                                </div></>}
                               </div>
                               {uniqueOrderProducts(order.items).filter(item => !(reviewedProductIds ?? []).includes(item.productId)).map(item => {
                                 const key = `${order.orderId}:${item.productId}`
                                 const draft = reviewDrafts[key] ?? { rating: 5, title: '', body: '' }
-                                return <form key={key} onSubmit={event => { event.preventDefault(); void submitReview(order.orderId, item.productId) }} className={`space-y-3 rounded-xl border p-3 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
+                                return <div key={key} className={`space-y-3 rounded-xl border p-3 ${isDarkMode ? 'border-[#3C302D] bg-[#1C1817]/60' : 'border-[#EFE3DD] bg-[#FAF6F2]'}`}>
                                   <p className="text-xs font-semibold">{item.name}</p>
                                   <div>
                                     <p className="text-[10px] font-medium">Product experience</p>
@@ -699,12 +699,15 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                                       </button>)}
                                     </div>
                                   </div>
-                                  <label className="block text-[10px] font-medium">Review<textarea required minLength={10} maxLength={3000} rows={3} value={draft.body} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, body: event.target.value } }))} className={inputClass} /></label>
-                                  <button type="submit" disabled={Boolean(submittingReviewKey)} className="rounded-lg bg-[#B36D6D] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{submittingReviewKey === key ? 'Submitting…' : 'Submit review'}</button>
-                                </form>
+                                  <label className="block text-[10px] font-medium">Written review (optional)<textarea maxLength={3000} rows={3} value={draft.body} onChange={event => setReviewDrafts(current => ({ ...current, [key]: { ...draft, body: event.target.value } }))} className={inputClass} placeholder="Tell us what you liked or what we could improve." /></label>
+                                </div>
                               })}
+                              <button type="button" disabled={submittingFeedbackOrderId === order.orderId} onClick={() => void submitOrderFeedback({ order, createdAt, productionStatus, proofApproved, proofUrl, fulfillmentStatus, orderExperienceRating, reviewedProductIds })} className="flex items-center justify-center gap-2 rounded-lg bg-[#B36D6D] px-4 py-3 text-xs font-semibold text-white transition-colors hover:bg-[#9E5B5B] disabled:opacity-60">
+                                {submittingFeedbackOrderId === order.orderId && <LoaderCircle className="h-4 w-4 animate-spin" />}
+                                {submittingFeedbackOrderId === order.orderId ? 'Saving feedback…' : 'Submit rating'}
+                              </button>
                             </div>}
-                          </section>}
+                          </section>
                           {(reviewedProductIds ?? []).length > 0 && <p className="mt-3 text-xs text-[#8E7973] dark:text-[#A79690]">Submitted reviews appear publicly only after owner approval.</p>}
                         </article>
                       ))}

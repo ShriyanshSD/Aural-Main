@@ -4,7 +4,7 @@ import { PRODUCTS } from './src/data/products.js'
 import type { Product, StorefrontContent } from './src/types/index.js'
 import { getSupabaseAuthKey, getSupabaseConfig, supabaseRequest } from './auth-handler.js'
 import { normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
-import { getConfirmationEmailStatus, sendOrderConfirmationEmail } from './email-service.js'
+import { sendOrderConfirmationEmail } from './email-service.js'
 
 interface AdminRequest extends IncomingMessage {
   body?: unknown
@@ -869,7 +869,8 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       return sendJson(res, 400, { error: 'Choose a supported analytics period.' })
     }
     const orderQuery = new URLSearchParams({
-      select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status',
+      whatsapp_submitted_at: 'not.is.null',
+      select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,order_experience_rating',
       order: 'created_at.desc',
       limit: '500'
     })
@@ -878,7 +879,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       orderQuery.set('created_at', `gte.${new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()}`)
     }
     const [orders, products, users] = await Promise.all([
-      fetchAllRows<{ id: number; order_id: string; order_data: Record<string, unknown>; created_at: string; fulfillment_status: string; payment_status: string; order_status: string }>(
+      fetchAllRows<{ id: number; order_id: string; order_data: Record<string, unknown>; created_at: string; fulfillment_status: string; payment_status: string; order_status: string; order_experience_rating: number | null }>(
         'aurel_orders',
         orderQuery
       ),
@@ -893,6 +894,10 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       const amount = Number(order.order_data.total)
       return total + (Number.isFinite(amount) ? amount : 0)
     }, 0)
+    const ratedOrders = orders.filter(order => order.order_experience_rating !== null)
+    const averageOrderExperienceRating = ratedOrders.length
+      ? ratedOrders.reduce((total, order) => total + Number(order.order_experience_rating), 0) / ratedOrders.length
+      : null
     const bestsellers = new Map<string, { name: string; quantity: number }>()
     for (const order of paidOrders) {
       const items = Array.isArray(order.order_data.items) ? order.order_data.items : []
@@ -916,7 +921,9 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         orders: orders.length,
         customers: users.length,
         products: products.length,
-        lowStock: products.filter(product => product.stock_quantity !== null && product.stock_quantity <= product.low_stock_threshold).length
+        lowStock: products.filter(product => product.stock_quantity !== null && product.stock_quantity <= product.low_stock_threshold).length,
+        averageOrderExperienceRating,
+        ratedOrders: ratedOrders.length
       },
       recentOrders: orders.slice(0, 8),
       bestsellers: [...bestsellers.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
@@ -1062,6 +1069,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         created_at: string
         fulfillment_status: string
       }>('aurel_orders', new URLSearchParams({
+        whatsapp_submitted_at: 'not.is.null',
         select: 'id,order_id,user_id,order_data,created_at,fulfillment_status',
         order: 'created_at.desc',
         limit: '500'
@@ -1420,7 +1428,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (path === '/api/admin/orders' && method === 'GET') {
     const orders = await fetchAllRows<Record<string, unknown>>(
       'aurel_orders',
-      new URLSearchParams({ select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
+      new URLSearchParams({ whatsapp_submitted_at: 'not.is.null', select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
     )
     const orderIds = orders.map(order => Number(order.id)).filter(Number.isSafeInteger)
     const events = orderIds.length
@@ -1464,34 +1472,12 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       console.error(`Order ${paymentConfirmMatch[1]} was confirmed, but its new-order alert could not be cleared:`, error)
       notificationError = 'The order was confirmed, but its new-order alert could not be cleared. Mark it read from Alerts.'
     }
-    if (result.alreadyConfirmed) {
-      try {
-        const email = await getConfirmationEmailStatus(Number(paymentConfirmMatch[1]))
-        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: email.status, notificationError })
-      } catch (error) {
-        console.error('Payment was already confirmed, but its email status could not be loaded.')
-        return sendJson(res, 200, { success: true, alreadyConfirmed: true, emailStatus: 'pending', notificationError })
-      }
-    }
-    try {
-      const email = await sendOrderConfirmationEmail(Number(paymentConfirmMatch[1]))
-      return sendJson(res, 200, {
-        success: true,
-        alreadyConfirmed: false,
-        emailStatus: email.status,
-        emailError: email.status === 'failed' ? email.error : undefined,
-        notificationError
-      })
-    } catch (error) {
-      console.error('Payment was confirmed, but the confirmation email could not be processed.')
-      return sendJson(res, 200, {
-        success: true,
-        alreadyConfirmed: false,
-        emailStatus: 'failed',
-        emailError: 'Payment confirmed, but the confirmation email could not be processed. Check the email configuration and order email status.',
-        notificationError
-      })
-    }
+    return sendJson(res, 200, {
+      success: true,
+      alreadyConfirmed: Boolean(result.alreadyConfirmed),
+      emailStatus: 'pending',
+      notificationError
+    })
   }
   const retryConfirmationEmailMatch = path.match(/^\/api\/admin\/orders\/(\d+)\/confirmation-email$/)
   if (retryConfirmationEmailMatch && method === 'POST') {
@@ -1569,7 +1555,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     const orderRows = userIds.length
       ? await fetchAllRows<{ user_id: string; order_data: Record<string, unknown>; created_at: string }>(
         'aurel_orders',
-        new URLSearchParams({ user_id: `in.(${userIds.join(',')})`, select: 'user_id,order_data,created_at', limit: '1000' })
+        new URLSearchParams({ user_id: `in.(${userIds.join(',')})`, whatsapp_submitted_at: 'not.is.null', select: 'user_id,order_data,created_at', limit: '1000' })
       )
       : []
     const customerOrders = new Map<string, { count: number; totalOrderValue: number; latestOrderAt: string | null }>()

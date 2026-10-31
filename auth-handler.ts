@@ -823,6 +823,19 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,fulfillment_status,order_experience_rating', limit: '1' })
       )
       if (!orders[0]) return sendJson(res, 404, { error: 'Order not found in your account.' })
+      if (body.submitForPayment === true) {
+        const submission = await supabaseRequest<{ success: boolean; alreadySubmitted?: boolean; reason?: string }>(
+          'rpc/aurel_submit_order_for_payment',
+          new URLSearchParams(),
+          {
+            method: 'POST',
+            body: JSON.stringify({ p_order_id: orders[0].id, p_user_id: account.id })
+          }
+        )
+        if (submission.reason === 'not_found') return sendJson(res, 404, { error: 'Order not found in your account.' })
+        if (!submission.success) return sendJson(res, 409, { error: 'This order is no longer awaiting payment. Refresh your orders before continuing.' })
+        return sendJson(res, 200, { success: true, alreadySubmitted: Boolean(submission.alreadySubmitted) })
+      }
       if (body.orderExperienceRating !== undefined) {
         const rating = body.orderExperienceRating
         if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -1188,7 +1201,6 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       orderStatus: 'pending_payment'
     }
     let stored: StoredAccountOrder[]
-    let createdNewOrder = true
     try {
       stored = await supabaseRequest<StoredAccountOrder[]>(
         'aurel_orders',
@@ -1219,39 +1231,9 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           limit: '1'
         })
       )
-      createdNewOrder = false
     }
     const row = stored[0]
     if (!row) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
-    const savedOrderId = await supabaseRequest<Array<{ id: number }>>(
-      'aurel_orders',
-      new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${row.order_id}`, select: 'id', limit: '1' })
-    )
-    if (createdNewOrder && savedOrderId[0]) {
-      await supabaseRequest('aurel_order_events', new URLSearchParams(), {
-        method: 'POST',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({
-          order_id: savedOrderId[0].id,
-          actor_type: 'customer',
-          actor_user_id: account.id,
-          event_type: 'order_submitted',
-          summary: 'Order was placed. UPI payment is awaiting manual verification.',
-          metadata: { paymentMethod: 'upi' }
-        })
-      })
-      await supabaseRequest('aurel_admin_notifications', new URLSearchParams(), {
-        method: 'POST',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({
-          notification_type: 'new_order',
-          title: 'New UPI order received',
-          message: `Order ${row.order_id} was placed and is awaiting payment verification.`,
-          target_type: 'order',
-          target_id: String(savedOrderId[0].id)
-        })
-      })
-    }
     return sendJson(res, 201, {
       order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status },
       createdAt: row.created_at
@@ -1305,8 +1287,8 @@ export async function accountReviewHandler(req: AuthRequest, res: ServerResponse
     if ((orderId !== undefined && (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)))
       || typeof productId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(productId)
       || typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5
-      || reviewerName.length > 80 || title.length > 120 || reviewBody.length < 10 || reviewBody.length > 3000) {
-      return sendJson(res, 400, { error: 'Provide a valid product, reviewer name, 1–5 star rating, and review of at least 10 characters.' })
+      || reviewerName.length > 80 || title.length > 120 || (reviewBody.length > 0 && reviewBody.length < 10) || reviewBody.length > 3000) {
+      return sendJson(res, 400, { error: 'Provide a valid product, reviewer name, 1–5 star rating, and a review that is either empty or at least 10 characters.' })
     }
     let order: { id: number; order_data: Record<string, unknown>; fulfillment_status: string } | undefined
     if (typeof orderId === 'string') {
