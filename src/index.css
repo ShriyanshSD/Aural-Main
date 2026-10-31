@@ -750,19 +750,73 @@ html.dark .hero-headline {
 
 .owner-dashboard {
   --owner-motion: cubic-bezier(0.22, 1, 0.36, 1);
+  --owner-ink: #322825;
+  --owner-muted: #897770;
+  --owner-accent: #a45f60;
+  --owner-line: #eee5df;
+  background:
+    radial-gradient(ellipse at 92% 2%, rgba(198, 155, 140, 0.12), transparent 34rem),
+    #f7f5f2;
+  color: var(--owner-ink);
 }
 
 .owner-page-enter {
   animation: owner-page-enter 420ms var(--owner-motion) both;
 }
 
+.owner-main {
+  min-height: calc(100vh - 72px);
+}
+
+.owner-sidebar {
+  background-image: linear-gradient(180deg, #fff 0%, #fff 72%, #fdf9f6 100%);
+}
+
+.owner-topbar {
+  border-color: rgba(235, 225, 219, 0.85);
+}
+
+.owner-route > section > *,
+.owner-route > div > * {
+  animation: owner-content-enter 520ms var(--owner-motion) both;
+}
+
+.owner-route > section > :nth-child(2),
+.owner-route > div > :nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.owner-route > section > :nth-child(3),
+.owner-route > div > :nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.owner-route > section > :nth-child(4),
+.owner-route > div > :nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.owner-route > section > :nth-child(5),
+.owner-route > div > :nth-child(5) {
+  animation-delay: 180ms;
+}
+
 .owner-card {
+  transition: transform 220ms var(--owner-motion), box-shadow 220ms var(--owner-motion), border-color 220ms ease;
+}
+
+.owner-dashboard main article {
   transition: transform 220ms var(--owner-motion), box-shadow 220ms var(--owner-motion), border-color 220ms ease;
 }
 
 .owner-card:hover {
   border-color: #e7d8d1;
   box-shadow: 0 14px 34px rgba(70, 48, 39, 0.07);
+}
+
+.owner-dashboard main article:hover {
+  border-color: #e7d8d1;
+  box-shadow: 0 14px 34px rgba(70, 48, 39, 0.055);
 }
 
 .owner-overview-hero::before,
@@ -798,6 +852,77 @@ html.dark .hero-headline {
   transform: translateX(2px);
 }
 
+.owner-nav-item[aria-current="page"]::before {
+  position: absolute;
+  inset: 9px auto 9px 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(180deg, #bd7e78, #925256);
+  content: "";
+}
+
+.owner-mobile-nav {
+  scrollbar-width: none;
+}
+
+.owner-mobile-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.owner-mobile-nav-item {
+  min-height: 40px;
+}
+
+.owner-search {
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.owner-search:focus-within {
+  border-color: rgba(164, 95, 96, 0.65);
+  background-color: #fff;
+  box-shadow: 0 0 0 3px rgba(164, 95, 96, 0.09);
+}
+
+.owner-empty-state {
+  background: linear-gradient(135deg, rgba(251, 248, 246, 0.9), rgba(255, 255, 255, 0.85));
+}
+
+.owner-dashboard main input:not([type="checkbox"]):not([type="radio"]),
+.owner-dashboard main select,
+.owner-dashboard main textarea {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.owner-dashboard main input:not([type="checkbox"]):not([type="radio"]):focus,
+.owner-dashboard main select:focus,
+.owner-dashboard main textarea:focus {
+  border-color: rgba(164, 95, 96, 0.7);
+  box-shadow: 0 0 0 3px rgba(164, 95, 96, 0.09);
+  outline: none;
+}
+
+.owner-dashboard main table tbody tr {
+  transition: background-color 160ms ease;
+}
+
+.owner-dashboard main table tbody tr:hover {
+  background-color: #fdf9f7;
+}
+
+.owner-dashboard button,
+.owner-dashboard a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.owner-dashboard button:focus-visible,
+.owner-dashboard a:focus-visible,
+.owner-dashboard input:focus-visible,
+.owner-dashboard select:focus-visible,
+.owner-dashboard textarea:focus-visible {
+  outline: 3px solid rgba(164, 95, 96, 0.32);
+  outline-offset: 2px;
+}
+
 @keyframes owner-page-enter {
   from {
     opacity: 0;
@@ -809,19 +934,49 @@ html.dark .hero-headline {
   }
 }
 
+@keyframes owner-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .owner-card:hover {
+  .owner-card:hover,
+  .owner-dashboard main article:hover {
     transform: translateY(-2px);
   }
 }
 
+@media (max-width: 640px) {
+  .owner-main {
+    min-height: calc(100vh - 126px);
+  }
+
+  .owner-route > section > *,
+  .owner-route > div > * {
+    animation-duration: 380ms;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .owner-page-enter {
+  .owner-page-enter,
+  .owner-route > section > *,
+  .owner-route > div > * {
     animation: none;
   }
 
   .owner-card,
-  .owner-nav-item {
+  .owner-dashboard main article,
+  .owner-nav-item,
+  .owner-search,
+  .owner-dashboard main input,
+  .owner-dashboard main select,
+  .owner-dashboard main textarea {
     transition: none;
   }
 }

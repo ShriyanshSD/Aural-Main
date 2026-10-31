@@ -558,7 +558,7 @@ export default function AdminApp() {
   const currentTitle = sections.find(item => item.id === section)?.label ?? 'Overview'
   return (
     <div className="owner-dashboard min-h-screen bg-[#f7f5f2] text-[#322825]">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#eee6e1] bg-white/95 shadow-[10px_0_40px_rgba(74,49,39,0.025)] backdrop-blur-xl lg:flex">
+      <aside className="owner-sidebar fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#eee6e1] bg-white/95 shadow-[10px_0_40px_rgba(74,49,39,0.025)] backdrop-blur-xl lg:flex">
         <a href="/" className="flex h-24 items-center gap-3 border-b border-[#f1ebe7] px-6 transition-colors hover:bg-[#fcf9f7]">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#bd7e78] to-[#925256] text-white shadow-lg shadow-[#a45f60]/20">
             <Store className="h-5 w-5" />
@@ -571,7 +571,7 @@ export default function AdminApp() {
         <nav className="flex-1 space-y-1 px-3 py-6">
           {sections.map(item => {
             const Icon = item.icon
-            return <button key={item.id} aria-current={section === item.id ? 'page' : undefined} onClick={() => { navigateSection(item.id); setSearch('') }} className={`owner-nav-item flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition ${section === item.id ? 'bg-[#f8eeeb] text-[#a45f60] shadow-sm shadow-[#a45f60]/5' : 'text-[#776762] hover:bg-[#faf7f5]'}`}><Icon className="h-4 w-4" />{item.label}</button>
+            return <button key={item.id} aria-current={section === item.id ? 'page' : undefined} onClick={() => { navigateSection(item.id); setSearch('') }} className={`owner-nav-item relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-4 py-3 text-sm font-medium transition ${section === item.id ? 'bg-[#f8eeeb] text-[#a45f60] shadow-sm shadow-[#a45f60]/5' : 'text-[#776762] hover:bg-[#faf7f5]'}`}><Icon className="h-4 w-4" />{item.label}</button>
           })}
         </nav>
         <div className="border-t border-[#f1ebe7] bg-[#fdfbf9] p-4">
@@ -582,7 +582,7 @@ export default function AdminApp() {
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex min-h-[72px] items-center justify-between border-b border-[#eee6e1] bg-white/90 px-4 shadow-[0_8px_24px_rgba(60,40,32,0.035)] backdrop-blur-xl sm:px-8">
+        <header className="owner-topbar sticky top-0 z-20 flex min-h-[72px] items-center justify-between border-b border-[#eee6e1] bg-white/90 px-4 shadow-[0_8px_24px_rgba(60,40,32,0.035)] backdrop-blur-xl sm:px-8">
           <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[.2em] text-[#aa7771] sm:text-[10px]">Aurel Studio <span className="px-1 text-[#d3c4bd]">/</span> {currentTitle}</p><h1 className="mt-1 truncate font-serif-title text-xl sm:text-2xl">{currentTitle}</h1></div>
           <div className="flex items-center gap-3">
             <span className="hidden max-w-48 truncate text-xs text-[#897770] sm:block">{ownerEmail}</span>
@@ -602,16 +602,16 @@ export default function AdminApp() {
             <button onClick={() => void logout()} title="Sign out" className="rounded-xl border border-[#eadfd9] p-2.5 text-[#866e65] hover:bg-[#faf6f3] lg:hidden"><LogOut className="h-4 w-4" /></button>
           </div>
         </header>
-        <div className="sticky top-[72px] z-10 flex gap-1 overflow-x-auto border-b border-[#eee6e1] bg-white/95 px-3 py-2 shadow-[0_8px_18px_rgba(60,40,32,0.035)] backdrop-blur-xl lg:hidden">
-          {sections.map(item => <button key={item.id} aria-current={section === item.id ? 'page' : undefined} onClick={() => { navigateSection(item.id); setSearch('') }} className={`shrink-0 rounded-lg px-3.5 py-2.5 text-xs font-medium transition ${section === item.id ? 'bg-[#a45f60] text-white shadow-md shadow-[#a45f60]/20' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>{item.label}</button>)}
+        <div className="owner-mobile-nav sticky top-[72px] z-10 flex gap-1 overflow-x-auto border-b border-[#eee6e1] bg-white/95 px-3 py-2 shadow-[0_8px_18px_rgba(60,40,32,0.035)] backdrop-blur-xl lg:hidden">
+          {sections.map(item => <button key={item.id} aria-current={section === item.id ? 'page' : undefined} onClick={() => { navigateSection(item.id); setSearch('') }} className={`owner-mobile-nav-item shrink-0 rounded-lg px-3.5 py-2.5 text-xs font-medium transition ${section === item.id ? 'bg-[#a45f60] text-white shadow-md shadow-[#a45f60]/20' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>{item.label}</button>)}
         </div>
 
-        <main className="mx-auto max-w-[1500px] px-3 py-5 sm:px-6 sm:py-7 xl:px-9">
+        <main className="owner-main mx-auto max-w-[1500px] px-3 py-5 sm:px-6 sm:py-7 xl:px-9">
           {error && <AlertMessage message={error} />}
           {notice && <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check className="h-4 w-4" />{notice}<button onClick={() => setNotice('')} className="ml-auto"><X className="h-4 w-4" /></button></div>}
           {busy && <div className="mb-4 flex items-center gap-2 text-xs text-[#9b8881]"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Updating dashboard</div>}
 
-          <div key={section} className="owner-page-enter">
+          <div key={section} className="owner-page-enter owner-route">
           {section === 'dashboard' && <Dashboard overview={overview} range={analyticsRange} onRangeChange={setAnalyticsRange} onOpenSection={navigateSection} />}
           {section === 'products' && <ProductsPage
             products={filteredProducts} categories={categories} search={search} setSearch={setSearch}
@@ -1082,10 +1082,10 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
   </div>
 }
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-xl border border-dashed border-[#e9ddd7] px-5 py-12 text-center text-sm text-[#988780]">{text}</div>
+  return <div className="owner-empty-state rounded-xl border border-dashed border-[#e9ddd7] px-5 py-12 text-center text-sm text-[#988780]">{text}</div>
 }
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
-  return <label className="flex min-w-0 items-center gap-2 rounded-xl border border-[#e9dfda] bg-white px-3 py-2.5 text-[#9c8880]"><Search className="h-4 w-4 shrink-0" /><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} className="min-w-0 flex-1 bg-transparent text-sm text-[#322825] outline-none placeholder:text-[#ad9d96]" /></label>
+  return <label className="owner-search flex min-w-0 items-center gap-2 rounded-xl border border-[#e9dfda] bg-white px-3 py-2.5 text-[#9c8880]"><Search className="h-4 w-4 shrink-0" /><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} className="min-w-0 flex-1 bg-transparent text-sm text-[#322825] outline-none placeholder:text-[#ad9d96]" /></label>
 }
 function TablePager({ page, pageCount, total, onChange }: { page: number; pageCount: number; total: number; onChange: (page: number) => void }) {
   if (total <= 15) return null
@@ -1099,7 +1099,7 @@ function TablePager({ page, pageCount, total, onChange }: { page: number; pageCo
   </div>
 }
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
-  return <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-serif-title text-2xl">{title}</h2><p className="mt-1 text-sm text-[#8f7c75]">{description}</p></div>{action}</div>
+  return <div className="owner-page-heading mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-serif-title text-2xl">{title}</h2><p className="mt-1 text-sm text-[#8f7c75]">{description}</p></div>{action}</div>
 }
 function ProductsPage({ products, categories, search, setSearch, onRefresh, onEdit, onDuplicate, onBulkAction, onCreate, onImport, onDelete }: {
   products: AdminProduct[]; categories: AdminCategory[]; search: string; setSearch: (value: string) => void
