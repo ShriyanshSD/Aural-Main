@@ -266,6 +266,7 @@ export default function AdminApp() {
   const [orders, setOrders] = useState<AdminOrder[]>([])
   const [confirmingOrderId, setConfirmingOrderId] = useState<string>('')
   const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState<string>('')
+  const [archivingDeliveredOrders, setArchivingDeliveredOrders] = useState(false)
   const [customers, setCustomers] = useState<AdminCustomer[]>([])
   const [reviews, setReviews] = useState<AdminReview[]>([])
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
@@ -656,7 +657,12 @@ export default function AdminApp() {
               }
             }}
           />}
-          {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} confirmingOrderId={confirmingOrderId} updatingStatusOrderId={updatingStatusOrderId} onConfirmPayment={confirmOrderPayment} onRetryEmail={order => {
+          {section === 'orders' && <OrdersPage orders={orders} search={search} setSearch={setSearch} confirmingOrderId={confirmingOrderId} updatingStatusOrderId={updatingStatusOrderId} archivingDeliveredOrders={archivingDeliveredOrders} onArchiveDelivered={() => {
+            setArchivingDeliveredOrders(true)
+            void runAction(async () => api<{ archivedCount: number }>('/api/admin/orders/archive-delivered', { method: 'POST', body: '{}' }), result =>
+              result.archivedCount === 1 ? '1 delivered order archived from the owner order history.' : `${result.archivedCount} delivered orders archived from the owner order history.`
+            ).finally(() => setArchivingDeliveredOrders(false))
+          }} onConfirmPayment={confirmOrderPayment} onRetryEmail={order => {
             void runAction(async () => {
               return api<{ success: boolean; emailStatus: string; emailError?: string }>(`/api/admin/orders/${order.id}/confirmation-email`, { method: 'POST', body: '{}' })
             }, result => result.emailStatus === 'sent'
@@ -1281,7 +1287,7 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
     </article>)}</div> : <EmptyState text="No categories have been created yet." />}
   </section>
 }
-function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStatusOrderId, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; updatingStatusOrderId: string; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => Promise<void> }) {
+function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStatusOrderId, archivingDeliveredOrders, onArchiveDelivered, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; updatingStatusOrderId: string; archivingDeliveredOrders: boolean; onArchiveDelivered: () => void; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => Promise<void> }) {
   const [tab, setTab] = useState<'awaiting' | 'paid' | 'shipped' | 'delivered' | 'all'>('awaiting')
   const [allStatusFilter, setAllStatusFilter] = useState<'all' | 'pending_payment' | 'paid' | 'shipped' | 'delivered' | 'cancelled'>('all')
   const tabOrders = useMemo(() => orders.filter(order => {
@@ -1302,6 +1308,7 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStat
   const { page, setPage, pageCount, visibleItems } = usePagination(filteredOrders)
   const awaitingCount = orders.filter(order => order.payment_status === 'pending' && order.order_status === 'pending_payment').length
   const paidCount = orders.filter(order => order.payment_status === 'paid' && !['shipped', 'delivered', 'cancelled'].includes(order.order_status)).length
+  const deliveredCount = orders.filter(order => order.order_status === 'delivered').length
   const exportCsv = () => {
     const columns = ['Order ID', 'Created at', 'Customer', 'Email', 'Payment status', 'Order status', 'Paid at', 'Total']
     const escape = (value: unknown) => {
@@ -1392,7 +1399,15 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStat
     printWindow.print()
   }
   return <section>
-    <PageHeading title="Orders" description="Review payment confirmations, customer details and fulfilment in one place." action={<button onClick={exportCsv} disabled={!filteredOrders.length} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] disabled:opacity-50">Export CSV</button>} />
+    <PageHeading title="Orders" description="Review payment confirmations, customer details and fulfilment in one place." action={<div className="flex items-center gap-2 self-end sm:self-auto">
+      <button type="button" onClick={() => {
+        if (window.confirm(`Archive all ${deliveredCount} delivered order${deliveredCount === 1 ? '' : 's'} from the owner dashboard? Customer order history and records will be preserved.`)) onArchiveDelivered()
+      }} disabled={!deliveredCount || archivingDeliveredOrders} title="Clear delivered order history from the owner dashboard" aria-label={`Clear history of ${deliveredCount} delivered orders`} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45">
+        {archivingDeliveredOrders ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        <span>{archivingDeliveredOrders ? 'Clearing…' : 'Clear history'}</span>
+      </button>
+      <button type="button" onClick={exportCsv} disabled={!filteredOrders.length} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] disabled:opacity-50">Export CSV</button>
+    </div>} />
     <div className="mb-5 space-y-4">
       <div role="tablist" aria-label="Order status" className="flex gap-2 overflow-x-auto border-b border-[#eee5df]">
         {([

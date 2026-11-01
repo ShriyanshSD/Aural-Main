@@ -1428,7 +1428,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (path === '/api/admin/orders' && method === 'GET') {
     const orders = await fetchAllRows<Record<string, unknown>>(
       'aurel_orders',
-      new URLSearchParams({ whatsapp_submitted_at: 'not.is.null', select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,shipped_at,delivered_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
+      new URLSearchParams({ whatsapp_submitted_at: 'not.is.null', archived_at: 'is.null', select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,shipped_at,delivered_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
     )
     const orderIds = orders.map(order => Number(order.id)).filter(Number.isSafeInteger)
     const events = orderIds.length
@@ -1443,6 +1443,17 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       eventMap.set(id, [...(eventMap.get(id) ?? []), event])
     }
     return sendJson(res, 200, { orders: orders.map(order => ({ ...order, events: eventMap.get(Number(order.id)) ?? [] })) })
+  }
+  if (path === '/api/admin/orders/archive-delivered' && method === 'POST') {
+    const result = await supabaseRequest<{ success: boolean; archivedCount?: number }>(
+      'rpc/aurel_archive_delivered_orders',
+      new URLSearchParams(),
+      { method: 'POST', body: JSON.stringify({ p_owner_id: session.user_id }) }
+    )
+    if (!result.success || !Number.isSafeInteger(result.archivedCount) || (result.archivedCount ?? -1) < 0) {
+      return sendJson(res, 500, { error: 'Delivered order history could not be archived. Refresh and try again.' })
+    }
+    return sendJson(res, 200, { success: true, archivedCount: result.archivedCount })
   }
   const paymentConfirmMatch = path.match(/^\/api\/admin\/orders\/(\d+)\/confirm-payment$/)
   if (paymentConfirmMatch && method === 'POST') {
