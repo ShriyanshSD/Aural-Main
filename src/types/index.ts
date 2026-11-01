@@ -138,8 +138,10 @@ export interface OrderDetails {
   total: number
   status: 'paid' | 'pending'
   paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded'
-  orderStatus?: 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+  orderStatus?: 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
   paidAt?: string
+  shippedAt?: string
+  deliveredAt?: string
 }
 
 export interface AuthUser {
@@ -165,6 +167,9 @@ export interface AccountOrder {
   paymentStatus?: OrderDetails['paymentStatus']
   orderStatus?: OrderDetails['orderStatus']
   fulfillmentStatus?: string
+  paidAt?: string
+  shippedAt?: string
+  deliveredAt?: string
   productionStatus?: string
   proofApproved?: boolean
   proofUrl?: string

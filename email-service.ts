@@ -202,7 +202,7 @@ const smtpFailureMessage = (error: unknown) => {
 export const sendOrderConfirmationEmail = async (id: number): Promise<ConfirmationEmailResult> => {
   const order = await getOrder(id)
   if (!order) throw new Error('Order not found.')
-  if (order.payment_status !== 'paid' || !['confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status)) {
+  if (order.payment_status !== 'paid' || !['paid', 'confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status)) {
     throw new Error('Confirmation emails can only be sent for paid and confirmed orders.')
   }
   if (order.confirmation_email_status === 'sent') return { status: 'already_sent' }

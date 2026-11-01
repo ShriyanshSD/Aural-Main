@@ -10,7 +10,7 @@ import type { StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
-type OrderStatus = 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 type Fulfillment = 'unfulfilled' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
 interface AdminCategory {
   slug: string
@@ -70,6 +70,8 @@ interface AdminOrder {
   order_status: OrderStatus
   payment_method: string
   paid_at: string | null
+  shipped_at: string | null
+  delivered_at: string | null
   paid_by: string | null
   confirmation_email_status: 'pending' | 'sending' | 'sent' | 'failed'
   confirmation_email_sent_at: string | null
@@ -263,6 +265,7 @@ export default function AdminApp() {
   const [categories, setCategories] = useState<AdminCategory[]>([])
   const [orders, setOrders] = useState<AdminOrder[]>([])
   const [confirmingOrderId, setConfirmingOrderId] = useState<string>('')
+  const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState<string>('')
   const [customers, setCustomers] = useState<AdminCustomer[]>([])
   const [reviews, setReviews] = useState<AdminReview[]>([])
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
@@ -431,14 +434,15 @@ export default function AdminApp() {
     setError('')
     setNotice('')
     try {
-      const result = await api<{ alreadyConfirmed: boolean; notificationError?: string }>(
+      const result = await api<{ alreadyConfirmed: boolean; paidAt?: string | null; notificationError?: string }>(
         `/api/admin/orders/${order.id}/confirm-payment`,
         { method: 'POST', body: '{}' }
       )
       setOrders(current => current.map(item => item.id === order.id ? {
         ...item,
         payment_status: 'paid',
-        order_status: 'confirmed',
+        order_status: 'paid',
+        paid_at: result.paidAt ?? item.paid_at,
         confirmation_email_status: 'sending',
         confirmation_email_error: null
       } : item))
@@ -652,7 +656,7 @@ export default function AdminApp() {
               }
             }}
           />}
-          {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} confirmingOrderId={confirmingOrderId} onConfirmPayment={confirmOrderPayment} onRetryEmail={order => {
+          {section === 'orders' && <OrdersPage orders={filteredOrders} search={search} setSearch={setSearch} confirmingOrderId={confirmingOrderId} updatingStatusOrderId={updatingStatusOrderId} onConfirmPayment={confirmOrderPayment} onRetryEmail={order => {
             void runAction(async () => {
               return api<{ success: boolean; emailStatus: string; emailError?: string }>(`/api/admin/orders/${order.id}/confirmation-email`, { method: 'POST', body: '{}' })
             }, result => result.emailStatus === 'sent'
@@ -662,10 +666,12 @@ export default function AdminApp() {
                 : result.emailStatus === 'sending'
                   ? 'Order confirmation email is already being processed.'
                 : result.emailError || 'Payment remains confirmed, but the confirmation email could not be sent.')
-          }} onUpdate={(order, status) => {
-            void runAction(async () => {
-              await api(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
-            }, `Order ${order.order_id} status updated.`)
+          }} onUpdate={async (order, status) => {
+            setUpdatingStatusOrderId(String(order.id))
+            await runAction(async () => {
+              return api<{ alreadyUpdated?: boolean }>(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
+            }, result => result.alreadyUpdated ? `${order.order_id} was already ${statusLabel(status)}.` : `${order.order_id} marked ${statusLabel(status).toLowerCase()}.`)
+            setUpdatingStatusOrderId('')
           }} />}
           {section === 'reviews' && <ReviewsPage
             reviews={reviews}
@@ -1039,6 +1045,7 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
   const awaitingCount = overview?.orderStatuses.find(item => item.status === 'pending_payment')?.count ?? 0
   const statusColors: Record<string, string> = {
     pending_payment: '#d69a58',
+    paid: '#83a98b',
     confirmed: '#83a98b',
     processing: '#7d9bb5',
     shipped: '#8b82ad',
@@ -1274,18 +1281,27 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
     </article>)}</div> : <EmptyState text="No categories have been created yet." />}
   </section>
 }
-function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => void }) {
-  const [tab, setTab] = useState<'awaiting' | 'paid' | 'all'>('awaiting')
+function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStatusOrderId, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; updatingStatusOrderId: string; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => Promise<void> }) {
+  const [tab, setTab] = useState<'awaiting' | 'paid' | 'shipped' | 'delivered' | 'all'>('awaiting')
+  const [allStatusFilter, setAllStatusFilter] = useState<'all' | 'pending_payment' | 'paid' | 'shipped' | 'delivered' | 'cancelled'>('all')
   const tabOrders = useMemo(() => orders.filter(order => {
-    if (tab === 'paid') return order.payment_status === 'paid'
+    if (tab === 'paid') return order.payment_status === 'paid' && !['shipped', 'delivered', 'cancelled'].includes(order.order_status)
+    if (tab === 'shipped') return order.order_status === 'shipped'
+    if (tab === 'delivered') return order.order_status === 'delivered'
     if (tab === 'awaiting') return order.payment_status === 'pending' && order.order_status === 'pending_payment'
     return true
   }), [orders, tab])
-  const filteredOrders = useMemo(() => tabOrders.filter(order =>
-    `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''} ${order.order_data.phoneNumber ?? ''}`.toLowerCase().includes(search.toLowerCase())
-  ), [tabOrders, search])
+  const filteredOrders = useMemo(() => tabOrders.filter(order => {
+    if (tab === 'all' && allStatusFilter !== 'all') {
+      if (allStatusFilter === 'pending_payment' && !(order.payment_status === 'pending' && order.order_status === 'pending_payment')) return false
+      if (allStatusFilter === 'paid' && !(order.payment_status === 'paid' && !['shipped', 'delivered', 'cancelled'].includes(order.order_status))) return false
+      if (allStatusFilter !== 'pending_payment' && allStatusFilter !== 'paid' && order.order_status !== allStatusFilter) return false
+    }
+    return `${order.order_id} ${order.order_data.customerName ?? ''} ${order.order_data.email ?? ''} ${order.order_data.phoneNumber ?? ''}`.toLowerCase().includes(search.toLowerCase())
+  }), [tabOrders, tab, allStatusFilter, search])
   const { page, setPage, pageCount, visibleItems } = usePagination(filteredOrders)
   const awaitingCount = orders.filter(order => order.payment_status === 'pending' && order.order_status === 'pending_payment').length
+  const paidCount = orders.filter(order => order.payment_status === 'paid' && !['shipped', 'delivered', 'cancelled'].includes(order.order_status)).length
   const exportCsv = () => {
     const columns = ['Order ID', 'Created at', 'Customer', 'Email', 'Payment status', 'Order status', 'Paid at', 'Total']
     const escape = (value: unknown) => {
@@ -1338,6 +1354,8 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPay
       `Payment status: ${statusLabel(order.payment_status)}`,
       `Order status: ${statusLabel(order.order_status)}`,
       `Paid at: ${order.paid_at ? dateLabel(order.paid_at) : 'Not paid'}`,
+      `Shipped at: ${order.shipped_at ? dateLabel(order.shipped_at) : 'Not shipped'}`,
+      `Delivered at: ${order.delivered_at ? dateLabel(order.delivered_at) : 'Not delivered'}`,
       `Placed: ${dateLabel(order.created_at)}`
     ]
     for (const line of detailLines) {
@@ -1378,13 +1396,25 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPay
     <div className="mb-5 space-y-4">
       <div role="tablist" aria-label="Order status" className="flex gap-2 overflow-x-auto border-b border-[#eee5df]">
         {([
-          ['awaiting', 'Awaiting confirmation', awaitingCount],
-          ['paid', 'Paid', orders.filter(order => order.payment_status === 'paid').length],
+          ['awaiting', 'Awaiting Confirmation', awaitingCount],
+          ['paid', 'Paid', paidCount],
+          ['shipped', 'Shipped', orders.filter(order => order.order_status === 'shipped').length],
+          ['delivered', 'Delivered', orders.filter(order => order.order_status === 'delivered').length],
           ['all', 'All', orders.length]
         ] as const).map(([id, label, count]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setPage(0) }} className={`shrink-0 border-b-2 px-3 py-3 text-xs font-semibold transition ${tab === id ? 'border-[#a45f60] text-[#934f51]' : 'border-transparent text-[#897770] hover:text-[#5c4943]'}`}>
           {label}<span className={`ml-2 inline-flex min-w-6 items-center justify-center rounded-full px-2 py-1 text-[11px] font-bold ${id === 'awaiting' && count > 0 ? 'bg-rose-600 text-white shadow-sm shadow-rose-600/25' : tab === id ? 'bg-[#a45f60]/10' : 'bg-[#f4efec]'}`}>{count}</span>
         </button>)}
       </div>
+      {tab === 'all' && <label className="flex items-center gap-2 text-xs font-medium text-[#76645e]">Filter by status
+        <select value={allStatusFilter} onChange={event => { setAllStatusFilter(event.target.value as typeof allStatusFilter); setPage(0) }} className="rounded-lg border border-[#e9dfda] bg-white px-3 py-2 text-xs outline-none focus:border-[#a45f60]">
+          <option value="all">All statuses</option>
+          <option value="pending_payment">Awaiting Confirmation</option>
+          <option value="paid">Paid</option>
+          <option value="shipped">Shipped</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>}
       <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search order ID, customer, email or phone" />
     </div>
     <div className="space-y-3">
@@ -1457,6 +1487,9 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPay
               <p className="mt-1 break-all text-xs text-[#897770]">{String(order.order_data.email ?? '—')}</p>
               <p className="mt-1 text-xs text-[#897770]">{String(order.order_data.phoneNumber ?? '—')}</p>
               <p className="mt-2 text-xs leading-5 text-[#6f5c55]">{address}</p>
+              {order.paid_at && <p className="mt-2 text-[11px] text-[#897770]">Paid {dateLabel(order.paid_at)}</p>}
+              {order.shipped_at && <p className="mt-1 text-[11px] text-[#897770]">Shipped {dateLabel(order.shipped_at)}</p>}
+              {order.delivered_at && <p className="mt-1 text-[11px] text-[#897770]">Delivered {dateLabel(order.delivered_at)}</p>}
             </div>
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-[#9a827a]">Items</h3>
@@ -1474,18 +1507,21 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPay
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {order.payment_status === 'pending' && order.order_status === 'pending_payment' && <button type="button" disabled={Boolean(confirmingOrderId)} onClick={() => void onConfirmPayment(order).then(confirmed => { if (confirmed) setTab('paid') })} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-70">{confirmingOrderId === String(order.id) ? <><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Confirming…</> : 'Confirm payment'}</button>}
-              {order.payment_status === 'paid' && ['confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status) && ['pending', 'failed'].includes(order.confirmation_email_status) && <button type="button" onClick={() => onRetryEmail(order)} className="rounded-lg border border-[#a45f60]/40 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5">{order.confirmation_email_status === 'failed' ? 'Retry email' : 'Send email'}</button>}
-              <select aria-label={`Update ${order.order_id} status`} value={order.order_status} onChange={event => {
-                const target = event.target.value as OrderStatus
-                if (target === 'cancelled' && !window.confirm(`Cancel order ${order.order_id}?`)) return
-                onUpdate(order, target)
-              }} className="rounded-lg border border-[#e9dfda] bg-white px-2.5 py-2.5 text-xs outline-none focus:border-[#a45f60]">
-                <option value={order.order_status}>{statusLabel(order.order_status)}</option>
-                {order.order_status === 'confirmed' && <option value="processing">Processing</option>}
-                {order.order_status === 'processing' && <option value="shipped">Shipped</option>}
-                {order.order_status === 'shipped' && <option value="delivered">Delivered</option>}
-                {!['cancelled', 'delivered'].includes(order.order_status) && <option value="cancelled">Cancelled</option>}
-              </select>
+              {order.payment_status === 'paid' && ['paid', 'confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status) && ['pending', 'failed'].includes(order.confirmation_email_status) && <button type="button" onClick={() => onRetryEmail(order)} className="rounded-lg border border-[#a45f60]/40 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5">{order.confirmation_email_status === 'failed' ? 'Retry email' : 'Send email'}</button>}
+              {tab === 'paid' && order.order_status === 'paid' && <>
+                {(['shipped', 'delivered'] as const).map(target => <button key={target} type="button" disabled={Boolean(updatingStatusOrderId)} onClick={() => {
+                  if (window.confirm(`Mark order ${order.order_id} as ${target}?`)) void onUpdate(order, target)
+                }} className="inline-flex items-center gap-1.5 rounded-lg border border-[#a45f60]/35 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5 disabled:cursor-wait disabled:opacity-60">
+                  {updatingStatusOrderId === String(order.id) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
+                  {updatingStatusOrderId === String(order.id) ? 'Updating…' : `Mark ${target}`}
+                </button>)}
+              </>}
+              {tab === 'shipped' && order.order_status === 'shipped' && <button type="button" disabled={Boolean(updatingStatusOrderId)} onClick={() => {
+                if (window.confirm(`Mark order ${order.order_id} as delivered?`)) void onUpdate(order, 'delivered')
+              }} className="inline-flex items-center gap-1.5 rounded-lg border border-[#a45f60]/35 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5 disabled:cursor-wait disabled:opacity-60">
+                {updatingStatusOrderId === String(order.id) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
+                {updatingStatusOrderId === String(order.id) ? 'Updating…' : 'Mark delivered'}
+              </button>}
               <button type="button" onClick={() => printOrder(order)} className="rounded-lg border border-[#e8d9d2] px-3 py-2.5 text-xs font-semibold text-[#a45f60]">Print</button>
             </div>
           </div>

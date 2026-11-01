@@ -1428,7 +1428,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (path === '/api/admin/orders' && method === 'GET') {
     const orders = await fetchAllRows<Record<string, unknown>>(
       'aurel_orders',
-      new URLSearchParams({ whatsapp_submitted_at: 'not.is.null', select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
+      new URLSearchParams({ whatsapp_submitted_at: 'not.is.null', select: 'id,user_id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,payment_method,paid_at,shipped_at,delivered_at,paid_by,confirmation_email_status,confirmation_email_sent_at,confirmation_email_error', order: 'created_at.desc', limit: '500' })
     )
     const orderIds = orders.map(order => Number(order.id)).filter(Number.isSafeInteger)
     const events = orderIds.length
@@ -1446,7 +1446,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   }
   const paymentConfirmMatch = path.match(/^\/api\/admin\/orders\/(\d+)\/confirm-payment$/)
   if (paymentConfirmMatch && method === 'POST') {
-    const result = await supabaseRequest<{ success: boolean; alreadyConfirmed?: boolean; reason?: string }>(
+    const result = await supabaseRequest<{ success: boolean; alreadyConfirmed?: boolean; paidAt?: string | null; reason?: string }>(
       'rpc/aurel_confirm_order_payment',
       new URLSearchParams(),
       {
@@ -1475,6 +1475,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     return sendJson(res, 200, {
       success: true,
       alreadyConfirmed: Boolean(result.alreadyConfirmed),
+      paidAt: result.paidAt ?? null,
       emailStatus: 'pending',
       notificationError
     })
@@ -1501,44 +1502,34 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (orderMatch && method === 'PATCH') {
     const body = parseBody(req)
     const orderStatus = typeof body.orderStatus === 'string' ? body.orderStatus : ''
-    const validOrderStatuses = ['processing', 'shipped', 'delivered', 'cancelled'] as const
-    if (!validOrderStatuses.includes(orderStatus as typeof validOrderStatuses[number])) {
-      return sendJson(res, 400, { error: 'Choose a valid order status.' })
+    if (orderStatus !== 'shipped' && orderStatus !== 'delivered') {
+      return sendJson(res, 400, { error: 'Choose Shipped or Delivered.' })
     }
-    const existing = await supabaseRequest<Array<{
-      id: number
-      order_id: string
-      payment_status: string
-      order_status: string
-      fulfillment_status: string
-    }>>(
-      'aurel_orders',
-      new URLSearchParams({ id: `eq.${orderMatch[1]}`, select: 'id,order_id,payment_status,order_status,fulfillment_status', limit: '1' })
+    const result = await supabaseRequest<{
+      success: boolean
+      alreadyUpdated?: boolean
+      reason?: string
+      currentStatus?: string
+      order?: Record<string, unknown>
+    }>(
+      'rpc/aurel_update_order_fulfillment_status',
+      new URLSearchParams(),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          p_order_id: Number(orderMatch[1]),
+          p_owner_id: session.user_id,
+          p_next_status: orderStatus
+        })
+      }
     )
-    const current = existing[0]
-    if (!current) return sendJson(res, 404, { error: 'Order not found.' })
-    if (current.order_status === orderStatus) return sendJson(res, 200, { success: true })
-    if (
-      current.order_status === 'cancelled' || current.order_status === 'delivered'
-      || (orderStatus !== 'cancelled' && current.payment_status !== 'paid')
-      || (orderStatus === 'processing' && current.order_status !== 'confirmed')
-      || (orderStatus === 'shipped' && current.order_status !== 'processing')
-      || (orderStatus === 'delivered' && current.order_status !== 'shipped')
-    ) return sendJson(res, 409, { error: `Cannot move this order from ${current.order_status.replaceAll('_', ' ')} to ${orderStatus.replaceAll('_', ' ')}.` })
-    const fulfillmentStatus = orderStatus === 'cancelled' ? 'cancelled' : orderStatus
-    const updated = await supabaseRequest<Array<{ id: number }>>('aurel_orders', new URLSearchParams({
-      id: `eq.${orderMatch[1]}`,
-      order_status: `eq.${current.order_status}`,
-      select: 'id'
-    }), {
-      method: 'PATCH', body: JSON.stringify({ order_status: orderStatus, fulfillment_status: fulfillmentStatus, updated_at: new Date().toISOString() }),
-      headers: { Prefer: 'return=representation' }
-    })
-    if (!updated.length) return sendJson(res, 409, { error: 'The order changed while you were updating it. Refresh and try again.' })
-    await createOrderEvent(Number(orderMatch[1]), 'owner', session.user_id, 'order_status_updated', `Order status updated to ${orderStatus.replaceAll('_', ' ')}.`, { orderStatus })
-    await createAdminNotification('order_status_updated', 'Order status updated', `Order ${current.order_id} is now ${orderStatus.replaceAll('_', ' ')}.`, 'order', orderMatch[1])
-    await logAdminAction(session, 'order_status_updated', 'order', orderMatch[1], { orderStatus })
-    return sendJson(res, 200, { success: true })
+    if (result.reason === 'not_found') return sendJson(res, 404, { error: 'Order not found.' })
+    if (result.reason === 'invalid_status') return sendJson(res, 400, { error: 'Choose Shipped or Delivered.' })
+    if (!result.success) {
+      const currentStatus = result.currentStatus ? result.currentStatus.replaceAll('_', ' ') : 'the current status'
+      return sendJson(res, 409, { error: `Cannot move this order from ${currentStatus} to ${orderStatus}. Refresh and try again.` })
+    }
+    return sendJson(res, 200, { success: true, alreadyUpdated: Boolean(result.alreadyUpdated), order: result.order })
   }
 
   if (path === '/api/admin/customers' && method === 'GET') {

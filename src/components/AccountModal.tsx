@@ -168,22 +168,38 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   useEffect(() => {
     if (!isOpen || section !== 'orders') return
     let isCurrent = true
-    setIsLoadingOrders(true)
+    let requestPending = false
+    let isFirstRequest = true
     setError('')
-    fetch('/api/auth/orders', { credentials: 'same-origin', cache: 'no-store' })
-      .then(async response => {
+    const refreshOrders = async () => {
+      if (requestPending) return
+      requestPending = true
+      if (isFirstRequest) setIsLoadingOrders(true)
+      try {
+        const response = await fetch('/api/auth/orders', { credentials: 'same-origin', cache: 'no-store' })
         const data = await readApiResponse<{ orders?: AccountOrder[]; error?: string }>(response, 'Loading your orders')
         if (!response.ok || !Array.isArray(data.orders)) throw new Error(data.error || 'Unable to load your orders.')
         if (isCurrent) setOrders(data.orders)
-      })
-      .catch(loadError => {
+      } catch (loadError) {
         console.error('Unable to load account orders:', loadError)
         if (isCurrent) setError(loadError instanceof Error ? loadError.message : 'Unable to load your orders.')
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoadingOrders(false)
-      })
-    return () => { isCurrent = false }
+      } finally {
+        requestPending = false
+        if (isCurrent) {
+          setIsLoadingOrders(false)
+          isFirstRequest = false
+        }
+      }
+    }
+    void refreshOrders()
+    const refreshOnFocus = () => { void refreshOrders() }
+    window.addEventListener('focus', refreshOnFocus)
+    const intervalId = window.setInterval(refreshOnFocus, 30_000)
+    return () => {
+      isCurrent = false
+      window.removeEventListener('focus', refreshOnFocus)
+      window.clearInterval(intervalId)
+    }
   }, [isOpen, section])
 
   const surface = isDarkMode ? 'border-[#493936] bg-[#1C1817] text-[#F3EBE6]' : 'border-[#E8D4CB] bg-[#FAF6F2] text-[#2C2422]'
@@ -627,7 +643,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               {section === 'orders' && (
                 <div>
                   <div className="mb-4 flex items-center gap-2 text-sm text-[#8E7973] dark:text-[#A79690]">
-                    <Package className="h-4 w-4 text-[#B36D6D]" /> Orders placed while signed in are saved here.
+                    <Package className="h-4 w-4 text-[#B36D6D]" /> Orders you submit through WhatsApp are saved here.
                   </div>
                   {isLoadingOrders ? (
                     <div className="flex items-center justify-center gap-2 py-12 text-sm text-[#8E7973]"><LoaderCircle className="h-5 w-5 animate-spin" /> Loading your orders</div>
@@ -635,7 +651,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     <div className={`rounded-2xl border px-5 py-10 text-center ${inset}`}>
                       <Package className="mx-auto mb-3 h-8 w-8 text-[#B36D6D]" />
                       <h3 className="font-serif-title text-lg">No orders yet</h3>
-                      <p className="mt-1 text-xs text-[#8E7973] dark:text-[#A79690]">Orders appear here after you proceed to WhatsApp and your payment is confirmed.</p>
+                      <p className="mt-1 text-xs text-[#8E7973] dark:text-[#A79690]">Orders appear here after you proceed to WhatsApp.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -647,16 +663,21 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold">
                             <span className={`rounded-full px-2.5 py-1 ${order.paymentStatus === 'paid' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>Payment: {order.paymentStatus === 'paid' ? 'Paid' : order.paymentStatus ?? 'pending'}</span>
-                            <span className="rounded-full bg-[#B36D6D]/10 px-2.5 py-1 text-[#9A6560]">Order: {(order.orderStatus ?? fulfillmentStatus ?? 'pending_payment').replaceAll('_', ' ')}</span>
+                            <span className="rounded-full bg-[#B36D6D]/10 px-2.5 py-1 text-[#9A6560]">Order: {order.orderStatus === 'pending_payment' ? 'Pending Verification' : (order.orderStatus ?? fulfillmentStatus ?? 'pending_payment').replaceAll('_', ' ')}</span>
                           </div>
                           <p className="mt-2 text-xs leading-5 text-[#8E7973] dark:text-[#A79690]">
-                            {order.orderStatus === 'confirmed' ? 'Your payment has been verified and your order is confirmed.'
+                            {order.orderStatus === 'paid' || order.orderStatus === 'confirmed' ? 'Your payment has been verified and your order is confirmed.'
                               : order.orderStatus === 'processing' ? 'Your order is being prepared.'
                                 : order.orderStatus === 'shipped' ? 'Your order has been dispatched.'
                                   : order.orderStatus === 'delivered' ? 'Your order has been delivered.'
                                     : order.orderStatus === 'cancelled' ? 'Your order has been cancelled.'
-                                      : 'Your order has been placed. Please complete your UPI payment and wait for payment verification.'}
+                                      : 'Your order is awaiting payment verification. It will update here once confirmed.'}
                           </p>
+                          {(order.paidAt || order.shippedAt || order.deliveredAt) && <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[#8E7973] dark:text-[#A79690]">
+                            {order.paidAt && <span>Paid {new Date(order.paidAt).toLocaleString()}</span>}
+                            {order.shippedAt && <span>Shipped {new Date(order.shippedAt).toLocaleString()}</span>}
+                            {order.deliveredAt && <span>Delivered {new Date(order.deliveredAt).toLocaleString()}</span>}
+                          </div>}
                           <ul className="mt-3 space-y-2 text-xs">
                             {order.items.map((item, index) => <li key={`${item.productId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 truncate">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span><span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span></li>)}
                           </ul>

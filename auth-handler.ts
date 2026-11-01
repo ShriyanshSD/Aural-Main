@@ -782,8 +782,10 @@ interface StoredAccountOrder {
   order_experience_rating?: number | null
   fulfillment_status?: string
   payment_status?: 'pending' | 'paid' | 'failed' | 'refunded'
-  order_status?: 'pending_payment' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
+  order_status?: 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
   paid_at?: string | null
+  shipped_at?: string | null
+  delivered_at?: string | null
   idempotency_key?: string | null
 }
 
@@ -933,7 +935,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           new URLSearchParams({
             user_id: `eq.${account.id}`,
             order_id: `eq.${requestedOrderId}`,
-            select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,order_experience_rating',
+            select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,shipped_at,delivered_at,order_experience_rating',
             limit: '1'
           })
         )
@@ -945,7 +947,9 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
             orderId: row.order_id,
             paymentStatus: row.payment_status ?? 'pending',
             orderStatus: row.order_status ?? 'pending_payment',
-            paidAt: row.paid_at ?? undefined
+            paidAt: row.paid_at ?? undefined,
+            shippedAt: row.shipped_at ?? undefined,
+            deliveredAt: row.delivered_at ?? undefined
           }
         })
       }
@@ -954,8 +958,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         new URLSearchParams({
           user_id: `eq.${account.id}`,
           whatsapp_submitted_at: 'not.is.null',
-          payment_status: 'eq.paid',
-          select: 'order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,order_experience_rating',
+          select: 'order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,shipped_at,delivered_at,order_experience_rating',
           order: 'created_at.desc',
           limit: '100'
         })
@@ -1000,13 +1003,18 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
               orderId: row.order_id,
               paymentStatus: row.payment_status ?? 'pending',
               orderStatus: row.order_status ?? 'pending_payment',
-              paidAt: row.paid_at ?? undefined
+              paidAt: row.paid_at ?? undefined,
+              shippedAt: row.shipped_at ?? undefined,
+              deliveredAt: row.delivered_at ?? undefined
             },
             createdAt: row.created_at,
             paymentStatus: row.payment_status ?? 'pending',
             orderStatus: row.order_status ?? 'pending_payment',
             fulfillmentStatus: row.fulfillment_status ?? 'unfulfilled',
             orderExperienceRating: row.order_experience_rating ?? null,
+            paidAt: row.paid_at ?? undefined,
+            shippedAt: row.shipped_at ?? undefined,
+            deliveredAt: row.delivered_at ?? undefined,
             productionStatus: operation?.production_status,
             proofApproved: Boolean(operation?.customer_approved_at),
             proofUrl: operation && isSecureProofUrl(operation.proof_url) ? operation.proof_url : undefined,
