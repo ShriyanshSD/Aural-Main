@@ -953,6 +953,8 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         'aurel_orders',
         new URLSearchParams({
           user_id: `eq.${account.id}`,
+          whatsapp_submitted_at: 'not.is.null',
+          payment_status: 'eq.paid',
           select: 'order_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,order_experience_rating',
           order: 'created_at.desc',
           limit: '100'

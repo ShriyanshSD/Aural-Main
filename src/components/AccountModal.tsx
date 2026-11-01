@@ -635,7 +635,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     <div className={`rounded-2xl border px-5 py-10 text-center ${inset}`}>
                       <Package className="mx-auto mb-3 h-8 w-8 text-[#B36D6D]" />
                       <h3 className="font-serif-title text-lg">No orders yet</h3>
-                      <p className="mt-1 text-xs text-[#8E7973] dark:text-[#A79690]">Your completed orders will appear here.</p>
+                      <p className="mt-1 text-xs text-[#8E7973] dark:text-[#A79690]">Orders appear here after you proceed to WhatsApp and your payment is confirmed.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
@@ -660,7 +660,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                           <ul className="mt-3 space-y-2 text-xs">
                             {order.items.map((item, index) => <li key={`${item.productId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 truncate">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span><span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span></li>)}
                           </ul>
-                          {order.paymentStatus === 'pending' && order.orderStatus === 'pending_payment' && <button type="button" onClick={() => window.location.assign(`/?paymentOrder=${encodeURIComponent(order.orderId)}`)} className="mt-3 rounded-full border border-[#B36D6D]/35 px-4 py-2 text-xs font-semibold text-[#9A6560]">Continue to payment</button>}
                           <p className="mt-3 flex items-start gap-1.5 text-[11px] text-[#8E7973] dark:text-[#A79690]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{[order.address, order.city, order.state, order.postalCode].filter(Boolean).join(', ')}</p>
                           {productionStatus === 'awaiting_customer_approval' && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
                             <span className="text-xs">A proof is awaiting your review.</span>
