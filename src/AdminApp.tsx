@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Activity, ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert,
@@ -1258,8 +1259,8 @@ function NotificationBell({ notifications, unreadCount, open, onToggle, onRead, 
       <Bell className="h-5 w-5" />
       {unreadCount > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#a45f60] px-1 text-[10px] font-bold text-white">{unreadCount > 99 ? '99+' : unreadCount}</span>}
     </button>
-    {open && <div role="dialog" aria-label="Owner notifications" className="absolute right-0 top-full z-50 mt-3 w-[min(92vw,400px)] overflow-hidden rounded-2xl border border-[#eadfd9] bg-white shadow-xl">
-      <header className="flex items-center justify-between border-b border-[#f1ebe7] px-4 py-3"><div><h2 className="text-sm font-semibold">Alerts</h2><p className="text-[10px] text-[#92817b]">{unreadCount} unread</p></div><button type="button" onClick={onReadAll} disabled={!unreadCount} className="text-xs font-semibold text-[#a45f60] disabled:text-[#b9aaa5]">Mark all read</button></header>
+    {open && createPortal(<div role="dialog" aria-label="Owner notifications" className="fixed left-3 right-3 top-[84px] z-[60] mx-auto flex w-auto max-w-[400px] flex-col overflow-hidden rounded-2xl border border-[#eadfd9] bg-white shadow-xl [box-sizing:border-box] [max-height:calc(100dvh-6rem)] sm:left-auto sm:right-4 sm:mx-0 sm:w-[min(92vw,400px)]">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#f1ebe7] px-3 py-3 sm:px-4"><div className="min-w-0"><h2 className="text-sm font-semibold">Alerts</h2><p className="text-[10px] text-[#92817b]">{unreadCount} unread</p></div><button type="button" onClick={onReadAll} disabled={!unreadCount} className="shrink-0 whitespace-nowrap text-xs font-semibold text-[#a45f60] disabled:text-[#b9aaa5]">Mark all read</button></header>
       <div role="tablist" aria-label="Order alerts" className="grid grid-cols-2 border-b border-[#f1ebe7] p-2">
         {([
           ['new', 'New orders', newOrders.length],
@@ -1268,7 +1269,7 @@ function NotificationBell({ notifications, unreadCount, open, onToggle, onRead, 
           {label}<span className={`ml-1.5 ${id === 'new' && count ? 'font-bold text-rose-600' : ''}`}>{count}</span>
         </button>)}
       </div>
-      <div className="max-h-[min(65vh,480px)] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'new'
           ? <>{newOrders.map(renderNotification)}
             {otherAlerts.length > 0 && <><p className="border-y border-[#f1ebe7] bg-[#fbf8f6] px-4 py-2 text-[10px] font-semibold uppercase tracking-wide text-[#9a827a]">Other alerts</p>{otherAlerts.map(renderNotification)}</>}
@@ -1278,7 +1279,7 @@ function NotificationBell({ notifications, unreadCount, open, onToggle, onRead, 
             ? verifiedOrders.map(renderNotification)
             : <p className="px-5 py-8 text-center text-xs text-[#8f7c75]">No verified-order alerts yet.</p>}
       </div>
-    </div>}
+    </div>, document.body)}
   </div>
 }
 function AlertMessage({ message }: { message: string }) {
