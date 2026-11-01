@@ -4,7 +4,7 @@ import { X, ShieldCheck, CheckCircle2, AlertCircle, Lock, ArrowRight, Copy, Chec
 import { AuthUser, CartItem, OrderDetails, StoreSettings } from '../types'
 import { sanitizeInput, validateCheckoutForm } from '../utils/security'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
-import { createWhatsAppMessage } from '../utils/payment'
+import { createWhatsAppMessage, normalizeWhatsAppNumber } from '../utils/payment'
 import { useIndiaLocations } from '../hooks/useIndiaLocations'
 
 interface CheckoutModalProps {
@@ -156,7 +156,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }
 
   const getWhatsAppUrl = (order: OrderDetails) => {
-    const brandWhatsAppNumber = settings.whatsappNumber.replace(/\D/g, '') || '919999200913'
+    const brandWhatsAppNumber = normalizeWhatsAppNumber(settings.whatsappNumber) || '919999200913'
     return `https://wa.me/${brandWhatsAppNumber}?text=${encodeURIComponent(createWhatsAppMessage(order))}`
   }
 

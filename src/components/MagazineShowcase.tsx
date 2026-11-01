@@ -429,7 +429,7 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
 
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12 lg:gap-12">
           <div className="flex justify-center lg:col-span-6">
-            <div className="relative w-full max-w-[34rem] px-12 sm:px-14">
+            <div className="relative w-full max-w-[34rem] px-9 sm:px-14">
               {selectedMagazineIndex > 0 && (
                 <button
                   type="button"
@@ -489,11 +489,11 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                       backgroundColor: isDarkMode ? '#221B19' : '#FFFFFF',
                       borderColor: isDarkMode ? '#483531' : '#E0CBC2'
                     }}
-                    className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl border shadow-2xl shadow-neutral-900/25"
+                    className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl border shadow-2xl shadow-neutral-900/25 sm:aspect-[3/4]"
                   >
                     <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 w-6 bg-gradient-to-r from-black/25 via-black/10 to-transparent" />
-                    <div className="relative z-0 flex h-full flex-col justify-between p-7 sm:p-10">
-                      <div className="border-b border-black/10 pb-4 dark:border-white/10">
+                    <div className="relative z-0 flex h-full min-h-0 flex-col justify-between p-3 sm:p-10">
+                      <div className="shrink-0 border-b border-black/10 pb-2 dark:border-white/10 sm:pb-4">
                         <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.25em] text-[#B36D6D]">
                           <span className="flex items-center gap-1">
                             <BrandLogo isDarkMode={isDarkMode} className="h-5 w-8 object-contain" />
@@ -501,13 +501,13 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                           </span>
                           <span>VOL · 2026</span>
                         </div>
-                        <BrandLogo isDarkMode={isDarkMode} className="mx-auto mt-2 block h-16 w-32 object-contain" />
+                        <BrandLogo isDarkMode={isDarkMode} className="mx-auto mt-1.5 block h-12 w-24 object-contain sm:mt-2 sm:h-16 sm:w-32" />
                         <p className="mt-1 text-center font-editorial text-xs italic tracking-widest text-[#8F5A54] dark:text-[#D5AEA7]">
                           {settings.tagline}
                         </p>
                       </div>
 
-                      <div className="my-auto py-4">
+                      <div className="my-auto min-h-0 py-2 sm:py-4">
                         <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-black/5 bg-[#F1E7E1] shadow-inner dark:bg-[#302725]">
                           <AnimatePresence initial={false} mode="wait">
                             <motion.img
@@ -550,7 +550,7 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                           </div>
                         </div>
 
-                        <div className="mt-3 flex justify-center gap-1.5" aria-label="Sample page selection">
+                        <div className="mt-2 flex shrink-0 justify-center gap-1.5 sm:mt-3" aria-label="Sample page selection">
                           {selectedMagazine.images.map((image, index) => (
                             <button
                               key={image}
@@ -570,7 +570,7 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                           ))}
                         </div>
                         {customMessage && (
-                          <p className="mt-3 line-clamp-2 px-2 text-center font-editorial text-xs italic text-[#7C6963] dark:text-[#B6A6A0]">
+                          <p className="mt-2 line-clamp-2 shrink-0 px-2 text-center font-editorial text-xs italic text-[#7C6963] dark:text-[#B6A6A0] sm:mt-3">
                             “{customMessage}”
                           </p>
                         )}
@@ -578,14 +578,14 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                           href={selectedMagazine.previewUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mx-auto mt-3 flex w-fit items-center gap-2 rounded-full border border-[#B36D6D]/40 px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-[#9E5B5B] transition-all hover:border-[#B36D6D] hover:bg-[#B36D6D] hover:text-white dark:text-[#F0BDB5] dark:hover:text-white"
+                          className="mx-auto mt-2 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#B36D6D]/40 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#9E5B5B] transition-all hover:border-[#B36D6D] hover:bg-[#B36D6D] hover:text-white dark:text-[#F0BDB5] dark:hover:text-white sm:mt-3 sm:gap-2 sm:px-4 sm:py-2 sm:text-[10px]"
                         >
                           <span>Full Preview Sample</span>
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       </div>
 
-                      <div className="flex items-center justify-between border-t border-black/10 pt-3 text-[10px] uppercase tracking-wider text-[#88746F] dark:border-white/10 dark:text-[#A79690]">
+                      <div className="mt-2 flex shrink-0 items-center justify-between border-t border-black/10 pt-2 text-[9px] uppercase tracking-wider text-[#88746F] dark:border-white/10 dark:text-[#A79690] sm:mt-0 sm:pt-3 sm:text-[10px]">
                         <span>Collectors Issue</span>
                         <span>{selectedMagazine.name}</span>
                       </div>

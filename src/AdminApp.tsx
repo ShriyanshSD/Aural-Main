@@ -662,12 +662,12 @@ export default function AdminApp() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
               transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className={`fixed right-4 top-4 z-[100] flex w-[min(92vw,440px)] items-start gap-3 overflow-hidden rounded-2xl border px-4 py-3.5 pr-11 text-sm shadow-[0_16px_50px_rgba(54,36,30,0.18)] ${
+              className={`fixed left-3 right-3 top-4 z-[100] mx-auto flex w-auto max-w-[440px] items-start gap-3 overflow-hidden rounded-2xl border px-3 py-3.5 pr-11 text-sm shadow-[0_16px_50px_rgba(54,36,30,0.18)] sm:left-auto sm:right-4 sm:mx-0 sm:w-[min(92vw,440px)] sm:px-4 ${
                 error ? 'border-rose-200 bg-white text-rose-900' : 'border-emerald-200 bg-white text-emerald-900'
               }`}
             >
               {error ? <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
-              <span className="leading-5">{error || notice}</span>
+              <span className="min-w-0 break-words leading-5 [overflow-wrap:anywhere]">{error || notice}</span>
               <button
                 type="button"
                 aria-label="Dismiss notification"

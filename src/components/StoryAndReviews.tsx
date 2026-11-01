@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { Star, Heart, Sparkles, Send, CheckCircle2, Mail, MessageCircle, Phone, Shield, Award } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import type { StoreReview, StoreSettings } from '../types'
+import { normalizeWhatsAppNumber } from '../utils/payment'
 
 interface StoryAndReviewsProps {
   isDarkMode: boolean
@@ -273,7 +274,7 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
                 </div>}
                 {settings.whatsappNumber && <div className="flex items-start gap-2.5">
                   <MessageCircle className="w-4 h-4 text-[#B36D6D]" />
-                  <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:text-[#B36D6D]">
+                  <a href={`https://wa.me/${normalizeWhatsAppNumber(settings.whatsappNumber)}`} target="_blank" rel="noopener noreferrer" className="font-medium hover:text-[#B36D6D]">
                     WhatsApp concierge: {settings.whatsappNumber}
                   </a>
                 </div>}

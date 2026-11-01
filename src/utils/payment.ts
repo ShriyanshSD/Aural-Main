@@ -6,6 +6,13 @@ export interface PaymentConfig {
   whatsappNumber: string
 }
 
+export const normalizeWhatsAppNumber = (value: string): string => {
+  const digits = value.replace(/\D/g, '')
+  if (digits.length === 10) return `91${digits}`
+  if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`
+  return digits
+}
+
 export const createUpiPaymentUrl = (order: OrderDetails, config: PaymentConfig): string => {
   const parameters = new URLSearchParams({
     pa: config.upiId,
@@ -47,4 +54,4 @@ export const createWhatsAppMessage = (order: OrderDetails): string => {
 }
 
 export const createWhatsAppUrl = (order: OrderDetails, config: PaymentConfig): string =>
-  `https://wa.me/${config.whatsappNumber}?text=${encodeURIComponent(createWhatsAppMessage(order))}`
+  `https://wa.me/${normalizeWhatsAppNumber(config.whatsappNumber)}?text=${encodeURIComponent(createWhatsAppMessage(order))}`
