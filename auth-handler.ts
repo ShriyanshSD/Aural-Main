@@ -231,7 +231,7 @@ const getSupabaseAuthUserById = async (userId: string): Promise<SupabaseAdminUse
 
 const matchesPendingSignup = (
   user: SupabaseAdminUser,
-  details: { name: string; username: string; phone: string; address: string; gender: string }
+  details: { name: string; username: string; phone: string; address: string; gender: string; city: string; state: string; postalCode: string }
 ): boolean => {
   const metadata = user.user_metadata
   const normalized = (value: unknown) =>
@@ -244,6 +244,9 @@ const matchesPendingSignup = (
     && normalizeValidPhoneNumber(String(metadata.phone ?? '')) === details.phone
     && normalized(metadata.address) === normalized(details.address)
     && normalized(metadata.gender) === normalized(details.gender)
+    && (!metadata.city || normalized(metadata.city) === normalized(details.city))
+    && (!metadata.state || normalized(metadata.state) === normalized(details.state))
+    && (!metadata.postalCode || normalized(metadata.postalCode) === normalized(details.postalCode))
   )
 }
 
@@ -919,11 +922,12 @@ const validPassword = (value: unknown): value is string =>
 
 const createPendingAccount = async (
   userId: string,
-  details: { name: string; username: string; email: string; phone: string; address: string; gender: string },
+  details: { name: string; username: string; email: string; phone: string; address: string; gender: string; city: string; state: string; postalCode: string },
   password: string
 ): Promise<AccountRecord> => {
   const passwordSalt = randomBytes(16).toString('hex')
   const passwordHash = (await derivePasswordHash(password, passwordSalt)).toString('hex')
+  const { postalCode, ...accountDetails } = details
   const accounts = await supabaseRequest<AccountRecord[]>(
     'aurel_users',
     new URLSearchParams({ select: '*' }),
@@ -932,7 +936,8 @@ const createPendingAccount = async (
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
         id: userId,
-        ...details,
+        ...accountDetails,
+        postal_code: postalCode,
         password_salt: passwordSalt,
         password_hash: passwordHash,
         email_verified: false
@@ -1068,6 +1073,10 @@ export async function profileHandler(req: AuthRequest, res: ServerResponse): Pro
     if (!/^[a-z0-9_]{3,24}$/.test(username)) return sendJson(res, 400, { error: 'Username must be 3 to 24 letters, numbers, or underscores.' })
     if (!phone) return sendJson(res, 400, { error: 'Enter a valid phone number, including its country code if it is not an Indian number.' })
     if (address.length < 5 || address.length > 240) return sendJson(res, 400, { error: 'Address must be between 5 and 240 characters.' })
+    if (city.length < 2 || city.length > 100 || !state || state.length > 100) {
+      return sendJson(res, 400, { error: 'Choose a valid state and city for your delivery address.' })
+    }
+    if (!/^\d{6}$/.test(postalCode)) return sendJson(res, 400, { error: 'Enter a valid 6-digit Indian PIN code.' })
     if (!allowedGenders.has(gender)) return sendJson(res, 400, { error: 'Select a valid gender option.' })
     const parsedDateOfBirth = dateOfBirth ? new Date(`${dateOfBirth}T00:00:00.000Z`) : null
     if (dateOfBirth && (
@@ -1079,11 +1088,6 @@ export async function profileHandler(req: AuthRequest, res: ServerResponse): Pro
     )) {
       return sendJson(res, 400, { error: 'Enter a valid date of birth that is not in the future.' })
     }
-    if (city.length > 100 || state.length > 100) return sendJson(res, 400, { error: 'City and state must be 100 characters or fewer.' })
-    if (postalCode.length > 8 || (postalCode && !/^\d{5,8}$/.test(postalCode))) {
-      return sendJson(res, 400, { error: 'Enter a valid postal or PIN code.' })
-    }
-
     const updated = await supabaseRequest<AccountRecord[]>(
       'aurel_users',
       new URLSearchParams({ id: `eq.${account.id}`, select: '*' }),
@@ -1743,9 +1747,9 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       || !normalizeValidPhoneNumber(phoneNumber) || !isValidAccountEmail(email)
       || address.length < 5 || address.length > 240
       || city.length < 2 || city.length > 100
-      || state.length > 100
+      || !state || state.length > 100
       || notes.length > 500
-      || !/^\d{5,8}$/.test(postalCode)
+      || !/^\d{6}$/.test(postalCode)
     ) return sendJson(res, 400, { error: 'Enter valid delivery contact and address details.' })
 
     const priorOrder = await supabaseRequest<StoredAccountOrder[]>(
@@ -2288,6 +2292,9 @@ export async function signupHandler(req: AuthRequest, res: ServerResponse): Prom
   const phoneInput = typeof body.phone === 'string' ? body.phone.trim() : ''
   const phone = normalizeValidPhoneNumber(phoneInput)
   const address = typeof body.address === 'string' ? body.address.trim() : ''
+  const city = typeof body.city === 'string' ? body.city.trim() : ''
+  const state = typeof body.state === 'string' ? body.state.trim() : ''
+  const postalCode = typeof body.postalCode === 'string' ? body.postalCode.trim() : ''
   const gender = typeof body.gender === 'string' ? body.gender : ''
   const password = body.password
 
@@ -2297,9 +2304,13 @@ export async function signupHandler(req: AuthRequest, res: ServerResponse): Prom
   if (!validPassword(password)) return sendJson(res, 400, { error: 'Password must be 8 to 128 characters and include a letter and a number.' })
   if (!phone) return sendJson(res, 400, { error: 'Enter a valid phone number, including its country code if it is not an Indian number.' })
   if (address.length < 5 || address.length > 240) return sendJson(res, 400, { error: 'Address must be between 5 and 240 characters.' })
+  if (city.length < 2 || city.length > 100 || !state || state.length > 100) {
+    return sendJson(res, 400, { error: 'Choose a valid state and city for your delivery address.' })
+  }
+  if (!/^\d{6}$/.test(postalCode)) return sendJson(res, 400, { error: 'Enter a valid 6-digit Indian PIN code.' })
   if (!allowedGenders.has(gender)) return sendJson(res, 400, { error: 'Select a valid gender option.' })
 
-  const signupDetails = { name, username, email, phone, address, gender }
+  const signupDetails = { name, username, email, phone, address, gender, city, state, postalCode }
   const recoverPendingAuthUser = async (): Promise<'recovered' | 'not-found' | 'details-mismatch' | 'already-verified'> => {
     const authUser = await findSupabaseAuthUserByEmail(email)
     if (!authUser?.id) return 'not-found'
@@ -2317,10 +2328,20 @@ export async function signupHandler(req: AuthRequest, res: ServerResponse): Prom
       || existingProfile.phone !== phone
       || existingProfile.address !== address
       || existingProfile.gender !== gender
+      || (existingProfile.city && existingProfile.city !== city)
+      || (existingProfile.state && existingProfile.state !== state)
+      || (existingProfile.postal_code && existingProfile.postal_code !== postalCode)
     )) return 'details-mismatch'
     if (!existingProfile) {
       await createPendingAccount(authUser.id, signupDetails, password)
-    } else if (existingProfile.email_verified) {
+    } else if (!existingProfile.city || !existingProfile.state || !existingProfile.postal_code) {
+      await supabaseRequest('aurel_users', new URLSearchParams({ id: `eq.${existingProfile.id}` }), {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ city, state, postal_code: postalCode })
+      })
+    }
+    if (existingProfile?.email_verified) {
       await setAccountEmailVerified(existingProfile.id, false)
     }
 
@@ -2362,9 +2383,23 @@ export async function signupHandler(req: AuthRequest, res: ServerResponse): Prom
           && existingProfile.username === username
           && existingProfile.phone === phone
           && existingProfile.address === address
+          && (existingProfile.city === city || !existingProfile.city)
+          && (existingProfile.state === state || !existingProfile.state)
+          && (existingProfile.postal_code === postalCode || !existingProfile.postal_code)
           && existingProfile.gender === gender
         if (!matchesExistingSignup) {
           return sendJson(res, 409, { error: 'A signup for this email is already waiting for confirmation. Use the original signup details or resend its confirmation email.' })
+        }
+        if (!existingProfile.city || !existingProfile.state || !existingProfile.postal_code) {
+          await supabaseRequest('aurel_users', new URLSearchParams({ id: `eq.${existingProfile.id}` }), {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({
+              city: existingProfile.city || city,
+              state: existingProfile.state || state,
+              postal_code: existingProfile.postal_code || postalCode
+            })
+          })
         }
         if (existingProfile.email_verified) {
           await setAccountEmailVerified(existingProfile.id, false)
@@ -2392,7 +2427,7 @@ export async function signupHandler(req: AuthRequest, res: ServerResponse): Prom
     }>('signup', {
       email,
       password,
-      data: { name, username, phone, address, gender }
+      data: { name, username, phone, address, city, state, postalCode, gender }
     })
 
     const authUser = authResult.user ?? (authResult.id ? authResult : undefined)

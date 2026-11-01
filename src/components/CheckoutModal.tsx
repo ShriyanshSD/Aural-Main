@@ -5,6 +5,7 @@ import { AuthUser, CartItem, OrderDetails, StoreSettings } from '../types'
 import { sanitizeInput, validateCheckoutForm } from '../utils/security'
 import { normalizeValidPhoneNumber } from '../utils/accountValidation'
 import { createWhatsAppMessage } from '../utils/payment'
+import { useIndiaLocations } from '../hooks/useIndiaLocations'
 
 interface CheckoutModalProps {
   isOpen: boolean
@@ -34,6 +35,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [state, setState] = useState(authUser?.state ?? '')
   const [postalCode, setPostalCode] = useState(authUser?.postalCode ?? '')
   const [notes, setNotes] = useState('')
+  const locations = useIndiaLocations(state, isOpen)
 
   const [isPaymentPreviewOpen, setIsPaymentPreviewOpen] = useState(false)
 
@@ -89,6 +91,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   }
 
   const validateCurrentCheckout = () => {
+    if (locations.error) {
+      setFormErrors([locations.error])
+      return false
+    }
     const validation = validateCheckoutForm({
       customerName,
       phoneNumber,
@@ -444,17 +450,45 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                     <div>
                       <label className="block text-[11px] font-medium tracking-wide uppercase text-[#88746E] dark:text-[#BCAAA4] mb-1">
-                        City *
+                        State
                       </label>
-                      <input
-                        type="text"
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        placeholder="E.g. Mumbai"
+                      <select
+                        value={locations.selectedState?.code ?? ''}
+                        onChange={event => {
+                          const nextState = locations.states.find(option => option.code === event.target.value)
+                          setState(nextState?.name ?? '')
+                          setCity('')
+                        }}
+                        autoComplete="address-level1"
+                        required
+                        disabled={locations.isLoadingStates || Boolean(locations.error)}
                         className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
                           isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
                         }`}
-                      />
+                      >
+                        <option value="">{locations.isLoadingStates ? 'Loading states...' : 'Select a state or union territory'}</option>
+                        {locations.states.map(option => <option key={option.code} value={option.code}>{option.name}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium tracking-wide uppercase text-[#88746E] dark:text-[#BCAAA4] mb-1">
+                        City *
+                      </label>
+                      <select
+                        value={city}
+                        onChange={event => setCity(event.target.value)}
+                        autoComplete="address-level2"
+                        required
+                        disabled={!locations.selectedState || locations.isLoadingCities}
+                        className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
+                          isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
+                        }`}
+                      >
+                        <option value="">{!locations.selectedState ? 'Select a state first' : locations.isLoadingCities ? 'Loading cities...' : 'Select a city'}</option>
+                        {city && !locations.cities.includes(city) && <option value={city}>{city}</option>}
+                        {locations.cities.map(option => <option key={option} value={option}>{option}</option>)}
+                      </select>
                     </div>
 
                     <div>
@@ -464,29 +498,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       <input
                         type="text"
                         value={postalCode}
-                        onChange={(e) => setPostalCode(e.target.value)}
+                        onChange={(e) => setPostalCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         placeholder="E.g. 400049"
+                        inputMode="numeric"
+                        pattern="[0-9]{6}"
+                        maxLength={6}
+                        required
                         className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
                           isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
                         }`}
                       />
                     </div>
-
-                    <div>
-                      <label className="block text-[11px] font-medium tracking-wide uppercase text-[#88746E] dark:text-[#BCAAA4] mb-1">
-                        State
-                      </label>
-                      <input
-                        type="text"
-                        value={state}
-                        onChange={(e) => setState(e.target.value)}
-                        placeholder="E.g. Maharashtra"
-                        maxLength={100}
-                        className={`w-full px-3.5 py-2.5 rounded-xl border text-xs transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
-                          isDarkMode ? 'bg-[#221B19] border-[#3F302D] text-[#EDE0DA]' : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
-                        }`}
-                      />
-                    </div>
+                    {locations.error && <p role="alert" className="text-xs text-red-600 dark:text-red-300 sm:col-span-2">{locations.error}</p>}
 
                     <div className="sm:col-span-2">
                       <label className="block text-[11px] font-medium tracking-wide uppercase text-[#88746E] dark:text-[#BCAAA4] mb-1">

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { X, UserRound, ShieldCheck, MailCheck } from 'lucide-react'
 import { AuthUser } from '../types'
 import { isValidAccountEmail, normalizeValidPhoneNumber } from '../utils/accountValidation'
+import { useIndiaLocations } from '../hooks/useIndiaLocations'
 import PasswordInput from './PasswordInput'
 
 export type AuthMode = 'login' | 'signup'
@@ -42,6 +43,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('')
   const [phone, setPhone] = useState('')
   const [address, setAddress] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
+  const [postalCode, setPostalCode] = useState('')
   const [gender, setGender] = useState('')
   const [error, setError] = useState('')
   const [confirmationMessage, setConfirmationMessage] = useState('')
@@ -57,6 +61,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const isSignup = mode === 'signup'
   const emailIsValid = isValidAccountEmail(email)
   const normalizedPhone = normalizeValidPhoneNumber(phone)
+  const locations = useIndiaLocations(state, isOpen && isSignup)
 
   useEffect(() => {
     if (resendWaitSeconds <= 0) return
@@ -79,6 +84,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setError('Enter a valid phone number. Indian numbers can be entered with or without +91.')
       return
     }
+    if (isSignup && locations.error) {
+      setError(locations.error)
+      return
+    }
     if (isSignup && password !== confirmPassword) {
       setError('Passwords do not match.')
       return
@@ -92,7 +101,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           isSignup
-            ? { name, username, email, password, phone: normalizedPhone, address, gender }
+            ? { name, username, email, password, phone: normalizedPhone, address, city, state, postalCode, gender }
             : { email, password }
         )
       })
@@ -325,6 +334,57 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     Address
                     <textarea className={`${fieldClass(isDarkMode)} min-h-20 resize-y`} value={address} onChange={event => setAddress(event.target.value)} autoComplete="street-address" minLength={5} maxLength={240} required />
                   </label>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="space-y-1.5 text-xs font-medium">
+                      State
+                      <select
+                        className={fieldClass(isDarkMode)}
+                        value={locations.selectedState?.code ?? ''}
+                        onChange={event => {
+                          const nextState = locations.states.find(option => option.code === event.target.value)
+                          setState(nextState?.name ?? '')
+                          setCity('')
+                          setError('')
+                        }}
+                        autoComplete="address-level1"
+                        required
+                        disabled={locations.isLoadingStates || Boolean(locations.error)}
+                      >
+                        <option value="">{locations.isLoadingStates ? 'Loading states...' : 'Select a state or union territory'}</option>
+                        {locations.states.map(option => <option key={option.code} value={option.code}>{option.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1.5 text-xs font-medium">
+                      City
+                      <select
+                        className={fieldClass(isDarkMode)}
+                        value={city}
+                        onChange={event => setCity(event.target.value)}
+                        autoComplete="address-level2"
+                        required
+                        disabled={!locations.selectedState || locations.isLoadingCities || Boolean(locations.error)}
+                      >
+                        <option value="">{!locations.selectedState ? 'Select a state first' : locations.isLoadingCities ? 'Loading cities...' : 'Select a city'}</option>
+                        {locations.cities.map(option => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="block space-y-1.5 text-xs font-medium">
+                    Pincode
+                    <input
+                      className={fieldClass(isDarkMode)}
+                      type="text"
+                      value={postalCode}
+                      onChange={event => setPostalCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                      autoComplete="postal-code"
+                      inputMode="numeric"
+                      pattern="[0-9]{6}"
+                      maxLength={6}
+                      placeholder="6-digit PIN code"
+                      required
+                    />
+                  </label>
+                  {locations.error && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{locations.error}</p>}
                   <p className="text-[11px] text-[#8E7973] dark:text-[#A79690]">
                     Passwords must be at least 8 characters and include a letter and a number.
                   </p>

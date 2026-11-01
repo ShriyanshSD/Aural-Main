@@ -52,7 +52,7 @@ export function isValidEmail(email: string): boolean {
  */
 export function isValidPostalCode(code: string): boolean {
   const cleanCode = code.replace(/\s/g, '')
-  return /^\d{5,8}$/.test(cleanCode)
+  return /^\d{6}$/.test(cleanCode)
 }
 
 /**
@@ -107,7 +107,9 @@ export function validateCheckoutForm(data: {
     errors.push('Error: City name not mentioned')
   }
 
-  if (sanitized.state.length > 100) {
+  if (!sanitized.state) {
+    errors.push('Error: State not mentioned')
+  } else if (sanitized.state.length > 100) {
     errors.push('Error: State name must be 100 characters or fewer')
   }
 
