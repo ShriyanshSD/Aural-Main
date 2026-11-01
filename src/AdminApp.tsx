@@ -927,13 +927,43 @@ function ReviewsPage({ reviews, onModerate }: {
 }) {
   const [filter, setFilter] = useState('pending')
   const visible = filter === 'all' ? reviews : reviews.filter(review => review.moderation_status === filter)
+  const pendingCount = reviews.filter(review => review.moderation_status === 'pending').length
   return <section>
     <PageHeading title="Review moderation" description="Storefront reviews are open to everyone and appear publicly only after owner approval." />
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[#8f7c75]">{reviews.filter(review => review.moderation_status === 'pending').length} awaiting moderation</p><select value={filter} onChange={event => setFilter(event.target.value)} className="rounded-xl border border-[#e9dfda] bg-white px-3 py-2 text-sm"><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All reviews</option></select></div>
-    {visible.length ? <div className="space-y-3">{visible.map(review => <article key={review.id} className="rounded-2xl border border-[#eee5df] bg-white p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="flex items-center gap-1 text-[#a45f60]">{Array.from({ length: review.rating }, (_, i) => <Star key={i} className="h-4 w-4 fill-current" />)}</div><h3 className="mt-2 font-semibold">{review.title || review.product_name}</h3><p className="mt-1 text-xs text-[#8f7c75]">{review.product_name} · {review.order_id ? `Verified order #${review.order_id}` : 'Storefront review'} · {review.customer_name}{review.customer_email && ` (${review.customer_email})`}</p></div><span className="rounded-full bg-[#f8eeeb] px-2.5 py-1 text-[10px] font-semibold">{statusLabel(review.moderation_status)}</span></div>
-      <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-[#5e4d47]">{review.body}</p>
-      <div className="mt-4 flex justify-end gap-2 border-t border-[#f1ebe7] pt-3">{review.moderation_status !== 'approved' && <button onClick={() => onModerate(review, 'approved')} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white">Approve</button>}{review.moderation_status !== 'rejected' && <button onClick={() => onModerate(review, 'rejected')} className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">Reject</button>}</div>
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {[
+        ['All reviews', reviews.length],
+        ['Awaiting review', pendingCount],
+        ['Approved', reviews.filter(review => review.moderation_status === 'approved').length],
+        ['Rejected', reviews.filter(review => review.moderation_status === 'rejected').length]
+      ].map(([label, count]) => <article key={String(label)} className="owner-card rounded-2xl border border-[#eee5df] bg-white p-4 shadow-sm sm:p-5"><p className="text-xs font-medium text-[#96847d]">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight text-[#3d302e]">{count}</p></article>)}
+    </div>
+    <div className="flex gap-2 overflow-x-auto rounded-2xl border border-[#eee5df] bg-white p-2 shadow-sm" role="tablist" aria-label="Filter customer reviews">
+      {([
+        ['pending', 'Needs review', pendingCount],
+        ['approved', 'Approved', reviews.filter(review => review.moderation_status === 'approved').length],
+        ['rejected', 'Rejected', reviews.filter(review => review.moderation_status === 'rejected').length],
+        ['all', 'All', reviews.length]
+      ] as const).map(([id, label, count]) => <button key={id} type="button" role="tab" aria-selected={filter === id} onClick={() => setFilter(id)} className={`min-h-10 shrink-0 rounded-xl px-3 py-2 text-xs font-semibold transition sm:px-4 ${filter === id ? 'bg-[#f8eeeb] text-[#934f51] shadow-sm' : 'text-[#897770] hover:bg-[#faf7f5]'}`}>{label}<span className="ml-1.5 opacity-70">{count}</span></button>)}
+    </div>
+    {visible.length ? <div className="grid gap-3 xl:grid-cols-2">{visible.map(review => <article key={review.id} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm">
+      <div className="flex items-start justify-between gap-3 border-b border-[#f1ebe7] bg-gradient-to-r from-[#fffaf7] to-white px-4 py-4 sm:px-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 text-[#b77d45]" role="img" aria-label={`${review.rating} out of 5 stars`}>{Array.from({ length: 5 }, (_, i) => <Star key={i} className={`h-4 w-4 ${i < review.rating ? 'fill-current' : 'text-[#e7d8d1]'}`} />)}<span className="ml-1 text-xs font-semibold text-[#6f5c55]">{review.rating}.0</span></div>
+          <h3 className="mt-2 truncate text-sm font-semibold text-[#40332f]">{review.title || review.product_name}</h3>
+          <p className="mt-1 text-[11px] leading-5 text-[#8f7c75]">{review.product_name} <span className="px-1 text-[#d3c4bd]">·</span> {review.order_id ? `Verified order #${review.order_id}` : 'Storefront review'}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${review.moderation_status === 'approved' ? 'bg-emerald-50 text-emerald-700' : review.moderation_status === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabel(review.moderation_status)}</span>
+      </div>
+      <div className="px-4 py-4 sm:px-5">
+        <p className="text-xs font-medium text-[#51413c]">{review.customer_name || 'Customer'}</p>
+        <p className="mt-0.5 break-all text-[10px] text-[#9a8881]">{review.customer_email || 'Verified customer'}</p>
+        <p className="mt-4 min-h-10 whitespace-pre-wrap text-sm leading-6 text-[#5e4d47]">{review.body || <span className="italic text-[#9a8881]">Star rating only — no written comment.</span>}</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#f1ebe7] pt-3">
+          <time className="text-[10px] text-[#9a8881]" dateTime={review.created_at}>{dateLabel(review.created_at)}</time>
+          <div className="flex gap-2">{review.moderation_status !== 'approved' && <button type="button" onClick={() => onModerate(review, 'approved')} className="min-h-10 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800">Approve</button>}{review.moderation_status !== 'rejected' && <button type="button" onClick={() => onModerate(review, 'rejected')} className="min-h-10 rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50">Reject</button>}</div>
+        </div>
+      </div>
     </article>)}</div> : <EmptyState text="No reviews match this moderation filter." />}
   </section>
 }
@@ -1122,32 +1152,126 @@ function ProductsPage({ products, categories, search, setSearch, onRefresh, onEd
     [categoryFilter, sortedProducts]
   )
   const { page, setPage, pageCount, visibleItems } = usePagination(categoryFilteredProducts)
-  return <section>
-    <PageHeading title="Product catalog" description="Manage prices, descriptions, inventory and storefront visibility." action={<button onClick={onCreate} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8c4e50]"><Plus className="h-4 w-4" />Add product</button>} />
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row"><SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search name, category or ID" /><select aria-label="Sort products" value={sort} onChange={event => { setSort(event.target.value as typeof sort); setPage(0) }} className="rounded-xl border border-[#e9dfda] bg-white px-3 py-2.5 text-sm"><option value="name">Sort by name</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="stock">Stock: low to high</option></select><select aria-label="Filter products by category" value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setPage(0) }} className="rounded-xl border border-[#e9dfda] bg-white px-3 py-2.5 text-sm"><option value="">All categories</option>{categories.map(category => <option key={category.slug} value={category.slug}>{category.name}</option>)}</select><button onClick={onImport} className="shrink-0 rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#a45f60] hover:bg-[#fcf6f3]">Import missing seed products</button><button onClick={onRefresh} className="rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm text-[#7c6962]">Refresh</button></div>
-    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#eee5df] bg-white p-3">
-      <button type="button" onClick={() => setSelectedIds(current => [...new Set([...current, ...visibleItems.map(product => product.id)])])} className="rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs">Select this page</button>
-      <button type="button" onClick={() => setSelectedIds([])} className="rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs">Clear selection</button>
-      <span className="text-xs text-[#8f7c75]">{selectedIds.length} selected</span>
-      <select aria-label="Bulk product action" value={bulkAction} onChange={event => setBulkAction(event.target.value as typeof bulkAction)} className="ml-auto rounded-lg border border-[#e9dfda] bg-white px-3 py-2 text-xs">
-        <option value="publish">Publish</option><option value="unpublish">Unpublish</option><option value="activate">Activate</option><option value="deactivate">Deactivate</option>
-      </select>
-      <button type="button" disabled={!selectedIds.length} onClick={() => onBulkAction(selectedIds, bulkAction)} className="rounded-lg bg-[#a45f60] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Apply</button>
+  const liveProducts = products.filter(product => product.isActive && product.isPublished).length
+  const lowStockProducts = products.filter(product => product.stockQuantity !== null && product.stockQuantity <= product.lowStockThreshold).length
+  const toggleProductSelection = (productId: string, selected: boolean) => {
+    setSelectedIds(current => selected
+      ? [...new Set([...current, productId])]
+      : current.filter(id => id !== productId))
+  }
+  const renderProductActions = (product: AdminProduct) => <>
+    <button type="button" onClick={() => onEdit(product)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] transition hover:bg-[#faf2ef]">Edit</button>
+    <button type="button" onClick={() => onDuplicate(product)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] transition hover:bg-[#faf2ef]">Duplicate</button>
+    <button type="button" onClick={() => onDelete(product)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-[#a45f60] transition hover:bg-[#fff2f0]" title="Delete product" aria-label={`Delete ${product.name}`}><Trash2 className="h-4 w-4" /></button>
+  </>
+  return <section className="space-y-5">
+    <PageHeading title="Product catalog" description="Manage prices, descriptions, inventory and storefront visibility." action={<button type="button" onClick={onCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#a45f60]/15 transition hover:-translate-y-0.5 hover:bg-[#8c4e50]"><Plus className="h-4 w-4" />Add product</button>} />
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {[
+        ['Products', products.length, 'Matching this search'],
+        ['Live', liveProducts, 'Visible in the storefront'],
+        ['Categories', categories.length, 'Ways to browse'],
+        ['Low stock', lowStockProducts, 'At or below threshold']
+      ].map(([label, value, detail]) => <article key={String(label)} className="owner-card rounded-2xl border border-[#eee5df] bg-white p-4 shadow-sm sm:p-5">
+        <p className="text-xs font-medium text-[#96847d]">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight text-[#3d302e]">{value}</p><p className="mt-1 text-[10px] text-[#9a8881] sm:text-xs">{detail}</p>
+      </article>)}
     </div>
-    {categories.length === 0 && <p className="mb-3 text-xs text-amber-800">Create or import a category before adding products.</p>}
-    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">
-      {categoryFilteredProducts.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-3 py-3">Select</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Category</th><th className="px-5 py-3">Price</th><th className="px-5 py-3">Stock</th><th className="px-5 py-3">Visibility</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(product => <tr key={product.id}><td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={event => setSelectedIds(current => event.target.checked ? [...current, product.id] : current.filter(id => id !== product.id))} /></td><td className="px-5 py-3"><div className="flex items-center gap-3"><img src={product.imageUrl || '/favicon.ico'} alt="" className="h-11 w-11 rounded-lg bg-[#f5eeea] object-cover" /><div><p className="font-medium">{product.name}</p><p className="mt-1 text-[10px] text-[#a18c84]">{product.id}</p></div></div></td><td className="px-5 py-3">{categories.find(item => item.slug === product.category)?.name ?? product.category}</td><td className="px-5 py-3 font-medium">{money(product.price)}</td><td className="px-5 py-3">{product.stockQuantity === null ? <span className="text-[#9c8982]">Not tracked</span> : product.stockQuantity}</td><td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${product.isActive && product.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4efec] text-[#88766f]'}`}>{product.isActive && product.isPublished ? 'Live' : 'Hidden'}</span></td><td className="px-5 py-3 text-right"><button onClick={() => onEdit(product)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Edit</button><button onClick={() => onDuplicate(product)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Duplicate</button><button onClick={() => onDelete(product)} className="rounded-lg p-2 text-[#a45f60] hover:bg-[#fff2f0]" title="Delete product"><Trash2 className="h-4 w-4" /></button></td></tr>)}</tbody></table></div><TablePager page={page} pageCount={pageCount} total={categoryFilteredProducts.length} onChange={setPage} /></> : <EmptyState text="No products match these filters." />}
-    </div>
+    <section className="rounded-2xl border border-[#eee5df] bg-white p-3 shadow-sm sm:p-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_180px_190px_auto_auto]">
+        <SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search name, category or ID" />
+        <select aria-label="Sort products" value={sort} onChange={event => { setSort(event.target.value as typeof sort); setPage(0) }} className="min-h-11 rounded-xl border border-[#e9dfda] bg-white px-3 py-2.5 text-sm"><option value="name">Sort by name</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="stock">Stock: low to high</option></select>
+        <select aria-label="Filter products by category" value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setPage(0) }} className="min-h-11 rounded-xl border border-[#e9dfda] bg-white px-3 py-2.5 text-sm"><option value="">All categories</option>{categories.map(category => <option key={category.slug} value={category.slug}>{category.name}</option>)}</select>
+        <button type="button" onClick={onImport} className="min-h-11 rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-xs font-semibold text-[#a45f60] transition hover:bg-[#fcf6f3]">Import seed products</button>
+        <button type="button" onClick={onRefresh} className="min-h-11 rounded-xl border border-[#e8d9d2] bg-white px-4 py-2.5 text-sm font-semibold text-[#7c6962] transition hover:bg-[#faf7f5]">Refresh</button>
+      </div>
+    </section>
+    <section className="rounded-2xl border border-[#eee5df] bg-white p-3 shadow-sm sm:p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setSelectedIds(current => [...new Set([...current, ...visibleItems.map(product => product.id)])])} className="min-h-10 rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs font-medium transition hover:bg-[#faf7f5]">Select this page</button>
+          <button type="button" onClick={() => setSelectedIds([])} className="min-h-10 rounded-lg border border-[#e8d9d2] px-3 py-2 text-xs font-medium transition hover:bg-[#faf7f5]">Clear selection</button>
+        </div>
+        <span className="text-xs text-[#8f7c75]">{selectedIds.length} selected</span>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:ml-auto">
+          <select aria-label="Bulk product action" value={bulkAction} onChange={event => setBulkAction(event.target.value as typeof bulkAction)} className="min-h-10 rounded-lg border border-[#e9dfda] bg-white px-3 py-2 text-xs">
+            <option value="publish">Publish</option><option value="unpublish">Unpublish</option><option value="activate">Activate</option><option value="deactivate">Deactivate</option>
+          </select>
+          <button type="button" disabled={!selectedIds.length} onClick={() => onBulkAction(selectedIds, bulkAction)} className="min-h-10 rounded-lg bg-[#a45f60] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#8c4e50] disabled:cursor-not-allowed disabled:opacity-50">Apply</button>
+        </div>
+      </div>
+    </section>
+    {categories.length === 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">Create or import a category before adding products.</p>}
+    {categoryFilteredProducts.length ? <>
+      <section className="hidden overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm lg:block">
+        <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[10px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-3 py-3">Select</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Category</th><th className="px-5 py-3">Price</th><th className="px-5 py-3">Stock</th><th className="px-5 py-3">Visibility</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(product => <tr key={product.id}>
+          <td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={event => toggleProductSelection(product.id, event.target.checked)} /></td>
+          <td className="px-5 py-3"><div className="flex items-center gap-3"><img src={product.imageUrl || '/favicon.ico'} alt="" className="h-11 w-11 rounded-xl bg-[#f5eeea] object-cover" /><div className="min-w-0"><p className="font-medium">{product.name}</p><p className="mt-1 text-[10px] text-[#a18c84]">{product.id}</p></div></div></td>
+          <td className="px-5 py-3">{categories.find(item => item.slug === product.category)?.name ?? product.category}</td><td className="px-5 py-3 font-semibold">{money(product.price)}</td>
+          <td className="px-5 py-3">{product.stockQuantity === null ? <span className="text-[#9c8982]">Not tracked</span> : <span className={product.stockQuantity <= product.lowStockThreshold ? 'font-semibold text-amber-700' : ''}>{product.stockQuantity}</span>}</td>
+          <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${product.isActive && product.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4efec] text-[#88766f]'}`}>{product.isActive && product.isPublished ? 'Live' : 'Hidden'}</span></td>
+          <td className="px-5 py-3 text-right"><div className="inline-flex items-center">{renderProductActions(product)}</div></td>
+        </tr>)}</tbody></table></div>
+      </section>
+      <div className="grid gap-3 sm:grid-cols-2 lg:hidden">
+        {visibleItems.map(product => <article key={product.id} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm">
+          <div className="flex items-start gap-3 p-4">
+            <input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={event => toggleProductSelection(product.id, event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#a45f60]" />
+            <img src={product.imageUrl || '/favicon.ico'} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-[#f5eeea] object-cover" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-[#40332f]">{product.name}</h3><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${product.isActive && product.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4efec] text-[#88766f]'}`}>{product.isActive && product.isPublished ? 'Live' : 'Hidden'}</span></div>
+              <p className="mt-1 truncate text-[10px] text-[#a18c84]">{product.id}</p>
+              <p className="mt-2 text-xs text-[#8f7c75]">{categories.find(item => item.slug === product.category)?.name ?? product.category}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-[#f1ebe7] bg-[#fdfbf9] px-4 py-3">
+            <div><p className="text-sm font-bold text-[#40332f]">{money(product.price)}</p><p className={`mt-0.5 text-[10px] ${product.stockQuantity !== null && product.stockQuantity <= product.lowStockThreshold ? 'font-semibold text-amber-700' : 'text-[#96847d]'}`}>{product.stockQuantity === null ? 'Stock not tracked' : `${product.stockQuantity} in stock`}</p></div>
+            <div className="flex items-center">{renderProductActions(product)}</div>
+          </div>
+        </article>)}
+      </div>
+      {categoryFilteredProducts.length > 15 && <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm"><TablePager page={page} pageCount={pageCount} total={categoryFilteredProducts.length} onChange={setPage} /></div>}
+    </> : <EmptyState text="No products match these filters." />}
   </section>
 }
 function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
   categories: AdminCategory[]; onCreate: () => void
   onEdit: (category: AdminCategory) => void; onDelete: (category: AdminCategory) => void
 }) {
-  return <section>
-    <PageHeading title="Categories" description="Organize products, storefront ordering, and featured placement." action={<button onClick={onCreate} className="inline-flex items-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white"><Plus className="h-4 w-4" />Add category</button>} />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{categories.map(category => <article key={category.slug} className="rounded-2xl border border-[#eee5df] bg-white p-5"><div className="flex items-start justify-between"><div><h3 className="font-semibold">{category.name}</h3><p className="mt-1 text-xs text-[#a18c84]">/{category.slug} · order {category.display_order}</p></div><div className="flex flex-col items-end gap-1"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${category.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4efec] text-[#88766f]'}`}>{category.is_active ? 'Active' : 'Hidden'}</span>{category.is_featured && <span className="rounded-full bg-[#a45f60]/10 px-2.5 py-1 text-[10px] font-semibold text-[#a45f60]">Featured</span>}</div></div><p className="mt-4 line-clamp-2 min-h-10 text-sm leading-5 text-[#86736c]">{category.description || 'No description added.'}</p><div className="mt-5 flex items-center justify-between border-t border-[#f1ebe7] pt-4"><span className="text-xs text-[#95827a]">{category.productCount ?? 0} products</span><div className="flex gap-1"><button onClick={() => onEdit(category)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Edit</button><button onClick={() => onDelete(category)} className="rounded-lg p-2 text-[#a45f60] hover:bg-[#fff2f0]" title="Delete category"><Trash2 className="h-4 w-4" /></button></div></div></article>)}</div>
-    {categories.length === 0 && <EmptyState text="No categories have been created yet." />}
+  const activeCount = categories.filter(category => category.is_active).length
+  const featuredCount = categories.filter(category => category.is_featured).length
+  const listedProducts = categories.reduce((total, category) => total + (category.productCount ?? 0), 0)
+  return <section className="space-y-5">
+    <PageHeading title="Categories" description="Organize products, storefront ordering, and featured placement." action={<button type="button" onClick={onCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#a45f60]/15 transition hover:-translate-y-0.5 hover:bg-[#8c4e50]"><Plus className="h-4 w-4" />Add category</button>} />
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {[
+        ['All categories', categories.length],
+        ['Active', activeCount],
+        ['Featured', featuredCount],
+        ['Products assigned', listedProducts]
+      ].map(([label, count]) => <article key={String(label)} className="owner-card rounded-2xl border border-[#eee5df] bg-white p-4 shadow-sm sm:p-5"><p className="text-xs font-medium text-[#96847d]">{label}</p><p className="mt-2 text-2xl font-semibold tracking-tight text-[#3d302e]">{count}</p></article>)}
+    </div>
+    {categories.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{categories.map(category => <article key={category.slug} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm">
+      <div className="relative h-36 overflow-hidden bg-gradient-to-br from-[#f7ebe5] via-[#f5f0ec] to-[#e9d8d0] sm:h-40">
+        {category.image_url
+          ? <img src={category.image_url} alt={category.name} loading="lazy" className="h-full w-full object-cover transition duration-500 hover:scale-[1.03]" />
+          : <div className="grid h-full place-items-center"><Boxes className="h-10 w-10 text-[#b77d75]/60" /></div>}
+        <div className="absolute inset-x-0 bottom-0 flex flex-wrap gap-2 bg-gradient-to-t from-black/50 to-transparent px-4 pb-3 pt-10">
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold backdrop-blur ${category.is_active ? 'bg-emerald-50/95 text-emerald-700' : 'bg-white/90 text-[#88766f]'}`}>{category.is_active ? 'Active' : 'Hidden'}</span>
+          {category.is_featured && <span className="rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-[#a45f60] backdrop-blur">Featured</span>}
+        </div>
+      </div>
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-semibold text-[#40332f]">{category.name}</h3><p className="mt-1 truncate text-xs text-[#a18c84]">/{category.slug}</p></div><span className="shrink-0 rounded-lg bg-[#fbf6f3] px-2.5 py-1.5 text-[10px] font-semibold text-[#8e6e65]">Position {category.display_order + 1}</span></div>
+        <p className="mt-4 min-h-10 text-sm leading-5 text-[#86736c]">{category.description || 'Add a short description to help customers browse.'}</p>
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-[#f1ebe7] pt-3">
+          <span className="text-xs font-medium text-[#95827a]">{category.productCount ?? 0} products</span>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => onEdit(category)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] transition hover:bg-[#faf2ef]">Edit</button>
+            <button type="button" onClick={() => onDelete(category)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-[#a45f60] transition hover:bg-[#fff2f0]" title="Delete category" aria-label={`Delete ${category.name}`}><Trash2 className="h-4 w-4" /></button>
+          </div>
+        </div>
+      </div>
+    </article>)}</div> : <EmptyState text="No categories have been created yet." />}
   </section>
 }
 function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => void }) {
@@ -1378,10 +1502,20 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, onConfirmPay
 }
 function CustomersPage({ customers, search, setSearch, onEdit, onToggleStatus, onDelete }: { customers: AdminCustomer[]; search: string; setSearch: (value: string) => void; onEdit: (customer: AdminCustomer) => void; onToggleStatus: (customer: AdminCustomer) => void; onDelete: (customer: AdminCustomer) => void }) {
   const { page, setPage, pageCount, visibleItems } = usePagination(customers)
-  return <section>
+  return <section className="space-y-5">
     <PageHeading title="Customers" description="Review account profiles, order counts and recorded order value, and disable access without deleting history. Order totals are not payment-verified." />
-    <div className="mb-4"><SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search name, username, email or phone" /></div>
-    <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white">{customers.length ? <><div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[11px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Contact</th><th className="px-5 py-3">Orders</th><th className="px-5 py-3">Recorded order value*</th><th className="px-5 py-3">Last order</th><th className="px-5 py-3">Email status</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(customer => <tr key={customer.id}><td className="px-5 py-4"><p className="font-medium">{customer.name}</p><p className="mt-1 text-xs text-[#9a8881]">@{customer.username}</p></td><td className="px-5 py-4"><p>{customer.email}</p><p className="mt-1 text-xs text-[#9a8881]">{customer.phone}</p></td><td className="px-5 py-4">{customer.orderSummary.count}</td><td className="px-5 py-4">{money(customer.orderSummary.totalOrderValue)}<p className="mt-1 text-[10px] text-[#9a8881]">Unverified order data</p></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{customer.orderSummary.latestOrderAt ? dateLabel(customer.orderSummary.latestOrderAt) : '—'}</td><td className="px-5 py-4">{customer.email_verified ? <span className="text-xs text-emerald-700">Verified</span> : <span className="text-xs text-amber-700">Unverified</span>}{customer.pending_email && <p className="mt-1 max-w-48 truncate text-[10px] text-amber-700" title={customer.pending_email}>Pending {customer.pending_email}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${customer.account_status === 'disabled' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{statusLabel(customer.account_status)}</span></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(customer.created_at)}</td><td className="px-5 py-4 text-right"><div className="inline-flex items-center gap-1"><button onClick={() => onEdit(customer)} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Details</button><button onClick={() => onToggleStatus(customer)} className="rounded-lg px-3 py-2 text-xs font-medium text-[#806b63] hover:bg-[#faf7f5]">{customer.account_status === 'disabled' ? 'Enable' : 'Disable'}</button><button onClick={() => onDelete(customer)} className="rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50" aria-label={`Permanently delete ${customer.email}`}>Delete</button></div></td></tr>)}</tbody></table></div><p className="px-5 py-3 text-[10px] text-[#9a8881]">* Based on submitted order totals, not verified payment records.</p><TablePager page={page} pageCount={pageCount} total={customers.length} onChange={setPage} /></> : <EmptyState text="No customers match your search." />}</div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><SearchBox value={search} onChange={value => { setSearch(value); setPage(0) }} placeholder="Search name, username, email or phone" /></div><p className="shrink-0 text-xs text-[#8f7c75]">{customers.length} customer{customers.length === 1 ? '' : 's'}</p></div>
+    {customers.length ? <>
+      <div className="hidden overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm lg:block"><div className="overflow-x-auto"><table className="w-full min-w-[1250px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[10px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-5 py-3">Customer</th><th className="px-5 py-3">Contact</th><th className="px-5 py-3">Orders</th><th className="px-5 py-3">Recorded order value*</th><th className="px-5 py-3">Last order</th><th className="px-5 py-3">Email status</th><th className="px-5 py-3">Account</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(customer => <tr key={customer.id}><td className="px-5 py-4"><p className="font-medium">{customer.name}</p><p className="mt-1 text-xs text-[#9a8881]">@{customer.username}</p></td><td className="px-5 py-4"><p>{customer.email}</p><p className="mt-1 text-xs text-[#9a8881]">{customer.phone}</p></td><td className="px-5 py-4">{customer.orderSummary.count}</td><td className="px-5 py-4">{money(customer.orderSummary.totalOrderValue)}<p className="mt-1 text-[10px] text-[#9a8881]">Unverified order data</p></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{customer.orderSummary.latestOrderAt ? dateLabel(customer.orderSummary.latestOrderAt) : '—'}</td><td className="px-5 py-4">{customer.email_verified ? <span className="text-xs text-emerald-700">Verified</span> : <span className="text-xs text-amber-700">Unverified</span>}{customer.pending_email && <p className="mt-1 max-w-48 truncate text-[10px] text-amber-700" title={customer.pending_email}>Pending {customer.pending_email}</p>}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${customer.account_status === 'disabled' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{statusLabel(customer.account_status)}</span></td><td className="px-5 py-4 text-xs text-[#8e7d76]">{dateLabel(customer.created_at)}</td><td className="px-5 py-4 text-right"><div className="inline-flex items-center gap-1"><button type="button" onClick={() => onEdit(customer)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Details</button><button type="button" onClick={() => onToggleStatus(customer)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-medium text-[#806b63] hover:bg-[#faf7f5]">{customer.account_status === 'disabled' ? 'Enable' : 'Disable'}</button><button type="button" onClick={() => onDelete(customer)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50" aria-label={`Permanently delete ${customer.email}`}>Delete</button></div></td></tr>)}</tbody></table></div><p className="border-t border-[#f2ece8] px-5 py-3 text-[10px] text-[#9a8881]">* Based on submitted order totals, not verified payment records.</p></div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:hidden">{visibleItems.map(customer => <article key={customer.id} className="owner-card rounded-2xl border border-[#eee5df] bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-[#40332f]">{customer.name}</h3><p className="mt-1 text-xs text-[#9a8881]">@{customer.username}</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${customer.account_status === 'disabled' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{statusLabel(customer.account_status)}</span></div>
+        <div className="mt-4 space-y-1.5 border-t border-[#f1ebe7] pt-3 text-xs"><p className="break-all text-[#51413c]">{customer.email}</p><p className="text-[#8f7c75]">{customer.phone || 'No phone recorded'}</p><p className="text-[#8f7c75]">{customer.email_verified ? 'Email verified' : 'Email not verified'}{customer.pending_email ? ` · Pending ${customer.pending_email}` : ''}</p></div>
+        <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-[#fbf8f6] p-3"><div><p className="text-[10px] text-[#96847d]">Orders</p><p className="mt-1 text-sm font-semibold">{customer.orderSummary.count}</p></div><div><p className="text-[10px] text-[#96847d]">Order total*</p><p className="mt-1 text-sm font-semibold">{money(customer.orderSummary.totalOrderValue)}</p></div><div className="col-span-2 border-t border-[#eee5df] pt-2"><p className="text-[10px] text-[#96847d]">Last order</p><p className="mt-1 text-xs font-medium text-[#6f5c55]">{customer.orderSummary.latestOrderAt ? dateLabel(customer.orderSummary.latestOrderAt) : 'No orders recorded'}</p></div></div>
+        <div className="mt-3 flex flex-wrap justify-end gap-1 border-t border-[#f1ebe7] pt-3"><button type="button" onClick={() => onEdit(customer)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Details</button><button type="button" onClick={() => onToggleStatus(customer)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-medium text-[#806b63] hover:bg-[#faf7f5]">{customer.account_status === 'disabled' ? 'Enable' : 'Disable'}</button><button type="button" onClick={() => onDelete(customer)} className="min-h-10 rounded-lg px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">Delete</button></div>
+      </article>)}</div>
+      <p className="text-[10px] text-[#9a8881] lg:hidden">* Based on submitted order totals, not verified payment records.</p>
+      {customers.length > 15 && <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm"><TablePager page={page} pageCount={pageCount} total={customers.length} onChange={setPage} /></div>}
+    </> : <EmptyState text="No customers match your search." />}
   </section>
 }
 function SettingsPage({
@@ -1412,13 +1546,13 @@ function SettingsPage({
   ]
   return <section className="space-y-5">
     <PageHeading title="Settings" description="A single place for public store details, storefront publishing, dashboard preferences, and owner security." />
-    <div className="grid gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
-      <nav aria-label="Settings sections" className="h-fit rounded-2xl border border-[#eee5df] bg-white p-2">
+    <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-5">
+      <nav aria-label="Settings sections" className="flex gap-2 overflow-x-auto rounded-2xl border border-[#eee5df] bg-white p-2 shadow-sm lg:h-fit lg:flex-col lg:overflow-visible">
         {tabs.map(item => {
           const Icon = item.icon
-          return <button key={item.id} type="button" aria-pressed={tab === item.id} onClick={() => setTab(item.id)} className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition last:mb-0 ${tab === item.id ? 'bg-[#f8eeeb] text-[#934f51]' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>
+          return <button key={item.id} type="button" aria-pressed={tab === item.id} onClick={() => setTab(item.id)} className={`flex min-h-11 min-w-[145px] items-center gap-2 rounded-xl px-3 py-2.5 text-left transition sm:min-w-[175px] sm:gap-3 sm:px-3 sm:py-3 lg:mb-1 lg:w-full lg:min-w-0 lg:last:mb-0 ${tab === item.id ? 'bg-[#f8eeeb] text-[#934f51] shadow-sm shadow-[#a45f60]/5' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>
             <span className={`rounded-lg p-2 ${tab === item.id ? 'bg-white' : 'bg-[#f8f5f3]'}`}><Icon className="h-4 w-4" /></span>
-            <span><span className="block text-sm font-semibold">{item.label}</span><span className="mt-0.5 block text-[11px] text-[#938079]">{item.detail}</span></span>
+            <span className="min-w-0"><span className="block whitespace-nowrap text-xs font-semibold sm:text-sm">{item.label}</span><span className="mt-0.5 hidden text-[11px] text-[#938079] sm:block">{item.detail}</span></span>
           </button>
         })}
       </nav>
