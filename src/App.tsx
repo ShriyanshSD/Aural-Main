@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { motion, AnimatePresence, MotionConfig } from 'motion/react'
 import { ArrowUp, Sparkles } from 'lucide-react'
@@ -73,7 +73,6 @@ type AppTab = 'home' | 'shop' | 'builder' | 'story' | 'contact'
 interface SignupResumeState {
   activeTab: AppTab
   activeCategory: ProductCategory
-  cartItems: CartItem[]
   wishlist: string[]
   isDarkMode: boolean
   scrollY: number
@@ -83,7 +82,8 @@ interface SignupResumeState {
 
 const signupResumeStorageKey = 'aurel_signup_resume'
 const savedThemeStorageKey = 'aurel_theme'
-const savedCartStorageKey = 'aurel_cart'
+const legacySavedCartStorageKey = 'aurel_cart'
+const getSavedCartStorageKey = (userId: string) => `aurel_cart_${userId}`
 const getWishlistStorageKey = (userId: string) => `aurel_wishlist_${userId}`
 const appTabs = new Set<AppTab>(['home', 'shop', 'builder', 'story', 'contact'])
 const productCategories = /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/
@@ -136,9 +136,9 @@ const readSavedTheme = (): boolean | null => {
   }
 }
 
-const readSavedCart = (): CartItem[] => {
+const readSavedCart = (userId: string): CartItem[] => {
   try {
-    const serializedCart = window.localStorage.getItem(savedCartStorageKey)
+    const serializedCart = window.localStorage.getItem(getSavedCartStorageKey(userId))
     if (!serializedCart) return []
     const savedCart: unknown = JSON.parse(serializedCart)
     if (!Array.isArray(savedCart)) {
@@ -192,7 +192,6 @@ const readSignupResumeState = (): SignupResumeState | null => {
       || !appTabs.has(state.activeTab as AppTab)
       || typeof state.activeCategory !== 'string'
       || !productCategories.test(state.activeCategory)
-      || !Array.isArray(state.cartItems)
       || !Array.isArray(state.wishlist)
       || typeof state.isDarkMode !== 'boolean'
       || typeof state.scrollY !== 'number'
@@ -239,7 +238,8 @@ function StorefrontApp() {
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(signupResume?.resumeCheckout ?? false)
 
   // Cart & Wishlist state
-  const [cartItems, setCartItems] = useState<CartItem[]>(signupResume?.cartItems ?? readSavedCart())
+  const [cartItems, setCartItems] = useState<CartItem[]>([])
+  const [cartOwnerId, setCartOwnerId] = useState<string | null>(null)
   const [isBagOpen, setIsBagOpen] = useState(false)
   const [cartFeedback, setCartFeedback] = useState<{
     productName: string
@@ -249,6 +249,10 @@ function StorefrontApp() {
   const [wishlist, setWishlist] = useState<string[]>(signupResume?.wishlist ?? [])
   const [wishlistOwnerId, setWishlistOwnerId] = useState<string | null>(null)
   const [isWishlistOpen, setIsWishlistOpen] = useState(false)
+  const accountCartItems = useMemo(
+    () => authUser && cartOwnerId === authUser.id ? cartItems : [],
+    [authUser, cartOwnerId, cartItems]
+  )
 
   useEffect(() => {
     const updateBackToTopVisibility = () => setShowBackToTop(window.scrollY > 400)
@@ -286,16 +290,26 @@ function StorefrontApp() {
   }, [isDarkMode])
 
   useEffect(() => {
+    if (!isAuthLoaded) return
     try {
-      window.localStorage.setItem(savedCartStorageKey, JSON.stringify(cartItems))
+      window.localStorage.removeItem(legacySavedCartStorageKey)
     } catch (error) {
-      console.error('Unable to save the bag:', error)
+      console.error('Unable to remove the unowned saved bag from this device:', error)
     }
-  }, [cartItems])
+  }, [isAuthLoaded])
 
   useEffect(() => {
-    if (!authUser) return
-    const customizationIds = [...new Set(cartItems
+    if (!isAuthLoaded || !authUser || cartOwnerId !== authUser.id) return
+    try {
+      window.localStorage.setItem(getSavedCartStorageKey(authUser.id), JSON.stringify(cartItems))
+    } catch (error) {
+      console.error('Unable to save the account bag:', error)
+    }
+  }, [authUser, cartItems, cartOwnerId, isAuthLoaded])
+
+  useEffect(() => {
+    if (!authUser || cartOwnerId !== authUser.id) return
+    const customizationIds = [...new Set(accountCartItems
       .map(item => item.magazineCustomization?.customizationId)
       .filter((id): id is string => Boolean(id)))]
     if (!customizationIds.length) return
@@ -311,7 +325,7 @@ function StorefrontApp() {
         throw new Error(result.error || 'Saved magazine files could not be refreshed.')
       }
     }).catch(error => console.error('Unable to refresh active magazine upload retention:', error))
-  }, [authUser?.id, cartItems])
+  }, [authUser?.id, accountCartItems])
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -372,6 +386,8 @@ function StorefrontApp() {
         if (response.status === 401) return
         if (!response.ok) throw new Error(`Account lookup failed with status ${response.status}.`)
         const data = await response.json() as { user: AuthUser }
+        setCartItems(readSavedCart(data.user.id))
+        setCartOwnerId(data.user.id)
         setAuthUser(data.user)
       } catch (error) {
         console.error('Unable to restore account session:', error)
@@ -484,6 +500,9 @@ function StorefrontApp() {
           throw new Error(sessionData.error || 'Your email was verified, but this browser could not keep your sign-in session. Please sign in once to continue.')
         }
 
+        setCartItems(readSavedCart(sessionData.user.id))
+        setCartOwnerId(sessionData.user.id)
+        setIsBagOpen(false)
         setAuthUser(sessionData.user)
         setAuthNotice('')
         setIsAuthOpen(false)
@@ -526,7 +545,7 @@ function StorefrontApp() {
     setIsProfileOpen(true)
   }, [authUser, isAuthLoaded])
 
-  const totalBagCount = cartItems.reduce((acc, item) => acc + item.quantity, 0)
+  const totalBagCount = accountCartItems.reduce((acc, item) => acc + item.quantity, 0)
 
   // Handlers
   const smoothScrollTo = (target: number | HTMLElement, duration = 900) => {
@@ -633,8 +652,14 @@ function StorefrontApp() {
   }
 
   const handleAddToCart = (item: CartItem): boolean => {
+    if (!authUser || cartOwnerId !== authUser.id) {
+      setAuthMode('login')
+      setAuthNotice('Sign in to add items to your personal bag.')
+      setIsAuthOpen(true)
+      return false
+    }
     const product = catalogProducts.find(candidate => candidate.id === item.productId)
-    const currentQuantity = item.magazineCustomization ? 0 : cartItems
+    const currentQuantity = item.magazineCustomization ? 0 : accountCartItems
       .filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId && cartItem.variantId === item.variantId)
       .reduce((total, cartItem) => total + cartItem.quantity, 0)
     const variant = product?.variants?.find(candidate => candidate.id === item.variantId)
@@ -715,10 +740,10 @@ function StorefrontApp() {
   }
 
   const handleUpdateQuantity = (cartId: string, delta: number) => {
-    const item = cartItems.find(cartItem => cartItem.cartId === cartId)
+    const item = accountCartItems.find(cartItem => cartItem.cartId === cartId)
     const product = item && catalogProducts.find(candidate => candidate.id === item.productId)
     const currentVariantQuantity = item
-      ? cartItems.filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId && cartItem.variantId === item.variantId).reduce((total, cartItem) => total + cartItem.quantity, 0)
+      ? accountCartItems.filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId && cartItem.variantId === item.variantId).reduce((total, cartItem) => total + cartItem.quantity, 0)
       : 0
     const variant = product?.variants?.find(candidate => candidate.id === item?.variantId)
     const stockLimit = variant ? variant.stockQuantity : product?.stockQuantity
@@ -825,7 +850,21 @@ function StorefrontApp() {
     try {
       const response = await fetch('/api/auth/logout', { method: 'POST' })
       if (!response.ok) throw new Error(`Sign out failed with status ${response.status}.`)
+      if (authUser) {
+        try {
+          window.localStorage.removeItem(getSavedCartStorageKey(authUser.id))
+        } catch (error) {
+          console.error('Unable to remove the signed-out account bag from this device:', error)
+        }
+      }
       setAuthUser(null)
+      setCartItems([])
+      setCartOwnerId(null)
+      setCartFeedback(null)
+      setIsBagOpen(false)
+      setIsCheckoutOpen(false)
+      setCheckoutAfterAuth(false)
+      setIsProfileOpen(false)
     } catch (error) {
       console.error('Unable to sign out:', error)
       window.alert('Unable to sign out right now. Please try again.')
@@ -836,11 +875,18 @@ function StorefrontApp() {
     if (authUser) {
       try {
         window.localStorage.removeItem(getWishlistStorageKey(authUser.id))
+        window.localStorage.removeItem(getSavedCartStorageKey(authUser.id))
       } catch (error) {
-        console.error('Unable to remove the deleted account wishlist from this device:', error)
+        console.error('Unable to remove deleted account data from this device:', error)
       }
     }
     setAuthUser(null)
+    setCartItems([])
+    setCartOwnerId(null)
+    setCartFeedback(null)
+    setIsBagOpen(false)
+    setIsCheckoutOpen(false)
+    setCheckoutAfterAuth(false)
     setWishlist([])
     setWishlistOwnerId(null)
     setIsWishlistOpen(false)
@@ -1155,13 +1201,13 @@ function StorefrontApp() {
         isOpen={isBagOpen}
         onClose={() => setIsBagOpen(false)}
         isDarkMode={isDarkMode}
-        cartItems={cartItems}
+        cartItems={accountCartItems}
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveCartItem}
         onProceedToCheckout={() => {
-          const unavailableItem = cartItems.find(item => {
+          const unavailableItem = accountCartItems.find(item => {
             const product = catalogProducts.find(candidate => candidate.id === item.productId)
-            const totalQuantity = cartItems
+            const totalQuantity = accountCartItems
               .filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId)
               .reduce((total, cartItem) => total + cartItem.quantity, 0)
             return !item.magazineCustomization
@@ -1186,7 +1232,7 @@ function StorefrontApp() {
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         isDarkMode={isDarkMode}
-        cartItems={cartItems}
+        cartItems={accountCartItems}
         authUser={authUser}
         settings={storeSettings}
         onOrderSuccess={handleOrderSuccess}
@@ -1204,7 +1250,6 @@ function StorefrontApp() {
             const resumeState: SignupResumeState = {
               activeTab,
               activeCategory,
-              cartItems,
               wishlist,
               isDarkMode,
               scrollY: window.scrollY,
@@ -1217,6 +1262,9 @@ function StorefrontApp() {
           }
         }}
         onAuthenticated={user => {
+          setCartItems(readSavedCart(user.id))
+          setCartOwnerId(user.id)
+          setIsBagOpen(false)
           setAuthUser(user)
           setAuthNotice('')
           setIsAuthOpen(false)
