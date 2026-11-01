@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
-import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, UserRound, LogOut, Settings, X } from 'lucide-react'
+import { Heart, Search, ShoppingBag, Sun, Moon, Menu, Sparkles, BookOpen, UserRound, LogOut, Settings, X } from 'lucide-react'
 import { AuthUser, Product, StoreSettings } from '../types'
 import { AuthMode } from './AuthModal'
 import { BrandLogo } from './BrandLogo'
@@ -20,6 +20,7 @@ interface NavigationProps {
   activeTab: string
   onSelectTab: (tab: string) => void
   onOpenBuilder: () => void
+  onOpenCustomMagazine: () => void
   user: AuthUser | null
   onOpenAuth: (mode: AuthMode) => void
   onOpenProfile: () => void
@@ -102,6 +103,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   activeTab,
   onSelectTab,
   onOpenBuilder,
+  onOpenCustomMagazine,
   user,
   onOpenAuth,
   onOpenProfile,
@@ -509,6 +511,15 @@ export const Navigation: React.FC<NavigationProps> = ({
                 className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#B36D6D]"
               />
             )}
+          </button>
+          <button
+            onClick={onOpenCustomMagazine}
+            className={`relative flex items-center gap-1.5 whitespace-nowrap py-1 transition-colors ${
+              isDarkMode ? 'text-[#C7B7AF] hover:text-white' : 'text-[#6B5A55] hover:text-[#2C2523]'
+            }`}
+          >
+            <BookOpen className="h-3.5 w-3.5 text-[#B36D6D]" />
+            Custom Magazine
           </button>
           <button
             onClick={onOpenBuilder}

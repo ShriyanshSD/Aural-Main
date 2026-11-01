@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import {
-  Activity, ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, CalendarDays, Check, ChevronDown, CircleAlert,
-  CircleDollarSign, Clock3, ImagePlus, Bell, LayoutDashboard, LoaderCircle, LogOut, Mail, MapPin, Package,
+  Activity, ArrowDownLeft, ArrowLeft, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert,
+  CircleDollarSign, Clock3, Download, FileText, ImagePlus, Bell, LayoutDashboard, LoaderCircle, LogOut, Mail, MapPin, Package,
   PackageCheck, Phone, Plus, Search, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, Store, Trash2,
   UserRound, Users, X
 } from 'lucide-react'
 import type { Product } from './types'
 import type { StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
+import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -48,7 +50,33 @@ interface AdminCustomOrder {
   order_data: Record<string, unknown>
   created_at: string
   fulfillment_status: string
+  payment_status: string
+  order_status: string
+  paid_at: string | null
   operation: CustomOrderOperation
+}
+interface AdminMagazineFile {
+  id: string
+  originalFilename: string
+  contentType: string
+  fileSize: number
+  uploadedAt: string
+}
+interface AdminMagazineOrder {
+  orderDbId: number
+  orderId: string
+  userId: string | null
+  customerName: string
+  customerEmail: string
+  createdAt: string
+  orderTotal: number
+  itemAmount: number
+  paymentStatus: string
+  orderStatus: string
+  fulfillmentStatus: string
+  item: Record<string, unknown>
+  photos: AdminMagazineFile[]
+  messageFile: AdminMagazineFile | null
 }
 interface AdminAuditEntry {
   id: number
@@ -259,6 +287,7 @@ export default function AdminApp() {
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(readAnalyticsRange)
   const [products, setProducts] = useState<AdminProduct[]>([])
   const [customOrders, setCustomOrders] = useState<AdminCustomOrder[]>([])
+  const [customMagazines, setCustomMagazines] = useState<AdminMagazineOrder[]>([])
   const [activityEntries, setActivityEntries] = useState<AdminAuditEntry[]>([])
   const [contentDraft, setContentDraft] = useState<StorefrontContent>(initialContent)
   const [contentPublished, setContentPublished] = useState<StorefrontContent>(initialContent)
@@ -323,7 +352,11 @@ export default function AdminApp() {
         setCategories(categoryResult.categories)
         if (!result.products.length) setNotice('Import the existing storefront catalog to begin managing products.')
       }
-      if (target === 'custom-orders') setCustomOrders((await api<{ orders: AdminCustomOrder[] }>('/api/admin/custom-orders')).orders)
+      if (target === 'custom-orders') {
+        const result = await api<{ orders: AdminCustomOrder[]; magazines: AdminMagazineOrder[] }>('/api/admin/custom-orders')
+        setCustomOrders(result.orders)
+        setCustomMagazines(result.magazines)
+      }
       if (target === 'categories') {
         const categoryResult = await api<{ categories: AdminCategory[] }>('/api/admin/categories')
         setCategories(categoryResult.categories)
@@ -368,6 +401,15 @@ export default function AdminApp() {
       window.clearInterval(timer)
     }
   }, [signedIn])
+
+  useEffect(() => {
+    if (!error && !notice) return
+    const timeoutId = window.setTimeout(() => {
+      setError('')
+      setNotice('')
+    }, 4500)
+    return () => window.clearTimeout(timeoutId)
+  }, [error, notice])
 
   useEffect(() => {
     window.localStorage.setItem(analyticsRangeStorageKey, analyticsRange)
@@ -457,7 +499,7 @@ export default function AdminApp() {
         setUnreadNotificationCount(count => Math.max(0, count - clearedCount))
       }
       setConfirmingOrderId('')
-      setNotice(`${result.notificationError ? `${result.notificationError} ` : ''}Payment confirmed. Sending confirmation email…`)
+      setNotice(`${result.notificationError ? `${result.notificationError} ` : ''}Payment confirmed.`)
       void api<{ success: boolean; emailStatus: AdminOrder['confirmation_email_status'] | 'already_sent'; emailError?: string }>(
         `/api/admin/orders/${order.id}/confirmation-email`,
         { method: 'POST', body: '{}' }
@@ -470,8 +512,8 @@ export default function AdminApp() {
         } : item))
         if (email.emailStatus === 'sent' || email.emailStatus === 'already_sent') {
           setNotice(result.notificationError
-            ? `${result.notificationError} Payment confirmed and confirmation email sent.`
-            : 'Payment confirmed and confirmation email sent.')
+            ? `${result.notificationError} Payment confirmed.`
+            : 'Payment confirmed.')
         } else {
           setError(email.emailError || 'Payment was confirmed, but the confirmation email could not be sent. Retry from the paid order.')
         }
@@ -612,8 +654,35 @@ export default function AdminApp() {
         </div>
 
         <main className="owner-main mx-auto max-w-[1500px] px-3 py-5 sm:px-6 sm:py-7 xl:px-9">
-          {error && <AlertMessage message={error} />}
-          {notice && <div role="status" className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><Check className="h-4 w-4" />{notice}<button onClick={() => setNotice('')} className="ml-auto"><X className="h-4 w-4" /></button></div>}
+          <AnimatePresence>
+            {(error || notice) && <motion.div
+              key={error ? `error-${error}` : `notice-${notice}`}
+              role={error ? 'alert' : 'status'}
+              initial={{ opacity: 0, y: -12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className={`fixed right-4 top-4 z-[100] flex w-[min(92vw,440px)] items-start gap-3 overflow-hidden rounded-2xl border px-4 py-3.5 pr-11 text-sm shadow-[0_16px_50px_rgba(54,36,30,0.18)] ${
+                error ? 'border-rose-200 bg-white text-rose-900' : 'border-emerald-200 bg-white text-emerald-900'
+              }`}
+            >
+              {error ? <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
+              <span className="leading-5">{error || notice}</span>
+              <button
+                type="button"
+                aria-label="Dismiss notification"
+                onClick={() => { setError(''); setNotice('') }}
+                className="absolute right-3 top-3 rounded-lg p-1 text-[#8a7771] transition hover:bg-black/5"
+              ><X className="h-4 w-4" /></button>
+              <motion.span
+                aria-hidden="true"
+                initial={{ scaleX: 1 }}
+                animate={{ scaleX: 0 }}
+                transition={{ duration: 4.5, ease: 'linear' }}
+                className={`absolute bottom-0 left-0 h-0.5 w-full origin-left ${error ? 'bg-rose-400' : 'bg-emerald-500'}`}
+              />
+            </motion.div>}
+          </AnimatePresence>
           {busy && <div className="mb-4 flex items-center gap-2 text-xs text-[#9b8881]"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Updating dashboard</div>}
 
           <div key={section} className="owner-page-enter owner-route">
@@ -675,8 +744,13 @@ export default function AdminApp() {
           }} onUpdate={async (order, status) => {
             setUpdatingStatusOrderId(String(order.id))
             await runAction(async () => {
-              return api<{ alreadyUpdated?: boolean }>(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
-            }, result => result.alreadyUpdated ? `${order.order_id} was already ${statusLabel(status)}.` : `${order.order_id} marked ${statusLabel(status).toLowerCase()}.`)
+              return api<{ alreadyUpdated?: boolean; emailError?: string }>(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
+            }, result => {
+              const statusMessage = result.alreadyUpdated
+                ? `${order.order_id} was already ${statusLabel(status)}.`
+                : `${order.order_id} marked ${statusLabel(status).toLowerCase()}.`
+              return result.emailError ? `${statusMessage} ${result.emailError}` : statusMessage
+            })
             setUpdatingStatusOrderId('')
           }} />}
           {section === 'reviews' && <ReviewsPage
@@ -688,6 +762,7 @@ export default function AdminApp() {
           />}
           {section === 'custom-orders' && <CustomOrdersPage
             orders={customOrders.filter(order => `${order.order_id} ${String(order.order_data.customerName ?? '')} ${JSON.stringify(order.order_data.items ?? [])}`.toLowerCase().includes(search.toLowerCase()))}
+            magazines={customMagazines.filter(order => `${order.orderId} ${order.customerName} ${order.customerEmail} ${JSON.stringify(order.item)}`.toLowerCase().includes(search.toLowerCase()))}
             search={search} setSearch={setSearch}
             onSave={(order, operation) => {
               void runAction(async () => {
@@ -831,18 +906,189 @@ const defaultProductionChecklist = [
   ['package_label', 'Package and label'],
   ['delivery_details', 'Confirm delivery details']
 ]
-function CustomOrdersPage({ orders, search, setSearch, onSave }: {
-  orders: AdminCustomOrder[]; search: string; setSearch: (value: string) => void
+function CustomOrdersPage({ orders, magazines, search, setSearch, onSave }: {
+  orders: AdminCustomOrder[]
+  magazines: AdminMagazineOrder[]
+  search: string
+  setSearch: (value: string) => void
   onSave: (order: AdminCustomOrder, operation: CustomOrderOperation) => void
 }) {
+  const [tab, setTab] = useState<'magazines' | 'gift-studio'>('magazines')
   return <section className="space-y-5">
-    <PageHeading title="Custom Orders Studio" description="Manage personalization and production separately from payment and fulfillment." />
+    <PageHeading title="Custom Orders" description="Paid custom items are organized here after payment is confirmed in Awaiting Confirmation." />
     <SearchBox value={search} onChange={setSearch} placeholder="Search order, customer or item personalization" />
-    {orders.length ? <div className="space-y-4">{orders.map(order =>
-      <CustomOrderCard key={order.id} order={order} onSave={operation => onSave(order, operation)} />
-    )}</div> : <EmptyState text="No orders with personalization details were found in the recent order records." />}
+    <div role="tablist" aria-label="Custom order categories" className="flex flex-wrap gap-2 rounded-2xl border border-[#eee5df] bg-white p-2 shadow-sm">
+      {([
+        { id: 'magazines' as const, label: 'Custom Magazines', count: magazines.length },
+        { id: 'gift-studio' as const, label: 'Custom Gift Studio', count: orders.length }
+      ]).map(item => (
+        <button
+          key={item.id}
+          type="button"
+          role="tab"
+          aria-selected={tab === item.id}
+          onClick={() => setTab(item.id)}
+          className={`flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+            tab === item.id ? 'bg-[#f8eeeb] text-[#934f51] shadow-sm' : 'text-[#776762] hover:bg-[#faf7f5]'
+          }`}
+        >
+          {item.label}<span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px]">{item.count}</span>
+        </button>
+      ))}
+    </div>
+    {tab === 'magazines'
+      ? magazines.length
+        ? <div role="tabpanel" className="space-y-4">{magazines.map(magazine => <CustomMagazineCard key={`${magazine.orderDbId}-${String((magazine.item.magazineCustomization as Record<string, unknown> | undefined)?.customizationId ?? magazine.item.cartId)}`} magazine={magazine} />)}</div>
+        : <EmptyState text="No paid custom magazine orders yet. Magazine details appear here after payment is confirmed." />
+      : orders.length
+        ? <div role="tabpanel" className="space-y-4">{orders.map(order =>
+          <CustomOrderCard key={order.id} order={order} onSave={operation => onSave(order, operation)} />
+        )}</div>
+        : <EmptyState text="No paid Custom Gift Studio orders yet. Gift details appear here after payment is confirmed." />}
   </section>
 }
+
+function CustomMagazineCard({ magazine }: { magazine: AdminMagazineOrder }) {
+  const [downloadState, setDownloadState] = useState<'photos' | 'message' | ''>('')
+  const [downloadNotice, setDownloadNotice] = useState('')
+  const [downloadError, setDownloadError] = useState('')
+  const details = magazine.item.magazineCustomization && typeof magazine.item.magazineCustomization === 'object'
+    ? magazine.item.magazineCustomization as Record<string, unknown>
+    : {}
+  const legacyComponents = Array.isArray(magazine.item.customComponents) ? magazine.item.customComponents.map(String) : []
+  const recipientName = String(details.recipientName ?? magazine.item.recipientName ?? 'Beloved')
+  const printFinish = String(details.printFinish ?? magazine.item.finish ?? 'Not specified')
+  const pageCount = String(details.pageCount ?? legacyComponents.find(value => /^\d+ pages$/.test(value))?.replace(' pages', '') ?? 'Not specified')
+  const occasion = String(details.occasion ?? legacyComponents.find(value => value.startsWith('Occasion: '))?.slice('Occasion: '.length) ?? 'Not specified')
+  const dedication = String(details.dedicationMessage ?? magazine.item.customMessage ?? '')
+  const preferences = String(details.additionalPreferences ?? '')
+  const customizationId = typeof details.customizationId === 'string' ? details.customizationId : ''
+  const canDownload = Boolean(customizationId)
+
+  const downloadPhotos = async () => {
+    setDownloadError('')
+    setDownloadNotice('')
+    setDownloadState('photos')
+    try {
+      if (!canDownload) throw new Error('This older magazine order has no secure photo-download association.')
+      const result = await api<{ files: { filename: string; downloadUrl: string }[]; downloadFilename: string }>(
+        `/api/admin/custom-orders/${magazine.orderDbId}/magazines/${encodeURIComponent(customizationId)}/photos`,
+        { method: 'POST', body: '{}' }
+      )
+      if (!result.files.length) throw new Error('No photos are available for this magazine item.')
+      const zipWriter = new ZipWriter(new BlobWriter('application/zip'))
+      for (const file of result.files) {
+        await zipWriter.add(file.filename, new HttpReader(file.downloadUrl), { level: 0 })
+      }
+      const archive = await zipWriter.close()
+      const objectUrl = URL.createObjectURL(archive)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = result.downloadFilename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      setDownloadNotice('Photos ZIP downloaded. You can download it again at any time.')
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'The photos ZIP could not be prepared.')
+    } finally {
+      setDownloadState('')
+    }
+  }
+
+  const downloadMessage = async () => {
+    setDownloadError('')
+    setDownloadNotice('')
+    setDownloadState('message')
+    try {
+      if (!canDownload || !magazine.messageFile) throw new Error('The TXT message is not attached to this magazine order.')
+      const result = await api<{ downloadUrl: string; filename: string }>(
+        `/api/admin/custom-orders/${magazine.orderDbId}/magazines/${encodeURIComponent(customizationId)}/message`,
+        { method: 'POST', body: '{}' }
+      )
+      const response = await fetch(result.downloadUrl, { cache: 'no-store' })
+      if (!response.ok) throw new Error('The private TXT attachment could not be downloaded.')
+      const objectUrl = URL.createObjectURL(await response.blob())
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = result.filename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'Magazine_Message.txt'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
+      setDownloadNotice('Message downloaded. You can download it again at any time.')
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'The TXT attachment could not be downloaded.')
+    } finally {
+      setDownloadState('')
+    }
+  }
+
+  return <article className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm">
+    <div className="flex flex-col justify-between gap-3 border-b border-[#f2ece8] bg-[#fbf8f6] p-5 sm:flex-row sm:items-center">
+      <div>
+        <h3 className="font-semibold text-[#40322e]">{magazine.orderId} <span className="font-normal text-[#938079]">· {dateLabel(magazine.createdAt)}</span></h3>
+        <p className="mt-1 text-xs text-[#76645e]">{magazine.customerName}{magazine.customerEmail ? ` · ${magazine.customerEmail}` : ''}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800">Payment {statusLabel(magazine.paymentStatus)}</span>
+        <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-[#76645e]">{statusLabel(magazine.orderStatus)}</span>
+      </div>
+    </div>
+    <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid gap-5 sm:grid-cols-2">
+        <div>
+          <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a45f60]">Magazine details</h4>
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-xs">
+            <dt className="text-[#938079]">Recipient</dt><dd className="font-medium text-[#51413c]">{recipientName}</dd>
+            <dt className="text-[#938079]">Occasion</dt><dd className="font-medium text-[#51413c]">{occasion}</dd>
+            <dt className="text-[#938079]">Print finish</dt><dd className="font-medium capitalize text-[#51413c]">{printFinish}</dd>
+            <dt className="text-[#938079]">Pages</dt><dd className="font-medium text-[#51413c]">{pageCount}</dd>
+            <dt className="text-[#938079]">Magazine amount</dt><dd className="font-semibold text-[#934f51]">{money(magazine.itemAmount)}</dd>
+            <dt className="text-[#938079]">Parent order total</dt><dd className="font-medium text-[#51413c]">{money(magazine.orderTotal)}</dd>
+          </dl>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a45f60]">Dedication message</h4>
+            <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[#76645e]">{dedication || 'No normal dedication message was provided.'}</p>
+          </div>
+          {preferences && <div>
+            <h4 className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#a45f60]">Additional preferences</h4>
+            <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[#76645e]">{preferences}</p>
+          </div>}
+        </div>
+      </div>
+      <div className="flex flex-col gap-2 lg:min-w-48">
+        {magazine.photos.length > 0 && <button
+          type="button"
+          onClick={() => void downloadPhotos()}
+          disabled={Boolean(downloadState)}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#8c4e50] disabled:cursor-wait disabled:opacity-60"
+        >
+          {downloadState === 'photos' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {downloadState === 'photos' ? 'Preparing ZIP...' : 'Download Photos'}
+        </button>}
+        {magazine.messageFile && <button
+          type="button"
+          onClick={() => void downloadMessage()}
+          disabled={Boolean(downloadState)}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#e5d4cd] bg-white px-4 py-2.5 text-xs font-semibold text-[#8c4e50] transition hover:bg-[#fbf6f2] disabled:cursor-wait disabled:opacity-60"
+        >
+          {downloadState === 'message' ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          {downloadState === 'message' ? 'Preparing message...' : 'Download Message'}
+        </button>}
+        {magazine.photos.length === 0 && !magazine.messageFile && <p className="text-xs text-[#938079]">No customer files were attached.</p>}
+      </div>
+      {(downloadNotice || downloadError) && <p role={downloadError ? 'alert' : 'status'} className={`flex items-center gap-1.5 text-xs lg:col-span-2 ${downloadError ? 'text-red-700' : 'text-emerald-700'}`}>
+        {!downloadError && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+        {downloadError || downloadNotice}
+      </p>}
+    </div>
+  </article>
+}
+
 function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (operation: CustomOrderOperation) => void }) {
   const [operation, setOperation] = useState(() => ({
     ...order.operation,
@@ -850,16 +1096,20 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
   }))
   const data = order.order_data
   const items = Array.isArray(data.items) ? data.items as Record<string, unknown>[] : []
-  const customItems = items.filter(item => item.recipientName || item.customMessage || item.customComponents)
+  const customItems = items.filter(item => item.productId === 'custom_hamper_mix')
   return <article className="rounded-2xl border border-[#eee5df] bg-white p-5">
     <div className="flex flex-col justify-between gap-2 border-b border-[#f2ece8] pb-4 sm:flex-row">
       <div><h3 className="font-semibold">{order.order_id}</h3><p className="mt-1 text-xs text-[#8f7c75]">{String(data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div>
-      <div className="text-sm font-semibold">{money(data.total)} · {statusLabel(order.fulfillment_status)}</div>
+      <div className="space-y-1 text-sm font-semibold sm:text-right">
+        <p>{money(data.total)} · {statusLabel(order.order_status)}</p>
+        <p className="text-[11px] font-medium text-emerald-700">Payment {statusLabel(order.payment_status)}</p>
+      </div>
     </div>
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
       <div className="space-y-3">{customItems.map((item, index) =>
         <div key={`${String(item.productId)}-${index}`} className="rounded-xl bg-[#fbf8f6] p-3 text-sm">
-          <p className="font-medium">{String(item.name ?? 'Personalized item')} × {String(item.quantity ?? 1)}</p>
+          <p className="font-medium">{String(item.name ?? 'Custom Gift Studio item')} × {String(item.quantity ?? 1)}</p>
+          <p className="mt-1 text-xs font-semibold text-[#934f51]">Item amount: {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</p>
           {Boolean(item.recipientName) && <p className="mt-1 text-xs text-[#76645e]">Recipient: {String(item.recipientName)}</p>}
           {Boolean(item.finish) && <p className="mt-1 text-xs text-[#76645e]">Finish: {String(item.finish)}</p>}
           {Boolean(item.customMessage) && <p className="mt-1 whitespace-pre-wrap text-xs text-[#76645e]">Message: {String(item.customMessage)}</p>}

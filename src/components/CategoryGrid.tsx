@@ -6,12 +6,14 @@ import { ProductCategory, StoreCategory } from '../types'
 interface CategoryGridProps {
   isDarkMode: boolean
   onSelectCategory: (category: ProductCategory) => void
+  onOpenCustomMagazine: () => void
   categories: StoreCategory[]
 }
 
 export const CategoryGrid: React.FC<CategoryGridProps> = ({
   isDarkMode,
   onSelectCategory,
+  onOpenCustomMagazine,
   categories
 }) => {
   const [hoveredCategory, setHoveredCategory] = useState<ProductCategory | null>(null)
@@ -22,7 +24,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
       title: 'Custom Magazines',
       subtitle: 'Turn your memories photographs and stories into a magazine made for them',
       tag: 'Gloss & Matte Finishes',
-      imageUrl: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=1200&q=80',
+      imageUrl: '/magazine-portfolio.jpg',
       cols: 'lg:col-span-6'
     },
     {
@@ -95,21 +97,46 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
         title: category.name || preset?.title || category.slug,
         subtitle: category.description || preset?.subtitle || 'Thoughtful finds, curated for meaningful moments.',
         tag: preset?.tag || (category.is_featured ? 'Featured collection' : 'Curated collection'),
-        imageUrl: category.image_url || preset?.imageUrl || '/hero-image.png',
+        imageUrl: category.slug === 'magazines'
+          ? '/magazine-portfolio.jpg'
+          : category.image_url || preset?.imageUrl || '/hero-image.png',
         cols: preset?.cols || 'lg:col-span-4',
         order: category.display_order ?? index,
         featured: category.is_featured === true
       }
     })
     .filter(category => activeCategorySlugs.has(category.id))
-    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title))
+    .sort((left, right) => {
+      if (left.id === 'magazines') return -1
+      if (right.id === 'magazines') return 1
+      return left.order - right.order || left.title.localeCompare(right.title)
+    })
   const explicitFeatured = categoryCards.filter(category => category.featured)
   const legacyFeaturedIds = new Set(topCategories.map(category => category.id))
-  const visibleTopCategories = explicitFeatured.length
-    ? explicitFeatured.slice(0, 2)
-    : categoryCards.filter(category => legacyFeaturedIds.has(category.id))
+  const defaultTopCategories = categoryCards.filter(category => legacyFeaturedIds.has(category.id))
+  const magazinePortfolio = categoryCards.find(category => category.id === 'magazines')
+  const otherTopCategory = (explicitFeatured.length ? explicitFeatured : defaultTopCategories)
+    .find(category => category.id !== 'magazines')
+    ?? categoryCards.find(category => category.id !== 'magazines')
+  const visibleTopCategories = magazinePortfolio
+    ? [magazinePortfolio, ...(otherTopCategory ? [otherTopCategory] : [])]
+    : explicitFeatured.length
+      ? explicitFeatured.slice(0, 2)
+      : defaultTopCategories
   const topIds = new Set(visibleTopCategories.map(category => category.id))
   const visibleBottomCategories = categoryCards.filter(category => !topIds.has(category.id))
+  const balancedBottomCategories = visibleBottomCategories.map((category, index) => {
+    const remainingSlots = visibleBottomCategories.length % 3
+    const isLastRow = index >= visibleBottomCategories.length - remainingSlots
+    return {
+      ...category,
+      cols: isLastRow && remainingSlots === 2
+        ? 'lg:col-span-6'
+        : isLastRow && remainingSlots === 1
+          ? 'lg:col-span-4 lg:col-start-5'
+          : category.cols
+    }
+  })
 
   return (
     <section className={`theme-surface py-20 sm:py-28 ${
@@ -143,7 +170,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
               onHoverEnd={() => setHoveredCategory(null)}
               viewport={{ once: true }}
               transition={{ duration: 0.42, delay: idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
-              onClick={() => onSelectCategory(cat.id)}
+              onClick={() => cat.id === 'magazines' ? onOpenCustomMagazine() : onSelectCategory(cat.id)}
               className={`${cat.cols} relative group rounded-3xl overflow-hidden cursor-pointer aspect-[16/10] sm:aspect-[16/9] shadow-md hover:shadow-2xl transition-all duration-500`}
             >
               <motion.img
@@ -186,7 +213,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
         {/* Bottom 3 Medium Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6">
-          {visibleBottomCategories.map((cat, idx) => (
+          {balancedBottomCategories.map((cat, idx) => (
             <motion.div
               key={cat.id}
               initial={{ opacity: 0, y: 25 }}
@@ -196,7 +223,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
               onHoverEnd={() => setHoveredCategory(null)}
               viewport={{ once: true }}
               transition={{ duration: 0.42, delay: 0.16 + idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
-              onClick={() => onSelectCategory(cat.id)}
+              onClick={() => cat.id === 'magazines' ? onOpenCustomMagazine() : onSelectCategory(cat.id)}
               className={`${cat.cols} relative group rounded-3xl overflow-hidden cursor-pointer aspect-[4/3] sm:aspect-[1/1] shadow-md hover:shadow-2xl transition-all duration-500`}
             >
               <motion.img

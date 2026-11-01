@@ -12,6 +12,7 @@ interface SidebarProps {
   isDarkMode: boolean
   onSelectCategory: (category: ProductCategory) => void
   onOpenCustomBuilder: () => void
+  onOpenCustomMagazine: () => void
   onOpenStory: () => void
   onOpenConcierge: () => void
   onOpenChatbot: () => void
@@ -30,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isDarkMode,
   onSelectCategory,
   onOpenCustomBuilder,
+  onOpenCustomMagazine,
   onOpenStory,
   onOpenConcierge,
   onOpenChatbot,
@@ -257,6 +259,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Combine individual floral stems artisanal candles chocolates and personalized magazines into your custom bespoke hamper
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenCustomMagazine()
+                  onClose()
+                }}
+                className={`w-full rounded-2xl border p-5 text-left transition-all duration-300 group ${
+                  isDarkMode
+                    ? 'border-[#4A3835] bg-[#261E1D] hover:border-[#B36D6D]'
+                    : 'border-[#E5CEC5] bg-[#F4E8E3] hover:border-[#B36D6D]'
+                }`}
+              >
+                <span className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <span className="rounded-xl bg-[#B36D6D] p-2 text-white">
+                      <BookOpen className="h-4 w-4" />
+                    </span>
+                    <span>
+                      <span className="block font-serif-title text-base font-medium tracking-wide">
+                        Make Your Magazine
+                      </span>
+                      <span className="mt-0.5 block text-[11px] font-semibold uppercase tracking-wider text-[#B36D6D]">
+                        Personalize a keepsake
+                      </span>
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 text-[#B36D6D] transition-transform group-hover:translate-x-1" />
+                </span>
+              </button>
 
               {/* Main Categories Navigation */}
               <div>

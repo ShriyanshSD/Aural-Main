@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { BUILDER_ITEMS } from './src/data/products.js'
+import { BUILDER_ITEMS, PRODUCTS } from './src/data/products.js'
+import { MAGAZINE_PRICES } from './src/data/magazinePricing.js'
 import { isValidAccountEmail, normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
 
 interface AuthRequest extends IncomingMessage {
@@ -404,6 +405,512 @@ const getSessionAccount = async (req: AuthRequest): Promise<AccountRecord | unde
   return account?.account_status === 'disabled' ? undefined : account
 }
 
+interface MagazineUploadRecord {
+  id: string
+  customization_id: string
+  user_id: string
+  file_type: 'photo' | 'message'
+  original_filename: string
+  storage_path: string
+  content_type: string
+  file_size: number
+  status: 'pending' | 'complete' | 'superseded'
+  uploaded_at: string | null
+}
+
+class MagazineUploadRequestError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+  }
+}
+
+const magazineUploadBucket = 'aurel-magazine-uploads'
+const magazineUploadUuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+const magazinePhotoTypes: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp'
+}
+const magazineUploadLimits = () => {
+  const readLimit = (name: string, fallback: number, maximum: number) => {
+    const value = Number(process.env[name] ?? fallback)
+    if (!Number.isSafeInteger(value) || value < 1 || value > maximum) {
+      throw new Error(`${name} must be an integer between 1 and ${maximum}.`)
+    }
+    return value
+  }
+  const maxPhotos = readLimit('MAGAZINE_MAX_PHOTOS', 10, 20)
+  const maxPhotoSizeBytes = readLimit('MAGAZINE_MAX_PHOTO_SIZE_BYTES', 8 * 1024 * 1024, 8 * 1024 * 1024)
+  const maxTotalPhotoSizeBytes = readLimit('MAGAZINE_MAX_TOTAL_PHOTO_SIZE_BYTES', 40 * 1024 * 1024, 160 * 1024 * 1024)
+  const maxMessageSizeBytes = readLimit('MAGAZINE_MAX_MESSAGE_SIZE_BYTES', 512 * 1024, 512 * 1024)
+  return { maxPhotos, maxPhotoSizeBytes, maxTotalPhotoSizeBytes, maxMessageSizeBytes }
+}
+
+const magazineStorageRequest = async (path: string, init: RequestInit = {}): Promise<Response> => {
+  const { supabaseUrl, serviceRoleKey } = getSupabaseConfig()
+  return fetch(`${supabaseUrl}/storage/v1${path}`, {
+    ...init,
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      ...init.headers
+    }
+  })
+}
+
+const storageObjectPath = (storagePath: string) =>
+  `/object/${magazineUploadBucket}/${storagePath.split('/').map(encodeURIComponent).join('/')}`
+
+export const fetchMagazineStorageObject = (storagePath: string) =>
+  magazineStorageRequest(`/object/authenticated/${magazineUploadBucket}/${storagePath.split('/').map(encodeURIComponent).join('/')}`)
+
+const readLimitedBody = async (response: Response, maxBytes: number): Promise<Uint8Array> => {
+  const contentLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new MagazineUploadRequestError(413, 'The uploaded file exceeds the configured size limit.')
+  }
+  if (!response.body) throw new Error('Supabase Storage returned an empty file response.')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel()
+      throw new MagazineUploadRequestError(413, 'The uploaded file exceeds the configured size limit.')
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
+const validateMagazineUploadContent = (record: MagazineUploadRecord, bytes: Uint8Array) => {
+  if (bytes.byteLength !== record.file_size) {
+    throw new MagazineUploadRequestError(400, 'The uploaded file size did not match its declared size.')
+  }
+  const startsWith = (...values: number[]) => values.every((value, index) => bytes[index] === value)
+  if (record.file_type === 'photo') {
+    const valid = record.content_type === 'image/jpeg'
+      ? startsWith(0xff, 0xd8, 0xff) && bytes.length >= 4 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9
+      : record.content_type === 'image/png'
+        ? startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+          && bytes.length >= 20
+          && new TextDecoder().decode(bytes.slice(-8, -4)) === 'IEND'
+        : record.content_type === 'image/webp'
+            ? startsWith(0x52, 0x49, 0x46, 0x46)
+              && new TextDecoder().decode(bytes.slice(8, 12)) === 'WEBP'
+              && ['VP8 ', 'VP8L', 'VP8X'].includes(new TextDecoder().decode(bytes.slice(12, 16)))
+            : false
+    if (!valid) throw new MagazineUploadRequestError(400, 'The uploaded file is not a valid supported image.')
+    return
+  }
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    if (text.includes('\0')) throw new Error('NUL bytes are not valid message text.')
+  } catch {
+    throw new MagazineUploadRequestError(400, 'The TXT attachment must contain valid UTF-8 text.')
+  }
+}
+
+const readMagazineUploadFilename = (value: unknown) => {
+  if (typeof value !== 'string') throw new MagazineUploadRequestError(400, 'Choose a file with a valid filename.')
+  const filename = value.replace(/\\/g, '/').split('/').pop()?.replace(/[\u0000-\u001f\u007f]/g, '').trim() ?? ''
+  if (!filename || filename.length > 255 || filename === '.' || filename === '..') {
+    throw new MagazineUploadRequestError(400, 'The filename is invalid or too long.')
+  }
+  return filename
+}
+
+const isSameAccountOrigin = (req: AuthRequest) => {
+  const origin = req.headers.origin
+  const forwardedHost = req.headers['x-forwarded-host']
+  const requestHost = Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost ?? req.headers.host
+  if (!origin || !requestHost) return false
+  try {
+    return new URL(origin).host.toLowerCase() === requestHost.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
+const ensureMagazineCustomization = async (customizationId: string, userId: string) => {
+  const existing = await supabaseRequest<Array<{ id: string; user_id: string; order_row_id: number | null }>>(
+    'aurel_magazine_customizations',
+    new URLSearchParams({ id: `eq.${customizationId}`, select: 'id,user_id,order_row_id', limit: '1' })
+  )
+  if (existing[0]) {
+    if (existing[0].user_id !== userId) throw new MagazineUploadRequestError(403, 'This magazine customization belongs to another account.')
+    if (existing[0].order_row_id !== null) throw new MagazineUploadRequestError(409, 'Files cannot be added after this magazine has been ordered.')
+    await supabaseRequest('aurel_magazine_customizations', new URLSearchParams({ id: `eq.${customizationId}`, user_id: `eq.${userId}` }), {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ last_activity_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    })
+    return
+  }
+  try {
+    await supabaseRequest('aurel_magazine_customizations', new URLSearchParams(), {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ id: customizationId, user_id: userId })
+    })
+  } catch (error) {
+    if (!(error instanceof AccountServiceError) || String(error.code) !== '23505') throw error
+    const raced = await supabaseRequest<Array<{ id: string; user_id: string; order_row_id: number | null }>>(
+      'aurel_magazine_customizations',
+      new URLSearchParams({ id: `eq.${customizationId}`, select: 'id,user_id,order_row_id', limit: '1' })
+    )
+    if (raced[0]?.user_id !== userId) throw new MagazineUploadRequestError(403, 'This magazine customization belongs to another account.')
+    if (raced[0]?.order_row_id !== null) throw new MagazineUploadRequestError(409, 'Files cannot be added after this magazine has been ordered.')
+  }
+}
+
+const cleanupExpiredMagazineDrafts = async () => {
+  const retentionDays = Number(process.env.MAGAZINE_DRAFT_RETENTION_DAYS ?? 180)
+  if (!Number.isSafeInteger(retentionDays) || retentionDays < 30 || retentionDays > 3650) {
+    throw new Error('MAGAZINE_DRAFT_RETENTION_DAYS must be an integer between 30 and 3650.')
+  }
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString()
+  const staleDrafts = await supabaseRequest<Array<{ id: string }>>(
+    'aurel_magazine_customizations',
+    new URLSearchParams({
+      order_row_id: 'is.null',
+      last_activity_at: `lt.${cutoff}`,
+      select: 'id',
+      limit: '100'
+    })
+  )
+  if (!staleDrafts.length) return
+  const draftIds = staleDrafts.map(draft => draft.id)
+  const uploads = await supabaseRequest<Array<{ storage_path: string }>>(
+    'aurel_magazine_uploads',
+    new URLSearchParams({ customization_id: `in.(${draftIds.join(',')})`, select: 'storage_path', limit: '2000' })
+  )
+  if (uploads.length) {
+    const response = await magazineStorageRequest(`/object/${magazineUploadBucket}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefixes: uploads.map(upload => upload.storage_path) })
+    })
+    if (!response.ok) throw new Error('Expired magazine uploads could not be removed from private storage.')
+  }
+  await supabaseRequest(
+    'aurel_magazine_customizations',
+    new URLSearchParams({ id: `in.(${draftIds.join(',')})`, order_row_id: 'is.null' }),
+    { method: 'DELETE' }
+  )
+}
+
+const readMagazineUploadRecord = async (
+  uploadId: string,
+  userId: string,
+  customizationId?: string
+) => {
+  const query = new URLSearchParams({
+    id: `eq.${uploadId}`,
+    user_id: `eq.${userId}`,
+    select: 'id,customization_id,user_id,file_type,original_filename,storage_path,content_type,file_size,status,uploaded_at',
+    limit: '1'
+  })
+  if (customizationId) query.set('customization_id', `eq.${customizationId}`)
+  const rows = await supabaseRequest<MagazineUploadRecord[]>('aurel_magazine_uploads', query)
+  return rows[0]
+}
+
+const createMagazineSignedUploadUrl = async (storagePath: string) => {
+  const { supabaseUrl } = getSupabaseConfig()
+  const response = await magazineStorageRequest(
+    `/object/upload/sign/${magazineUploadBucket}/${storagePath.split('/').map(encodeURIComponent).join('/')}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ upsert: false }) }
+  )
+  const result = await response.json().catch(() => ({})) as { url?: string; signedURL?: string; signedUrl?: string; token?: string }
+  if (!response.ok) throw new Error('A secure upload link could not be created. Please try again.')
+  const returnedUrl = result.signedURL ?? result.signedUrl ?? result.url
+  if (!returnedUrl) throw new Error('Supabase Storage did not return a secure upload link.')
+  const url = new URL(
+    returnedUrl.startsWith('http')
+      ? returnedUrl
+      : returnedUrl.startsWith('/storage/v1/')
+        ? returnedUrl
+        : `/storage/v1${returnedUrl.startsWith('/') ? '' : '/'}${returnedUrl}`,
+    supabaseUrl
+  )
+  if (url.origin !== new URL(supabaseUrl).origin) throw new Error('Supabase Storage returned an unsafe upload link.')
+  if (result.token && !url.searchParams.has('token')) url.searchParams.set('token', result.token)
+  return url.toString()
+}
+
+export const createMagazineSignedDownloadUrl = async (storagePath: string, downloadName?: string) => {
+  const { supabaseUrl } = getSupabaseConfig()
+  const response = await magazineStorageRequest(
+    `/object/sign/${magazineUploadBucket}/${storagePath.split('/').map(encodeURIComponent).join('/')}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 300, ...(downloadName ? { download: downloadName } : {}) })
+    }
+  )
+  const result = await response.json().catch(() => ({})) as { signedURL?: string; signedUrl?: string; url?: string }
+  if (!response.ok) throw new Error('A temporary private download link could not be created.')
+  const returnedUrl = result.signedURL ?? result.signedUrl ?? result.url
+  if (!returnedUrl) throw new Error('Supabase Storage did not return a private download link.')
+  const url = new URL(
+    returnedUrl.startsWith('http')
+      ? returnedUrl
+      : returnedUrl.startsWith('/storage/v1/')
+        ? returnedUrl
+        : `/storage/v1${returnedUrl.startsWith('/') ? '' : '/'}${returnedUrl}`,
+    supabaseUrl
+  )
+  if (url.origin !== new URL(supabaseUrl).origin) throw new Error('Supabase Storage returned an unsafe download link.')
+  return url.toString()
+}
+
+export async function magazineUploadsHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
+  const method = req.method ?? 'GET'
+  try {
+    const limits = magazineUploadLimits()
+    if (method === 'GET') {
+      const url = new URL(req.url ?? '/', 'http://localhost')
+      const action = url.searchParams.get('action')
+      if (!action) return sendJson(res, 200, { limits })
+      const account = await getSessionAccount(req)
+      if (!account) return sendJson(res, 401, { error: 'Sign in to access your magazine uploads.' })
+      if (action === 'list') {
+        const customizationId = url.searchParams.get('customizationId') ?? ''
+        if (!magazineUploadUuid.test(customizationId)) throw new MagazineUploadRequestError(400, 'The magazine customization ID is invalid.')
+        const customizations = await supabaseRequest<Array<{ id: string; user_id: string }>>(
+          'aurel_magazine_customizations',
+          new URLSearchParams({ id: `eq.${customizationId}`, user_id: `eq.${account.id}`, select: 'id,user_id', limit: '1' })
+        )
+        if (!customizations[0]) return sendJson(res, 200, { photos: [], message: null })
+        const rows = await supabaseRequest<MagazineUploadRecord[]>(
+          'aurel_magazine_uploads',
+          new URLSearchParams({
+            customization_id: `eq.${customizationId}`,
+            user_id: `eq.${account.id}`,
+            status: 'eq.complete',
+            select: 'id,customization_id,user_id,file_type,original_filename,storage_path,content_type,file_size,status,uploaded_at',
+            order: 'created_at.asc',
+            limit: '30'
+          })
+        )
+        const toMetadata = (row: MagazineUploadRecord) => ({
+          id: row.id,
+          originalFilename: row.original_filename,
+          contentType: row.content_type,
+          fileSize: row.file_size,
+          uploadedAt: row.uploaded_at ?? ''
+        })
+        const photos = await Promise.all(rows.filter(row => row.file_type === 'photo').map(async row => ({
+          ...toMetadata(row),
+          previewUrl: await createMagazineSignedDownloadUrl(row.storage_path)
+        })))
+        const message = rows.find(row => row.file_type === 'message')
+        return sendJson(res, 200, {
+          photos,
+          message: message ? toMetadata(message) : null
+        })
+      }
+      if (action === 'preview') {
+        const uploadId = url.searchParams.get('uploadId') ?? ''
+        if (!magazineUploadUuid.test(uploadId)) throw new MagazineUploadRequestError(400, 'The upload ID is invalid.')
+        const row = await readMagazineUploadRecord(uploadId, account.id)
+        if (!row || row.status !== 'complete') return sendJson(res, 404, { error: 'This uploaded file is no longer available.' })
+        return sendJson(res, 200, { previewUrl: await createMagazineSignedDownloadUrl(row.storage_path) })
+      }
+      throw new MagazineUploadRequestError(400, 'Choose a valid magazine upload action.')
+    }
+    if (method !== 'POST') {
+      res.setHeader('Allow', 'GET, POST')
+      return sendJson(res, 405, { error: 'Method not allowed.' })
+    }
+    if (!isSameAccountOrigin(req)) return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+    const account = await getSessionAccount(req)
+    if (!account) return sendJson(res, 401, { error: 'Sign in to upload files for your magazine.' })
+    const body = readBody(req)
+    const action = body.action
+    if (action === 'touch') {
+      const customizationIds = body.customizationIds
+      if (!Array.isArray(customizationIds) || customizationIds.length > 100
+        || !customizationIds.every(id => typeof id === 'string' && magazineUploadUuid.test(id))) {
+        throw new MagazineUploadRequestError(400, 'The saved magazine customizations are invalid.')
+      }
+      const ids = [...new Set(customizationIds as string[])]
+      if (ids.length) {
+        await supabaseRequest('aurel_magazine_customizations', new URLSearchParams({
+          id: `in.(${ids.join(',')})`,
+          user_id: `eq.${account.id}`
+        }), {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ last_activity_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        })
+      }
+      return sendJson(res, 200, { success: true })
+    }
+    const customizationId = typeof body.customizationId === 'string' ? body.customizationId : ''
+    if (!magazineUploadUuid.test(customizationId)) throw new MagazineUploadRequestError(400, 'The magazine customization ID is invalid.')
+    if (action === 'prepare') {
+      const fileType = body.fileType
+      const filename = readMagazineUploadFilename(body.fileName)
+      const extension = filename.split('.').pop()?.toLowerCase() ?? ''
+      const expectedContentType = fileType === 'photo'
+        ? magazinePhotoTypes[extension]
+        : fileType === 'message' && extension === 'txt'
+          ? 'text/plain'
+          : undefined
+      const declaredContentType = body.contentType
+      const fileSize = body.fileSize
+      if (!expectedContentType || (declaredContentType && declaredContentType !== expectedContentType)) {
+        throw new MagazineUploadRequestError(400, fileType === 'photo'
+          ? 'Upload a JPG, PNG or WEBP image.'
+          : 'Upload a .txt file only.')
+      }
+      const maxFileSize = fileType === 'photo' ? limits.maxPhotoSizeBytes : limits.maxMessageSizeBytes
+      if (typeof fileSize !== 'number' || !Number.isSafeInteger(fileSize) || fileSize < 1 || fileSize > maxFileSize) {
+        throw new MagazineUploadRequestError(413, `The selected file exceeds the ${fileType === 'photo' ? 'photo' : 'TXT'} size limit.`)
+      }
+      await ensureMagazineCustomization(customizationId, account.id)
+      await cleanupExpiredMagazineDrafts()
+      const currentUploads = await supabaseRequest<Pick<MagazineUploadRecord, 'id' | 'file_type' | 'file_size' | 'status'>[]>(
+        'aurel_magazine_uploads',
+        new URLSearchParams({
+          customization_id: `eq.${customizationId}`,
+          user_id: `eq.${account.id}`,
+          status: 'neq.superseded',
+          select: 'id,file_type,file_size,status',
+          limit: '100'
+        })
+      )
+      if (fileType === 'photo') {
+        const activePhotos = currentUploads.filter(upload => upload.file_type === 'photo')
+        if (activePhotos.length >= limits.maxPhotos) throw new MagazineUploadRequestError(413, `You can upload up to ${limits.maxPhotos} photos.`)
+        const totalPhotoBytes = activePhotos.reduce((total, upload) => total + upload.file_size, 0)
+        if (totalPhotoBytes + fileSize > limits.maxTotalPhotoSizeBytes) {
+          throw new MagazineUploadRequestError(413, 'The combined photo upload size exceeds the configured limit.')
+        }
+      } else if (currentUploads.some(upload => upload.file_type === 'message' && upload.status === 'pending')) {
+        throw new MagazineUploadRequestError(409, 'A TXT upload is already in progress. Remove it or wait for it to finish.')
+      }
+      const uploadId = crypto.randomUUID()
+      const storagePath = `${account.id}/${customizationId}/${uploadId}.${extension}`
+      const uploadUrl = await createMagazineSignedUploadUrl(storagePath)
+      const created = await supabaseRequest<MagazineUploadRecord[]>(
+        'aurel_magazine_uploads',
+        new URLSearchParams({ select: 'id,customization_id,user_id,file_type,original_filename,storage_path,content_type,file_size,status,uploaded_at' }),
+        {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({
+            id: uploadId,
+            customization_id: customizationId,
+            user_id: account.id,
+            file_type: fileType,
+            original_filename: filename,
+            storage_path: storagePath,
+            content_type: expectedContentType,
+            file_size: fileSize,
+            status: 'pending'
+          })
+        }
+      )
+      if (!created[0]) throw new Error('The upload record could not be created.')
+      return sendJson(res, 200, { uploadId, uploadUrl, contentType: expectedContentType })
+    }
+    const uploadId = typeof body.uploadId === 'string' ? body.uploadId : ''
+    if (!magazineUploadUuid.test(uploadId)) throw new MagazineUploadRequestError(400, 'The upload ID is invalid.')
+    const record = await readMagazineUploadRecord(uploadId, account.id, customizationId)
+    if (!record) return sendJson(res, 404, { error: 'The uploaded file could not be found for this magazine.' })
+    if (action === 'complete') {
+      if (record.status === 'complete') return sendJson(res, 200, {
+        upload: {
+          id: record.id,
+          originalFilename: record.original_filename,
+          contentType: record.content_type,
+          fileSize: record.file_size,
+          uploadedAt: record.uploaded_at ?? ''
+        }
+      })
+      if (record.status !== 'pending') throw new MagazineUploadRequestError(409, 'This upload is no longer active.')
+      const file = await fetchMagazineStorageObject(record.storage_path)
+      if (!file.ok) throw new MagazineUploadRequestError(400, 'The file has not finished uploading. Please retry.')
+      const bytes = await readLimitedBody(file, record.file_size)
+      validateMagazineUploadContent(record, bytes)
+      if (record.file_type === 'message') {
+        const previousMessages = await supabaseRequest<Array<{ id: string }>>(
+          'aurel_magazine_uploads',
+          new URLSearchParams({
+            customization_id: `eq.${customizationId}`,
+            user_id: `eq.${account.id}`,
+            file_type: 'eq.message',
+            status: 'eq.complete',
+            select: 'id',
+            limit: '10'
+          })
+        )
+        for (const previous of previousMessages) {
+          await supabaseRequest('aurel_magazine_uploads', new URLSearchParams({ id: `eq.${previous.id}`, user_id: `eq.${account.id}` }), {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ status: 'superseded' })
+          })
+        }
+      }
+      const uploadedAt = new Date().toISOString()
+      const updated = await supabaseRequest<MagazineUploadRecord[]>(
+        'aurel_magazine_uploads',
+        new URLSearchParams({ id: `eq.${uploadId}`, user_id: `eq.${account.id}`, status: 'eq.pending', select: 'id,customization_id,user_id,file_type,original_filename,storage_path,content_type,file_size,status,uploaded_at' }),
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({ status: 'complete', uploaded_at: uploadedAt })
+        }
+      )
+      if (!updated[0]) throw new MagazineUploadRequestError(409, 'This upload could not be finalized. Please retry.')
+      return sendJson(res, 200, {
+        upload: {
+          id: updated[0].id,
+          originalFilename: updated[0].original_filename,
+          contentType: updated[0].content_type,
+          fileSize: updated[0].file_size,
+          uploadedAt,
+          ...(updated[0].file_type === 'photo'
+            ? { previewUrl: await createMagazineSignedDownloadUrl(updated[0].storage_path) }
+            : {})
+        }
+      })
+    }
+    if (action === 'remove') {
+      const customizations = await supabaseRequest<Array<{ order_row_id: number | null }>>(
+        'aurel_magazine_customizations',
+        new URLSearchParams({ id: `eq.${customizationId}`, user_id: `eq.${account.id}`, select: 'order_row_id', limit: '1' })
+      )
+      if (!customizations[0] || customizations[0].order_row_id !== null) {
+        throw new MagazineUploadRequestError(409, 'Files attached to a saved order cannot be removed.')
+      }
+      const removed = await magazineStorageRequest(storageObjectPath(record.storage_path), { method: 'DELETE' })
+      if (!removed.ok && removed.status !== 404) throw new Error('The private upload could not be removed from storage.')
+      await supabaseRequest('aurel_magazine_uploads', new URLSearchParams({ id: `eq.${uploadId}`, user_id: `eq.${account.id}` }), { method: 'DELETE' })
+      return sendJson(res, 200, { success: true })
+    }
+    throw new MagazineUploadRequestError(400, 'Choose a valid magazine upload action.')
+  } catch (error) {
+    if (error instanceof MagazineUploadRequestError) return sendJson(res, error.status, { error: error.message })
+    console.error('Magazine upload request failed:', error)
+    handleFailure(res, error, 'Unable to process this magazine upload. Please try again.')
+  }
+}
+
 const validEmail = (value: unknown): value is string =>
   typeof value === 'string' && isValidAccountEmail(value)
 
@@ -789,6 +1296,165 @@ interface StoredAccountOrder {
   idempotency_key?: string | null
 }
 
+interface MagazineCustomizationData {
+  customizationId: string
+  recipientName: string
+  printFinish: 'matte' | 'gloss'
+  occasion: string
+  photoUploadIds: string[]
+  pageCount: 4 | 8
+  dedicationMessage: string
+  messageUploadId?: string
+  additionalPreferences: string
+}
+
+type PersistedOrderItem = Record<string, unknown> & {
+  productId: string
+  price: number
+  quantity: number
+  magazineCustomization?: MagazineCustomizationData
+}
+
+const isMagazineCustomizationData = (value: unknown): value is MagazineCustomizationData => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const data = value as Record<string, unknown>
+  return typeof data.customizationId === 'string' && magazineUploadUuid.test(data.customizationId)
+    && typeof data.recipientName === 'string' && data.recipientName.trim().length <= 100
+    && (data.printFinish === 'matte' || data.printFinish === 'gloss')
+    && typeof data.occasion === 'string' && data.occasion.trim().length <= 80
+    && Array.isArray(data.photoUploadIds) && data.photoUploadIds.length <= 20
+    && data.photoUploadIds.every(id => typeof id === 'string' && magazineUploadUuid.test(id))
+    && new Set(data.photoUploadIds).size === data.photoUploadIds.length
+    && (data.pageCount === 4 || data.pageCount === 8)
+    && typeof data.dedicationMessage === 'string' && data.dedicationMessage.length <= 10000
+    && (data.messageUploadId === undefined || (typeof data.messageUploadId === 'string' && magazineUploadUuid.test(data.messageUploadId)))
+    && typeof data.additionalPreferences === 'string' && data.additionalPreferences.length <= 5000
+}
+
+const validateMagazineOrderUploads = async (userId: string, items: Array<Record<string, unknown>>) => {
+  const magazineItems = items
+    .map(item => item.magazineCustomization)
+    .filter(isMagazineCustomizationData)
+  const customizationIds = magazineItems.map(item => item.customizationId)
+  if (new Set(customizationIds).size !== customizationIds.length) {
+    throw new OrderValidationError('Each custom magazine must have its own saved customization.')
+  }
+  const customizationQueryIds = [...new Set(customizationIds)]
+  if (customizationQueryIds.length) {
+    const records = await supabaseRequest<Array<{ id: string; user_id: string; order_row_id: number | null }>>(
+      'aurel_magazine_customizations',
+      new URLSearchParams({
+        id: `in.(${customizationQueryIds.join(',')})`,
+        select: 'id,user_id,order_row_id',
+        limit: '100'
+      })
+    )
+    const recordsById = new Map(records.map(record => [record.id, record]))
+    for (const customization of magazineItems) {
+      const record = recordsById.get(customization.customizationId)
+      if (record && record.user_id !== userId) {
+        throw new OrderValidationError('This magazine customization belongs to another account.')
+      }
+      if (record?.order_row_id !== null && record?.order_row_id !== undefined) {
+        throw new OrderValidationError('This magazine customization is already attached to another order.')
+      }
+    }
+  }
+  const requestedUploads = magazineItems.flatMap(item => [
+    ...item.photoUploadIds.map(id => ({ id, customizationId: item.customizationId, type: 'photo' })),
+    ...(item.messageUploadId ? [{ id: item.messageUploadId, customizationId: item.customizationId, type: 'message' }] : [])
+  ])
+  if (new Set(requestedUploads.map(file => file.id)).size !== requestedUploads.length) {
+    throw new OrderValidationError('An uploaded file cannot be attached to more than one magazine item.')
+  }
+  if (!requestedUploads.length) return
+  const uploads = await supabaseRequest<Array<{
+    id: string
+    customization_id: string
+    user_id: string
+    file_type: string
+    status: string
+  }>>(
+    'aurel_magazine_uploads',
+    new URLSearchParams({
+      id: `in.(${requestedUploads.map(file => file.id).join(',')})`,
+      user_id: `eq.${userId}`,
+      select: 'id,customization_id,user_id,file_type,status',
+      limit: '100'
+    })
+  )
+  const uploadsById = new Map(uploads.map(upload => [upload.id, upload]))
+  if (requestedUploads.some(requested => {
+    const upload = uploadsById.get(requested.id)
+    return !upload
+      || upload.customization_id !== requested.customizationId
+      || upload.user_id !== userId
+      || upload.file_type !== requested.type
+      || upload.status !== 'complete'
+  })) {
+    throw new OrderValidationError('One or more magazine uploads are unavailable. Reopen the magazine form and verify your files.')
+  }
+}
+
+const associateMagazineOrderItems = async (
+  orderRowId: number,
+  userId: string,
+  orderItems: Array<Record<string, unknown>>
+) => {
+  const magazineItems = orderItems
+    .map((item, index) => ({ customization: item.magazineCustomization, item, index }))
+    .filter((entry): entry is typeof entry & { customization: MagazineCustomizationData } =>
+      isMagazineCustomizationData(entry.customization)
+    )
+  for (const { customization, item, index } of magazineItems) {
+    const existing = await supabaseRequest<Array<{ id: string; user_id: string; order_row_id: number | null }>>(
+      'aurel_magazine_customizations',
+      new URLSearchParams({
+        id: `eq.${customization.customizationId}`,
+        select: 'id,user_id,order_row_id',
+        limit: '1'
+      })
+    )
+    if (existing[0] && (existing[0].user_id !== userId
+      || (existing[0].order_row_id !== null && existing[0].order_row_id !== orderRowId))) {
+      throw new OrderValidationError('This magazine customization is already attached to a different account or order.')
+    }
+    const payload = {
+      id: customization.customizationId,
+      user_id: userId,
+      cart_item_id: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : null,
+      order_row_id: orderRowId,
+      order_item_index: index,
+      recipient_name: customization.recipientName,
+      print_finish: customization.printFinish,
+      occasion: customization.occasion,
+      page_count: customization.pageCount,
+      dedication_message: customization.dedicationMessage,
+      additional_preferences: customization.additionalPreferences,
+      last_activity_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+    if (existing[0]) {
+      const query = new URLSearchParams({
+        id: `eq.${customization.customizationId}`,
+        user_id: `eq.${userId}`,
+        order_row_id: existing[0].order_row_id === null ? 'is.null' : `eq.${orderRowId}`
+      })
+      const saved = await supabaseRequest<Array<{ id: string }>>('aurel_magazine_customizations', query, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify(payload)
+      })
+      if (!saved.length) throw new OrderValidationError('The magazine customization could not be linked to this order.')
+    } else {
+      await supabaseRequest('aurel_magazine_customizations', new URLSearchParams(), {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      })
+    }
+  }
+}
+
 const isSecureProofUrl = (value: string): boolean => {
   try {
     const url = new URL(value)
@@ -1056,9 +1722,10 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         && (item.variantId === undefined || (typeof item.variantId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(item.variantId)))
         && (item.finish === undefined || item.finish === 'matte' || item.finish === 'gloss')
         && (item.recipientName === undefined || (typeof item.recipientName === 'string' && item.recipientName.length <= 100))
-        && (item.customMessage === undefined || (typeof item.customMessage === 'string' && item.customMessage.length <= 1000))
+        && (item.customMessage === undefined || (typeof item.customMessage === 'string' && item.customMessage.length <= (item.magazineCustomization === undefined ? 1000 : 10000)))
         && (item.customComponents === undefined || (Array.isArray(item.customComponents) && item.customComponents.length <= 20
           && item.customComponents.every((value: unknown) => typeof value === 'string' && value.length <= 100)))
+        && (item.magazineCustomization === undefined || isMagazineCustomizationData(item.magazineCustomization))
         && (item.productId !== 'custom_hamper_mix' || (Array.isArray(item.customComponents) && item.customComponents.length >= 2)))
     ) return sendJson(res, 400, { error: 'The order details are incomplete or invalid.' })
 
@@ -1086,12 +1753,15 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       new URLSearchParams({
         user_id: `eq.${account.id}`,
         idempotency_key: `eq.${idempotencyKey}`,
-        select: 'order_id,order_data,created_at,payment_status,order_status,paid_at',
+        select: 'id,order_id,order_data,created_at,payment_status,order_status,paid_at',
         limit: '1'
       })
     )
     if (priorOrder[0]) {
       const row = priorOrder[0]
+      if (typeof row.id === 'number' && Array.isArray(row.order_data.items)) {
+        await associateMagazineOrderItems(row.id, account.id, row.order_data.items as Array<Record<string, unknown>>)
+      }
       return sendJson(res, 200, {
         order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status, paidAt: row.paid_at ?? undefined },
         createdAt: row.created_at
@@ -1101,12 +1771,14 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
     type CheckoutProduct = {
       id: string
       name: string
+      category: string
       price: number | string
       image_url: string
       variants: { id: string; name: string; price: number; stockQuantity: number | null }[]
       stock_quantity: number | null
       is_active: boolean
       is_published: boolean
+      is_customizable: boolean
       available_finishes: string[]
     }
     const productIds = [...new Set((items as Array<{ productId: string }>)
@@ -1116,15 +1788,35 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       'aurel_products',
       new URLSearchParams({
         id: `in.(${productIds.join(',')})`,
-        select: 'id,name,price,image_url,variants,stock_quantity,is_active,is_published,available_finishes',
+        select: 'id,name,category,price,image_url,variants,stock_quantity,is_active,is_published,is_customizable,available_finishes',
         limit: '100'
       })
     )
     const productsById = new Map(products.map(product => [product.id, product]))
+    const usesBuiltInMagazine = (items as Array<Record<string, unknown>>).some(item =>
+      item.productId === 'prod_magazine_legacy' && isMagazineCustomizationData(item.magazineCustomization)
+    )
+    const builtInMagazine = PRODUCTS.find(product => product.id === 'prod_magazine_legacy')
+    if (usesBuiltInMagazine && builtInMagazine) {
+      productsById.set(builtInMagazine.id, {
+        id: builtInMagazine.id,
+        name: builtInMagazine.name,
+        category: builtInMagazine.category,
+        price: builtInMagazine.price,
+        image_url: builtInMagazine.imageUrl,
+        variants: [],
+        stock_quantity: null,
+        is_active: true,
+        is_published: true,
+        is_customizable: true,
+        available_finishes: builtInMagazine.availableFinishes ?? []
+      })
+    }
     if (productsById.size !== productIds.length) return sendJson(res, 409, { error: 'One or more products are no longer available. Refresh your cart and try again.' })
 
+    await validateMagazineOrderUploads(account.id, items as Array<Record<string, unknown>>)
     const quantities = new Map<string, number>()
-    const orderItems = (items as Array<Record<string, unknown>>).map(item => {
+    const orderItems: PersistedOrderItem[] = (items as Array<Record<string, unknown>>).map(item => {
       if (item.productId === 'custom_hamper_mix') {
         const components = item.customComponents as string[]
         const selectedComponents = components.map(name => BUILDER_ITEMS.find(component => component.name === name))
@@ -1149,6 +1841,35 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       if (!product || !product.is_active || !product.is_published) {
         throw new OrderValidationError('One or more products are no longer available. Refresh your cart and try again.')
       }
+      const customComponents = Array.isArray(item.customComponents) ? item.customComponents as string[] : undefined
+      const magazineCustomization = isMagazineCustomizationData(item.magazineCustomization)
+        ? {
+          customizationId: item.magazineCustomization.customizationId,
+          recipientName: item.magazineCustomization.recipientName.trim() || 'Beloved',
+          printFinish: item.magazineCustomization.printFinish,
+          occasion: item.magazineCustomization.occasion.trim(),
+          photoUploadIds: [...item.magazineCustomization.photoUploadIds],
+          pageCount: item.magazineCustomization.pageCount,
+          dedicationMessage: item.magazineCustomization.dedicationMessage.trim(),
+          ...(item.magazineCustomization.messageUploadId ? { messageUploadId: item.magazineCustomization.messageUploadId } : {}),
+          additionalPreferences: item.magazineCustomization.additionalPreferences.trim()
+        }
+        : undefined
+      const legacyMagazinePageCount = customComponents?.find(component => component === '4 pages' || component === '8 pages')
+      const magazinePageCount = magazineCustomization?.pageCount ?? (legacyMagazinePageCount === '8 pages' ? 8 : legacyMagazinePageCount === '4 pages' ? 4 : undefined)
+      const hasMagazineDetails = Boolean(magazineCustomization) || (customComponents?.some(component =>
+        /^\d+ pages$/.test(component) || component.startsWith('Sample: ') || component.startsWith('Occasion: ')
+      ) ?? false)
+      if (hasMagazineDetails && (
+        product.category !== 'magazines'
+        || !product.is_customizable
+        || !magazinePageCount
+      )) {
+        throw new OrderValidationError('The magazine options are invalid. Please review your magazine selection and try again.')
+      }
+      if (magazineCustomization && item.variantId !== undefined) {
+        throw new OrderValidationError('Custom magazines cannot include a separate product variant.')
+      }
       const quantity = Number(item.quantity)
       const variantId = typeof item.variantId === 'string' ? item.variantId : undefined
       const variant = variantId ? product.variants?.find(candidate => candidate.id === variantId) : undefined
@@ -1157,28 +1878,39 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       if (item.finish && availableFinishes.length > 0 && !availableFinishes.includes(String(item.finish))) {
         throw new OrderValidationError(`The selected finish for ${product.name} is no longer available.`)
       }
-      const price = Number(variant?.price ?? product.price)
+      const price = magazinePageCount
+        ? MAGAZINE_PRICES[magazinePageCount === 8 ? 8 : 4]
+        : Number(variant?.price ?? product.price)
       if (!Number.isFinite(price) || price < 0) throw new OrderValidationError(`The price for ${product.name} is unavailable.`)
       const stockKey = `${product.id}:${variantId ?? ''}`
-      quantities.set(stockKey, (quantities.get(stockKey) ?? 0) + quantity)
       const selectedStock = variant?.stockQuantity ?? (variant ? null : product.stock_quantity)
-      if (selectedStock !== null && quantities.get(stockKey)! > selectedStock) {
-        throw new OrderValidationError(`${product.name} does not have enough stock for the requested quantity.`)
+      if (!magazinePageCount) {
+        quantities.set(stockKey, (quantities.get(stockKey) ?? 0) + quantity)
+        if (selectedStock !== null && quantities.get(stockKey)! > selectedStock) {
+          throw new OrderValidationError(`${product.name} does not have enough stock for the requested quantity.`)
+        }
       }
       return {
         cartId: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : `${product.id}-${randomBytes(8).toString('hex')}`,
         productId: product.id,
-        name: product.name,
+        name: magazinePageCount
+          ? `Custom Magazine (${(magazineCustomization?.recipientName ?? (typeof item.recipientName === 'string' && item.recipientName.trim() ? item.recipientName.trim() : 'Beloved')).toUpperCase()})`
+          : product.name,
         price,
         quantity,
         imageUrl: product.image_url,
         ...(variant ? { variantId: variant.id, variantName: variant.name } : {}),
-        ...(typeof item.finish === 'string' && availableFinishes.includes(item.finish) ? { finish: item.finish } : {}),
-        ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
-        ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
-        ...(Array.isArray(item.customComponents) ? { customComponents: item.customComponents } : {})
+        ...(magazineCustomization ? { magazineCustomization } : {
+          ...(typeof item.finish === 'string' && availableFinishes.includes(item.finish) ? { finish: item.finish } : {}),
+          ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
+          ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {})
+        }),
+        ...(customComponents ? { customComponents } : {})
       }
     })
+    if (orderItems.some(item => item.magazineCustomization && !productsById.get(String(item.productId))?.available_finishes?.includes(item.magazineCustomization.printFinish))) {
+      throw new OrderValidationError('The selected magazine print finish is no longer available.')
+    }
     const subtotal = Math.round(orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0) * 100) / 100
     const shipping = subtotal === 0 || subtotal >= 1500 ? 0 : 99
     const total = Math.round((subtotal + shipping) * 100) / 100
@@ -1214,7 +1946,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
     try {
       stored = await supabaseRequest<StoredAccountOrder[]>(
         'aurel_orders',
-        new URLSearchParams({ select: 'order_id,order_data,created_at,payment_status,order_status,paid_at' }),
+        new URLSearchParams({ select: 'id,order_id,order_data,created_at,payment_status,order_status,paid_at' }),
         {
           method: 'POST',
           headers: { Prefer: 'return=representation' },
@@ -1237,13 +1969,15 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         new URLSearchParams({
           user_id: `eq.${account.id}`,
           idempotency_key: `eq.${idempotencyKey}`,
-          select: 'order_id,order_data,created_at,payment_status,order_status,paid_at',
+          select: 'id,order_id,order_data,created_at,payment_status,order_status,paid_at',
           limit: '1'
         })
       )
     }
     const row = stored[0]
     if (!row) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
+    if (typeof row.id !== 'number') throw new Error('The saved order did not return its database ID.')
+    await associateMagazineOrderItems(row.id, account.id, orderItems)
     return sendJson(res, 201, {
       order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status },
       createdAt: row.created_at

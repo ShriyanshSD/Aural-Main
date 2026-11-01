@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 import {
   loginHandler,
   logoutHandler,
+  magazineUploadsHandler,
   paymentConfigHandler,
   accountOrdersHandler,
   accountReviewHandler,
@@ -63,6 +64,7 @@ app.get('/api/locations/states', (req, res) => indiaStatesHandler(req, res))
 app.get('/api/locations/cities', (req, res) => indiaCitiesHandler(req, res))
 app.post('/api/auth/change-email', (req, res) => requestEmailChangeHandler(req, res))
 app.all('/api/auth/orders', (req, res) => accountOrdersHandler(req, res))
+app.all('/api/auth/magazine-uploads', (req, res) => magazineUploadsHandler(req, res))
 app.get('/api/payment/config', (req, res) => paymentConfigHandler(req, res))
 app.post('/api/auth/reviews', (req, res) => accountReviewHandler(req, res))
 app.post('/api/auth/change-password', (req, res) => changePasswordHandler(req, res))

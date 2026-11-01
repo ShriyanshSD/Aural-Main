@@ -2,9 +2,9 @@ import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { PRODUCTS } from './src/data/products.js'
 import type { Product, StorefrontContent } from './src/types/index.js'
-import { getSupabaseAuthKey, getSupabaseConfig, supabaseRequest } from './auth-handler.js'
+import { createMagazineSignedDownloadUrl, getSupabaseAuthKey, getSupabaseConfig, supabaseRequest } from './auth-handler.js'
 import { normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
-import { sendOrderConfirmationEmail } from './email-service.js'
+import { sendOrderConfirmationEmail, sendOrderStatusEmail } from './email-service.js'
 
 interface AdminRequest extends IncomingMessage {
   body?: unknown
@@ -127,6 +127,43 @@ interface OrderOperation {
   updated_at: string
 }
 
+interface AdminMagazineUpload {
+  id: string
+  customization_id: string
+  user_id: string | null
+  file_type: 'photo' | 'message'
+  original_filename: string
+  storage_path: string
+  content_type: string
+  file_size: number
+  status: string
+  uploaded_at: string | null
+}
+
+const magazineCustomizationIdPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+const safeDownloadPart = (value: unknown) => {
+  const text = typeof value === 'string' ? value : ''
+  const normalized = text.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9 _-]/g, '').trim().replace(/\s+/g, '_').replace(/_+/g, '_')
+  return normalized.slice(0, 60) || 'Magazine'
+}
+
+const safePhotoArchiveName = (value: string, index: number, usedNames: Set<string>) => {
+  const filename = value.replace(/\\/g, '/').split('/').pop()?.replace(/[\u0000-\u001f\u007f]/g, '').trim() ?? ''
+  const extension = filename.split('.').pop()?.toLowerCase() ?? ''
+  const safeExtension = /^[a-z0-9]{1,8}$/.test(extension) ? extension : 'jpg'
+  const base = (filename.includes('.') ? filename.slice(0, filename.lastIndexOf('.')) : filename)
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9 _-]/g, '')
+    .trim().replace(/\s+/g, '_').replace(/_+/g, '_').slice(0, 80) || `Photo_${index + 1}`
+  let candidate = `${base}.${safeExtension}`
+  let suffix = 2
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${base}_${suffix}.${safeExtension}`
+    suffix += 1
+  }
+  usedNames.add(candidate.toLowerCase())
+  return candidate
+}
 const defaultStorefrontContent: StorefrontContent = {
   heroEyebrow: 'A memory becomes a gift becomes a keepsake',
   heroTitle: 'Make moments worth keeping.',
@@ -1059,6 +1096,105 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     return sendJson(res, 200, { success: true, movement: result[0] })
   }
 
+  const magazineAssetMatch = path.match(/^\/api\/admin\/custom-orders\/(\d+)\/magazines\/([a-f0-9-]{36})\/(photos|message)$/i)
+  if (magazineAssetMatch && method === 'POST') {
+    const orderId = Number(magazineAssetMatch[1])
+    const customizationId = magazineAssetMatch[2]
+    const assetType = magazineAssetMatch[3]
+    if (!magazineCustomizationIdPattern.test(customizationId)) return sendJson(res, 400, { error: 'The magazine customization ID is invalid.' })
+    const orders = await supabaseRequest<Array<{
+      id: number
+      order_id: string
+      user_id: string | null
+      order_data: Record<string, unknown>
+      payment_status: string
+    }>>(
+      'aurel_orders',
+      new URLSearchParams({
+        id: `eq.${orderId}`,
+        payment_status: 'eq.paid',
+        select: 'id,order_id,user_id,order_data,payment_status',
+        limit: '1'
+      })
+    )
+    const order = orders[0]
+    if (!order) return sendJson(res, 404, { error: 'The paid magazine order could not be found.' })
+    const orderItems = Array.isArray(order.order_data.items) ? order.order_data.items : []
+    const customizations = await supabaseRequest<Array<{
+      id: string
+      user_id: string | null
+      order_row_id: number
+      order_item_index: number
+      recipient_name: string
+      occasion: string
+    }>>(
+      'aurel_magazine_customizations',
+      new URLSearchParams({
+        id: `eq.${customizationId}`,
+        order_row_id: `eq.${order.id}`,
+        select: 'id,user_id,order_row_id,order_item_index,recipient_name,occasion',
+        limit: '1'
+      })
+    )
+    const customization = customizations.find(row => row.user_id === order.user_id)
+    const orderItem = customization ? orderItems[customization.order_item_index] : undefined
+    const magazineData = orderItem && typeof orderItem === 'object'
+      ? (orderItem as Record<string, unknown>).magazineCustomization as Record<string, unknown> | undefined
+      : undefined
+    if (!customization || !magazineData || magazineData.customizationId !== customization.id) {
+      return sendJson(res, 404, { error: 'This magazine item is not attached to the paid order.' })
+    }
+
+    let requestedIds: string[]
+    if (assetType === 'photos') {
+      requestedIds = Array.isArray(magazineData.photoUploadIds)
+        ? magazineData.photoUploadIds.filter((id): id is string => typeof id === 'string' && magazineCustomizationIdPattern.test(id))
+        : []
+      if (!requestedIds.length || requestedIds.length > 20) return sendJson(res, 404, { error: 'No photos are attached to this magazine item.' })
+    } else {
+      const messageId = magazineData.messageUploadId
+      if (typeof messageId !== 'string' || !magazineCustomizationIdPattern.test(messageId)) {
+        return sendJson(res, 404, { error: 'No TXT message is attached to this magazine item.' })
+      }
+      requestedIds = [messageId]
+    }
+
+    const uploads = await supabaseRequest<AdminMagazineUpload[]>(
+      'aurel_magazine_uploads',
+      new URLSearchParams({
+        id: `in.(${requestedIds.join(',')})`,
+        customization_id: `eq.${customizationId}`,
+        file_type: `eq.${assetType === 'photos' ? 'photo' : 'message'}`,
+        status: 'eq.complete',
+        select: 'id,customization_id,user_id,file_type,original_filename,storage_path,content_type,file_size,status,uploaded_at',
+        order: 'created_at.asc',
+        limit: '25'
+      })
+    )
+    const ownerUploads = uploads.filter(upload => upload.user_id === order.user_id)
+    const uploadsById = new Map(ownerUploads.map(upload => [upload.id, upload]))
+    if (ownerUploads.length !== requestedIds.length || requestedIds.some(id => !uploadsById.has(id))) {
+      return sendJson(res, 409, { error: 'One or more files linked to this paid magazine order are unavailable.' })
+    }
+    if (assetType === 'message') {
+      const message = uploadsById.get(requestedIds[0])!
+      const downloadUrl = await createMagazineSignedDownloadUrl(message.storage_path, message.original_filename)
+      return sendJson(res, 200, { downloadUrl, filename: message.original_filename })
+    }
+
+    const usedNames = new Set<string>()
+    const files = await Promise.all(requestedIds.map(async (id, index) => {
+      const upload = uploadsById.get(id)!
+      const filename = safePhotoArchiveName(upload.original_filename, index, usedNames)
+      return {
+        filename,
+        downloadUrl: await createMagazineSignedDownloadUrl(upload.storage_path, filename)
+      }
+    }))
+    const downloadFilename = `${safeDownloadPart(customization.recipient_name)}_${safeDownloadPart(customization.occasion)}_Photos.zip`
+    return sendJson(res, 200, { files, downloadFilename })
+  }
+
   if (path === '/api/admin/custom-orders' && method === 'GET') {
     const [orders, operations] = await Promise.all([
       fetchAllRows<{
@@ -1068,9 +1204,12 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         order_data: Record<string, unknown>
         created_at: string
         fulfillment_status: string
+        payment_status: string
+        order_status: string
+        paid_at: string | null
       }>('aurel_orders', new URLSearchParams({
-        whatsapp_submitted_at: 'not.is.null',
-        select: 'id,order_id,user_id,order_data,created_at,fulfillment_status',
+        payment_status: 'eq.paid',
+        select: 'id,order_id,user_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at',
         order: 'created_at.desc',
         limit: '500'
       })),
@@ -1080,13 +1219,54 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       )
     ])
     const operationMap = new Map(operations.map(operation => [operation.order_id, operation]))
-    const customOrders = orders.filter(order => {
+    const paidOrders = orders.filter(order => order.payment_status === 'paid')
+    const customizations = paidOrders.length
+      ? await supabaseRequest<Array<{
+        id: string
+        user_id: string | null
+        order_row_id: number
+        order_item_index: number
+      }>>(
+        'aurel_magazine_customizations',
+        new URLSearchParams({
+          order_row_id: `in.(${paidOrders.map(order => order.id).join(',')})`,
+          select: 'id,user_id,order_row_id,order_item_index',
+          limit: '1000'
+        })
+      )
+      : []
+    const customizationMap = new Map(customizations.map(customization => [customization.id, customization]))
+    const requestedUploadIds = new Set<string>()
+    for (const order of paidOrders) {
       const items = Array.isArray(order.order_data.items) ? order.order_data.items : []
-      return items.some(item => item && typeof item === 'object' && (
-        Boolean((item as Record<string, unknown>).recipientName)
-        || Boolean((item as Record<string, unknown>).customMessage)
-        || Boolean((item as Record<string, unknown>).customComponents)
-      ))
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue
+        const magazine = (item as Record<string, unknown>).magazineCustomization
+        if (!magazine || typeof magazine !== 'object' || Array.isArray(magazine)) continue
+        const selection = magazine as Record<string, unknown>
+        if (Array.isArray(selection.photoUploadIds)) {
+          for (const id of selection.photoUploadIds) if (typeof id === 'string' && magazineCustomizationIdPattern.test(id)) requestedUploadIds.add(id)
+        }
+        if (typeof selection.messageUploadId === 'string' && magazineCustomizationIdPattern.test(selection.messageUploadId)) {
+          requestedUploadIds.add(selection.messageUploadId)
+        }
+      }
+    }
+    const uploads = requestedUploadIds.size
+      ? await supabaseRequest<AdminMagazineUpload[]>(
+        'aurel_magazine_uploads',
+        new URLSearchParams({
+          id: `in.(${[...requestedUploadIds].join(',')})`,
+          status: 'eq.complete',
+          select: 'id,customization_id,user_id,file_type,original_filename,storage_path,content_type,file_size,status,uploaded_at',
+          limit: '1000'
+        })
+      )
+      : []
+    const uploadsById = new Map(uploads.map(upload => [upload.id, upload]))
+    const customOrders = paidOrders.filter(order => {
+      const items = Array.isArray(order.order_data.items) ? order.order_data.items : []
+      return items.some(item => item && typeof item === 'object' && (item as Record<string, unknown>).productId === 'custom_hamper_mix')
     }).map(order => ({
       ...order,
       operation: operationMap.get(order.id) ?? {
@@ -1103,7 +1283,62 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         updated_at: order.created_at
       }
     }))
-    return sendJson(res, 200, { orders: customOrders })
+    const magazines = paidOrders.flatMap(order => {
+      const items = Array.isArray(order.order_data.items) ? order.order_data.items : []
+      return items.flatMap((rawItem, itemIndex) => {
+        if (!rawItem || typeof rawItem !== 'object') return []
+        const item = rawItem as Record<string, unknown>
+        const customizationValue = item.magazineCustomization
+        const customization = customizationValue && typeof customizationValue === 'object' && !Array.isArray(customizationValue)
+          ? customizationValue as Record<string, unknown>
+          : undefined
+        const legacyComponents = Array.isArray(item.customComponents) ? item.customComponents : []
+        const isMagazine = Boolean(customization)
+          || (typeof item.name === 'string' && item.name.toLowerCase().startsWith('custom magazine'))
+          || legacyComponents.some(component => typeof component === 'string' && /^\d+ pages$/.test(component))
+        if (!isMagazine) return []
+        const customizationId = typeof customization?.customizationId === 'string' ? customization.customizationId : ''
+        const linked = customizationId ? customizationMap.get(customizationId) : undefined
+        const filesForItem = (ids: unknown, fileType: 'photo' | 'message') => {
+          if (!Array.isArray(ids) || !linked
+            || linked.user_id !== order.user_id
+            || linked.order_row_id !== order.id
+            || linked.order_item_index !== itemIndex) return []
+          return ids.flatMap(id => {
+            if (typeof id !== 'string') return []
+            const file = uploadsById.get(id)
+            if (!file || file.customization_id !== linked.id || file.user_id !== order.user_id
+              || file.file_type !== fileType || file.status !== 'complete') return []
+            return [{
+              id: file.id,
+              originalFilename: file.original_filename,
+              contentType: file.content_type,
+              fileSize: file.file_size,
+              uploadedAt: file.uploaded_at
+            }]
+          })
+        }
+        const photos = filesForItem(customization?.photoUploadIds, 'photo')
+        const messageFiles = filesForItem(customization?.messageUploadId ? [customization.messageUploadId] : [], 'message')
+        return [{
+          orderDbId: order.id,
+          orderId: order.order_id,
+          userId: order.user_id,
+          customerName: String(order.order_data.customerName ?? 'Customer'),
+          customerEmail: String(order.order_data.email ?? ''),
+          createdAt: order.created_at,
+          orderTotal: Number(order.order_data.total ?? 0),
+          itemAmount: Number(item.price ?? 0) * Number(item.quantity ?? 1),
+          paymentStatus: order.payment_status,
+          orderStatus: order.order_status,
+          fulfillmentStatus: order.fulfillment_status,
+          item,
+          photos,
+          messageFile: messageFiles[0] ?? null
+        }]
+      })
+    })
+    return sendJson(res, 200, { orders: customOrders, magazines })
   }
   const customOrderMatch = path.match(/^\/api\/admin\/custom-orders\/(\d+)$/)
   if (customOrderMatch && method === 'PATCH') {
@@ -1115,7 +1350,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     }
     const orders = await supabaseRequest<Array<{ id: number }>>(
       'aurel_orders',
-      new URLSearchParams({ id: `eq.${orderId}`, select: 'id', limit: '1' })
+      new URLSearchParams({ id: `eq.${orderId}`, payment_status: 'eq.paid', select: 'id', limit: '1' })
     )
     if (!orders[0]) return sendJson(res, 404, { error: 'Order not found.' })
     const existing = await supabaseRequest<OrderOperation[]>(
@@ -1540,7 +1775,27 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       const currentStatus = result.currentStatus ? result.currentStatus.replaceAll('_', ' ') : 'the current status'
       return sendJson(res, 409, { error: `Cannot move this order from ${currentStatus} to ${orderStatus}. Refresh and try again.` })
     }
-    return sendJson(res, 200, { success: true, alreadyUpdated: Boolean(result.alreadyUpdated), order: result.order })
+    const alreadyUpdated = Boolean(result.alreadyUpdated)
+    let emailError: string | undefined
+    if (!alreadyUpdated) {
+      try {
+        const statusEmail = await sendOrderStatusEmail(Number(orderMatch[1]), orderStatus)
+        if (statusEmail.status === 'failed') emailError = statusEmail.error
+      } catch (emailFailure) {
+        console.error(`Order ${orderStatus} update email could not be processed.`, {
+          orderId: orderMatch[1],
+          errorCode: emailFailure && typeof emailFailure === 'object' && 'code' in emailFailure
+            && typeof emailFailure.code === 'string' ? emailFailure.code : 'unknown'
+        })
+        emailError = 'Order status email could not be sent. Check the recipient address and server email configuration.'
+      }
+    }
+    return sendJson(res, 200, {
+      success: true,
+      alreadyUpdated,
+      order: result.order,
+      ...(emailError ? { emailError } : {})
+    })
   }
 
   if (path === '/api/admin/customers' && method === 'GET') {

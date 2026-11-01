@@ -10,8 +10,9 @@ import { ArrowUp, Sparkles } from 'lucide-react'
 import { Navigation } from './components/Navigation'
 import { Hero } from './components/Hero'
 import type { AuthMode } from './components/AuthModal'
-import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser, StoreCategory, StoreSettings, StorefrontContent, StoreCollection, StoreReview } from './types'
+import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser, MagazineCustomization, StoreCategory, StoreSettings, StorefrontContent, StoreCollection, StoreReview } from './types'
 import { PRODUCTS } from './data/products'
+import { MAGAZINE_PRICES } from './data/magazinePricing'
 
 const AdminApp = React.lazy(() => import('./AdminApp'))
 const Sidebar = React.lazy(() => import('./components/Sidebar').then(module => ({ default: module.Sidebar })))
@@ -108,6 +109,20 @@ const isCartItem = (value: unknown): value is CartItem => {
     && (item.customComponents === undefined || (
       Array.isArray(item.customComponents)
       && item.customComponents.every(component => typeof component === 'string')
+    ))
+    && (item.magazineCustomization === undefined || (
+      typeof item.magazineCustomization.customizationId === 'string'
+      && /^[a-f0-9-]{36}$/i.test(item.magazineCustomization.customizationId)
+      && typeof item.magazineCustomization.recipientName === 'string'
+      && (item.magazineCustomization.printFinish === 'matte' || item.magazineCustomization.printFinish === 'gloss')
+      && typeof item.magazineCustomization.occasion === 'string'
+      && Array.isArray(item.magazineCustomization.photoUploadIds)
+      && item.magazineCustomization.photoUploadIds.every(id => typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id))
+      && (item.magazineCustomization.pageCount === 4 || item.magazineCustomization.pageCount === 8)
+      && typeof item.magazineCustomization.dedicationMessage === 'string'
+      && (item.magazineCustomization.messageUploadId === undefined
+        || (typeof item.magazineCustomization.messageUploadId === 'string' && /^[a-f0-9-]{36}$/i.test(item.magazineCustomization.messageUploadId)))
+      && typeof item.magazineCustomization.additionalPreferences === 'string'
     ))
 }
 
@@ -229,7 +244,7 @@ function StorefrontApp() {
   const [cartFeedback, setCartFeedback] = useState<{
     productName: string
     timestamp: number
-    kind: 'added' | 'unavailable'
+    kind: 'added' | 'unavailable' | 'stock-limit'
   } | null>(null)
   const [wishlist, setWishlist] = useState<string[]>(signupResume?.wishlist ?? [])
   const [wishlistOwnerId, setWishlistOwnerId] = useState<string | null>(null)
@@ -277,6 +292,26 @@ function StorefrontApp() {
       console.error('Unable to save the bag:', error)
     }
   }, [cartItems])
+
+  useEffect(() => {
+    if (!authUser) return
+    const customizationIds = [...new Set(cartItems
+      .map(item => item.magazineCustomization?.customizationId)
+      .filter((id): id is string => Boolean(id)))]
+    if (!customizationIds.length) return
+    void fetch('/api/auth/magazine-uploads', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'touch', customizationIds })
+    }).then(async response => {
+      if (!response.ok) {
+        const result = await response.json() as { error?: string }
+        throw new Error(result.error || 'Saved magazine files could not be refreshed.')
+      }
+    }).catch(error => console.error('Unable to refresh active magazine upload retention:', error))
+  }, [authUser?.id, cartItems])
 
   useEffect(() => {
     const loadCatalog = async () => {
@@ -547,6 +582,20 @@ function StorefrontApp() {
     smoothScrollTo(0, duration)
   }
 
+  const handleOpenCustomMagazine = () => {
+    setActiveTab('home')
+    setActiveCategory('all')
+    setSelectedCollectionId('')
+    requestAnimationFrame(() => {
+      const magazineSection = document.getElementById('magazine-customizer')
+      if (magazineSection) {
+        smoothScrollTo(magazineSection)
+      } else {
+        console.error('Unable to find the custom magazine section.')
+      }
+    })
+  }
+
   const handleToggleTheme = () => {
     const updateTheme = () => setIsDarkMode(prev => !prev)
     const transitionDocument = document as Document & {
@@ -585,22 +634,28 @@ function StorefrontApp() {
 
   const handleAddToCart = (item: CartItem): boolean => {
     const product = catalogProducts.find(candidate => candidate.id === item.productId)
-    const currentQuantity = cartItems
-      .filter(cartItem => cartItem.productId === item.productId && cartItem.variantId === item.variantId)
+    const currentQuantity = item.magazineCustomization ? 0 : cartItems
+      .filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId && cartItem.variantId === item.variantId)
       .reduce((total, cartItem) => total + cartItem.quantity, 0)
     const variant = product?.variants?.find(candidate => candidate.id === item.variantId)
-    if (product?.variants?.length && !variant) {
+    if (!item.magazineCustomization && product?.variants?.length && !variant) {
       setSelectedProduct(product)
       return false
     }
     const stockLimit = variant ? variant.stockQuantity : product?.stockQuantity
-    if (typeof stockLimit === 'number' && currentQuantity + item.quantity > stockLimit) {
-      setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'unavailable' })
+    if (!item.magazineCustomization && typeof stockLimit === 'number' && currentQuantity + item.quantity > stockLimit) {
+      setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'stock-limit' })
       return false
     }
     setCartItems(prev => {
       const existing = prev.find(
-        i => i.productId === item.productId && i.variantId === item.variantId && i.finish === item.finish && i.recipientName === item.recipientName
+        i => i.productId === item.productId
+          && i.variantId === item.variantId
+          && i.finish === item.finish
+          && i.recipientName === item.recipientName
+          && i.customMessage === item.customMessage
+          && JSON.stringify(i.customComponents ?? []) === JSON.stringify(item.customComponents ?? [])
+          && i.magazineCustomization?.customizationId === item.magazineCustomization?.customizationId
       )
       if (existing) {
         return prev.map(i => 
@@ -622,7 +677,7 @@ function StorefrontApp() {
       return false
     }
     if (product.stockQuantity === 0) {
-      setCartFeedback({ productName: product.name, timestamp: Date.now(), kind: 'unavailable' })
+      setCartFeedback({ productName: product.name, timestamp: Date.now(), kind: 'stock-limit' })
       return false
     }
     const newItem: CartItem = {
@@ -663,12 +718,12 @@ function StorefrontApp() {
     const item = cartItems.find(cartItem => cartItem.cartId === cartId)
     const product = item && catalogProducts.find(candidate => candidate.id === item.productId)
     const currentVariantQuantity = item
-      ? cartItems.filter(cartItem => cartItem.productId === item.productId && cartItem.variantId === item.variantId).reduce((total, cartItem) => total + cartItem.quantity, 0)
+      ? cartItems.filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId && cartItem.variantId === item.variantId).reduce((total, cartItem) => total + cartItem.quantity, 0)
       : 0
     const variant = product?.variants?.find(candidate => candidate.id === item?.variantId)
     const stockLimit = variant ? variant.stockQuantity : product?.stockQuantity
-    if (item && typeof stockLimit === 'number' && currentVariantQuantity + delta > stockLimit) {
-      setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'unavailable' })
+    if (item && !item.magazineCustomization && typeof stockLimit === 'number' && currentVariantQuantity + delta > stockLimit) {
+      setCartFeedback({ productName: item.name, timestamp: Date.now(), kind: 'stock-limit' })
       return
     }
     setCartItems(prev => 
@@ -686,29 +741,30 @@ function StorefrontApp() {
     setCartItems(prev => prev.filter(i => i.cartId !== cartId))
   }
 
-  const handleCustomizeMagazine = (finish: FinishType, recipientName: string) => {
+  const handleCustomizeMagazine = (magazineCustomization: MagazineCustomization): boolean => {
     const magProduct = catalogProducts.find(product =>
-      product.category === 'magazines' && product.availableFinishes?.includes(finish)
-    )
+      product.category.toLowerCase() === 'magazines'
+      && product.isCustomizable
+      && product.availableFinishes?.includes(magazineCustomization.printFinish)
+    ) ?? PRODUCTS.find(product => product.id === 'prod_magazine_legacy')
     if (!magProduct) {
       setCartFeedback({
         productName: 'Magazine customization is currently unavailable.',
         timestamp: Date.now(),
         kind: 'unavailable'
       })
-      return
+      return false
     }
     const customItem: CartItem = {
-      cartId: `mag_${Date.now()}`,
+      cartId: `mag_${crypto.randomUUID()}`,
       productId: magProduct.id,
-      name: `Custom Magazine (${recipientName.toUpperCase()})`,
-      price: magProduct.price,
+      name: `Custom Magazine (${magazineCustomization.recipientName.toUpperCase()})`,
+      price: MAGAZINE_PRICES[magazineCustomization.pageCount],
       quantity: 1,
       imageUrl: magProduct.imageUrl,
-      finish,
-      recipientName
+      magazineCustomization
     }
-    handleAddToCart(customItem)
+    return handleAddToCart(customItem)
   }
 
   const handleAddCustomHamperToBag = (customItem: CartItem) => {
@@ -742,7 +798,8 @@ function StorefrontApp() {
           finish: item.finish,
           recipientName: item.recipientName,
           customMessage: item.customMessage,
-          customComponents: item.customComponents
+          customComponents: item.customComponents,
+          magazineCustomization: item.magazineCustomization
         }))
       })
     })
@@ -876,6 +933,7 @@ function StorefrontApp() {
           }
         }}
         onOpenBuilder={() => setActiveTab('builder')}
+        onOpenCustomMagazine={handleOpenCustomMagazine}
         user={authUser}
         onOpenAuth={(mode) => {
           setAuthMode(mode)
@@ -908,7 +966,11 @@ function StorefrontApp() {
             }`}
           >
             <span className={`font-semibold ${cartFeedback.kind === 'added' ? 'text-[#B36D6D]' : 'text-amber-700'}`}>
-              {cartFeedback.kind === 'added' ? 'Added to bag' : 'Stock limit reached'}
+              {cartFeedback.kind === 'added'
+                ? 'Added to bag'
+                : cartFeedback.kind === 'stock-limit'
+                  ? 'Stock limit reached'
+                  : 'Unable to add to bag'}
             </span>
             <span className="ml-2">{cartFeedback.productName}</span>
           </motion.div>
@@ -922,6 +984,7 @@ function StorefrontApp() {
         isDarkMode={isDarkMode}
         onSelectCategory={handleSelectCategory}
         onOpenCustomBuilder={() => setActiveTab('builder')}
+        onOpenCustomMagazine={handleOpenCustomMagazine}
         onOpenStory={() => {
           setActiveTab('story')
           const el = document.getElementById('our-story')
@@ -995,7 +1058,12 @@ function StorefrontApp() {
 
                 {/* Visual Categories Grid */}
                 <LazyViewport minHeight={520}>
-                  <CategoryGrid isDarkMode={isDarkMode} categories={storeCategories} onSelectCategory={handleSelectCategory} />
+                  <CategoryGrid
+                    isDarkMode={isDarkMode}
+                    categories={storeCategories}
+                    onSelectCategory={handleSelectCategory}
+                    onOpenCustomMagazine={handleOpenCustomMagazine}
+                  />
                 </LazyViewport>
               </>
             )}
@@ -1025,8 +1093,17 @@ function StorefrontApp() {
             {activeCategory !== 'hair-accessories' && (
               <>
                 {/* Magazine Feature Section with Live Preview */}
-                <LazyViewport minHeight={620}>
-                  <MagazineShowcase isDarkMode={isDarkMode} settings={storeSettings} onCustomizeMagazine={handleCustomizeMagazine} />
+                <LazyViewport id="magazine-customizer" minHeight={620}>
+                  <MagazineShowcase
+                    isDarkMode={isDarkMode}
+                    settings={storeSettings}
+                    userId={authUser?.id}
+                    onRequireAuth={() => {
+                      setAuthMode('login')
+                      setIsAuthOpen(true)
+                    }}
+                    onCustomizeMagazine={handleCustomizeMagazine}
+                  />
                 </LazyViewport>
 
                 {/* Trust, Story, Testimonials & Concierge Support */}
@@ -1085,12 +1162,14 @@ function StorefrontApp() {
           const unavailableItem = cartItems.find(item => {
             const product = catalogProducts.find(candidate => candidate.id === item.productId)
             const totalQuantity = cartItems
-              .filter(cartItem => cartItem.productId === item.productId)
+              .filter(cartItem => !cartItem.magazineCustomization && cartItem.productId === item.productId)
               .reduce((total, cartItem) => total + cartItem.quantity, 0)
-            return typeof product?.stockQuantity === 'number' && totalQuantity > product.stockQuantity
+            return !item.magazineCustomization
+              && typeof product?.stockQuantity === 'number'
+              && totalQuantity > product.stockQuantity
           })
           if (unavailableItem) {
-            setCartFeedback({ productName: unavailableItem.name, timestamp: Date.now(), kind: 'unavailable' })
+           setCartFeedback({ productName: unavailableItem.name, timestamp: Date.now(), kind: 'stock-limit' })
             return
           }
           setIsBagOpen(false)

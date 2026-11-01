@@ -169,6 +169,13 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           For: {item.recipientName}
                         </span>
                       )}
+                      {item.magazineCustomization && (
+                        <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block">
+                          {item.magazineCustomization.printFinish === 'matte' ? 'Matte' : 'Gloss'} · {item.magazineCustomization.pageCount} pages · {item.magazineCustomization.occasion}
+                          {item.magazineCustomization.photoUploadIds.length > 0 ? ` · ${item.magazineCustomization.photoUploadIds.length} photos` : ''}
+                          {item.magazineCustomization.messageUploadId ? ' · TXT message' : ''}
+                        </span>
+                      )}
                       {item.customComponents && item.customComponents.length > 0 && (
                         <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block truncate">
                           Includes: {item.customComponents.join(', ')}

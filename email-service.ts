@@ -307,3 +307,113 @@ export const sendOrderConfirmationEmail = async (id: number): Promise<Confirmati
   }
   return { status: 'sent' }
 }
+
+export const sendOrderStatusEmail = async (
+  id: number,
+  status: 'shipped' | 'delivered'
+): Promise<{ status: 'sent' | 'failed'; error?: string }> => {
+  const order = await getOrder(id)
+  if (!order) throw new Error('Order not found.')
+  if (order.payment_status !== 'paid' || order.order_status !== status) {
+    throw new Error('The order must be paid and updated before sending a status email.')
+  }
+
+  try {
+    const customerName = requiredString(order.order_data.customerName, 'customer name')
+    const orderNumber = requiredString(order.order_id, 'order number')
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(orderNumber)) throw new Error('The order number is invalid.')
+    const users = await supabaseRequest<Array<{ email: string }>>(
+      'aurel_users',
+      new URLSearchParams({ id: `eq.${order.user_id}`, select: 'email', limit: '1' })
+    )
+    const recipient = users[0]?.email?.trim()
+    if (!recipient || !isValidEmail(recipient)) throw new Error('The registered customer email address is invalid.')
+    const appUrl = process.env.APP_URL?.trim()
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '')
+    let ordersUrl: string
+    try {
+      const parsedUrl = new URL(appUrl)
+      if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password) throw new Error()
+      const url = new URL('/', parsedUrl)
+      url.searchParams.set('account', 'orders')
+      ordersUrl = url.toString()
+    } catch {
+      throw new Error('APP_URL must be a valid website URL.')
+    }
+
+    const gmailUser = process.env.GMAIL_USER?.trim()
+    const appPassword = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '')
+    if (!gmailUser || !isValidEmail(gmailUser) || !appPassword) {
+      throw new Error('GMAIL_USER and GMAIL_APP_PASSWORD must be configured on the backend.')
+    }
+
+    const shipped = status === 'shipped'
+    const title = shipped ? 'Your Order Is On Its Way' : 'Your Order Has Been Delivered'
+    const message = shipped
+      ? 'We’re pleased to let you know that your AUREL order has been carefully prepared and dispatched. We hope it reaches you safely and brings joy to your special moment.'
+      : 'We’re delighted to confirm that your AUREL order has been delivered. We hope your keepsake makes your special moment even more memorable.'
+    const safeName = escapeHtml(customerName)
+    const safeOrderNumber = escapeHtml(orderNumber)
+    const safeOrdersUrl = escapeHtml(ordersUrl)
+    const text = [
+      'AUREL',
+      'Made With Love For You',
+      '',
+      title,
+      `Dear ${customerName},`,
+      '',
+      message,
+      '',
+      `Order Number: ${orderNumber}`,
+      `Order Date: ${displayDate(order.created_at)}`,
+      `Order Status: ${status.toUpperCase()}`,
+      '',
+      `View your orders: ${ordersUrl}`,
+      '',
+      'Thank you for making AUREL a part of your special moments.',
+      '',
+      'With love,',
+      'Team AUREL',
+      'Made With Love For You'
+    ].join('\n')
+    const html = `<!doctype html><html><body style="margin:0;background:#f7f3ef;color:#302725;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f3ef;padding:32px 12px"><tr><td align="center"><table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;border:1px solid #eadfd9;border-radius:20px;overflow:hidden"><tr><td style="padding:34px 32px;text-align:center;background:#f4ece7"><div style="font-family:Georgia,serif;font-size:30px;letter-spacing:5px;color:#8f5554">AUREL</div><div style="margin-top:8px;font-size:11px;letter-spacing:2px;color:#806b64">MADE WITH LOVE FOR YOU</div></td></tr><tr><td style="padding:32px"><h1 style="margin:0 0 16px;text-align:center;font-family:Georgia,serif;font-size:27px;font-weight:400;color:#352927">${title}</h1><p style="font-size:15px;line-height:1.7">Dear ${safeName},</p><p style="font-size:14px;line-height:1.8;color:#665650">${message}</p><div style="margin:26px 0;padding:18px;border:1px solid #eee5df;border-radius:12px;background:#fcfaf8"><p style="margin:0;font-size:12px;line-height:1.8;color:#665650"><strong>Order Number:</strong> ${safeOrderNumber}<br><strong>Order Date:</strong> ${escapeHtml(displayDate(order.created_at))}<br><strong>Order Status:</strong> ${status.toUpperCase()}</p></div><div style="padding:8px 0 18px;text-align:center"><a href="${safeOrdersUrl}" style="display:inline-block;padding:13px 24px;border-radius:999px;background:#a45f60;color:#fff;text-decoration:none;font-size:12px;font-weight:bold;letter-spacing:1px">VIEW MY ORDERS</a></div><p style="font-size:13px;line-height:1.8;color:#665650">Thank you for making AUREL a part of your special moments.</p><p style="font-size:14px;line-height:1.8">With love,<br><strong>Team AUREL</strong><br><span style="font-size:11px;color:#806b64">Made With Love For You</span></p></td></tr></table></td></tr></table></body></html>`
+
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
+      auth: { user: gmailUser, pass: appPassword }
+    })
+    await transporter.sendMail({
+      from: { name: 'AUREL', address: gmailUser },
+      to: recipient,
+      subject: shipped
+        ? `Your AUREL Order ${orderNumber} Has Shipped`
+        : `Your AUREL Order ${orderNumber} Has Been Delivered`,
+      text,
+      html
+    })
+    return { status: 'sent' }
+  } catch (error) {
+    const errorCode = error && typeof error === 'object' && 'code' in error
+      && typeof error.code === 'string' ? error.code : 'unknown'
+    console.error(`Order ${status} email failed.`, { orderId: order.order_id, errorCode })
+    const reason = error instanceof Error ? error.message : ''
+    if (reason.includes('GMAIL_USER') || reason.includes('GMAIL_APP_PASSWORD')) {
+      return { status: 'failed', error: 'Order status email could not be sent because server email settings are missing.' }
+    }
+    if (reason.includes('APP_URL')) {
+      return { status: 'failed', error: 'Order status email could not be sent because the website URL is not configured.' }
+    }
+    if (reason.includes('order') || reason.includes('customer name')) {
+      return { status: 'failed', error: 'Order status email could not be sent because the saved order details are incomplete.' }
+    }
+    if (reason.includes('registered customer email')) {
+      return { status: 'failed', error: 'The registered customer email address is invalid.' }
+    }
+    return { status: 'failed', error: 'Order status email could not be sent. Check the recipient address and server email configuration.' }
+  }
+}

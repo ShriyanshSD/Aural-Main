@@ -109,6 +109,28 @@ export interface CartItem {
   recipientName?: string
   customMessage?: string
   customComponents?: string[]
+  magazineCustomization?: MagazineCustomization
+}
+
+export interface MagazineUploadMetadata {
+  id: string
+  originalFilename: string
+  contentType: string
+  fileSize: number
+  uploadedAt: string
+  previewUrl?: string
+}
+
+export interface MagazineCustomization {
+  customizationId: string
+  recipientName: string
+  printFinish: FinishType
+  occasion: string
+  photoUploadIds: string[]
+  pageCount: 4 | 8
+  dedicationMessage: string
+  messageUploadId?: string
+  additionalPreferences: string
 }
 
 export interface BuilderItem {

@@ -679,7 +679,48 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                             {order.deliveredAt && <span>Delivered {new Date(order.deliveredAt).toLocaleString()}</span>}
                           </div>}
                           <ul className="mt-3 space-y-2 text-xs">
-                            {order.items.map((item, index) => <li key={`${item.productId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 truncate">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span><span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span></li>)}
+                            {order.items.map((item, index) => (
+                              <li key={`${item.productId}-${index}`} className="flex justify-between gap-3">
+                                <span className="min-w-0">
+                                  <span className="block">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span>
+                                  {(item.finish || item.recipientName || item.customComponents?.length) && (
+                                    <span className="mt-0.5 block text-[10px] text-[#8E7973] dark:text-[#A79690]">
+                                      {[
+                                        item.finish && `Finish: ${item.finish}`,
+                                        item.recipientName && `For: ${item.recipientName}`,
+                                        ...(item.customComponents ?? [])
+                                      ].filter(Boolean).join(' · ')}
+                                    </span>
+                                  )}
+                                  {item.customMessage && (
+                                    <span className="mt-0.5 block break-words text-[10px] italic text-[#8E7973] dark:text-[#A79690]">
+                                      “{item.customMessage}”
+                                    </span>
+                                  )}
+                                  {item.magazineCustomization && (
+                                    <span className="mt-0.5 block whitespace-pre-wrap break-words text-[10px] text-[#8E7973] dark:text-[#A79690]">
+                                      {[
+                                        `For: ${item.magazineCustomization.recipientName}`,
+                                        `Finish: ${item.magazineCustomization.printFinish}`,
+                                        `${item.magazineCustomization.pageCount} pages`,
+                                        item.magazineCustomization.occasion,
+                                        item.magazineCustomization.photoUploadIds.length
+                                          ? `${item.magazineCustomization.photoUploadIds.length} uploaded photos`
+                                          : '',
+                                        item.magazineCustomization.messageUploadId ? 'TXT message attached' : '',
+                                        item.magazineCustomization.additionalPreferences
+                                          ? `Preferences: ${item.magazineCustomization.additionalPreferences}`
+                                          : ''
+                                      ].filter(Boolean).join(' · ')}
+                                      {item.magazineCustomization.dedicationMessage
+                                        ? `\nDedication: ${item.magazineCustomization.dedicationMessage}`
+                                        : ''}
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="shrink-0">₹{(item.price * item.quantity).toLocaleString('en-IN')}</span>
+                              </li>
+                            ))}
                           </ul>
                           <p className="mt-3 flex items-start gap-1.5 text-[11px] text-[#8E7973] dark:text-[#A79690]"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />{[order.address, order.city, order.state, order.postalCode].filter(Boolean).join(', ')}</p>
                           {productionStatus === 'awaiting_customer_approval' && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
