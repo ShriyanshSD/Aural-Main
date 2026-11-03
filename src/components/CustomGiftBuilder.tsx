@@ -341,7 +341,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
             </section>
           </div>
 
-          <aside className="min-w-0 lg:sticky lg:top-6">
+          <aside className="min-w-0">
             <div className="mb-3 flex items-end justify-between">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">Your gift, taking shape</p>
