@@ -501,7 +501,7 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                       backgroundColor: isDarkMode ? '#221B19' : '#FFFFFF',
                       borderColor: isDarkMode ? '#483531' : '#E0CBC2'
                     }}
-                    className="relative aspect-[2/3] w-full overflow-hidden rounded-2xl border shadow-2xl shadow-neutral-900/25 sm:aspect-[3/4]"
+                    className="relative min-h-[34rem] aspect-[2/3] w-full overflow-hidden rounded-2xl border shadow-2xl shadow-neutral-900/25 sm:min-h-[38rem] sm:aspect-[3/4]"
                   >
                     <div className="pointer-events-none absolute bottom-0 left-0 top-0 z-10 w-6 bg-gradient-to-r from-black/25 via-black/10 to-transparent" />
                     <div className="relative z-0 flex h-full min-h-0 flex-col justify-between p-3 sm:p-10">
@@ -590,14 +590,14 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                           href={selectedMagazine.previewUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mx-auto mt-2 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#B36D6D]/40 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#9E5B5B] transition-all hover:border-[#B36D6D] hover:bg-[#B36D6D] hover:text-white dark:text-[#F0BDB5] dark:hover:text-white sm:mt-3 sm:gap-2 sm:px-4 sm:py-2 sm:text-[10px]"
+                          className="mx-auto mb-2 mt-2 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#B36D6D]/40 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#9E5B5B] transition-all hover:border-[#B36D6D] hover:bg-[#B36D6D] hover:text-white dark:text-[#F0BDB5] dark:hover:text-white sm:mt-3 sm:gap-2 sm:px-4 sm:py-2 sm:text-[10px]"
                         >
                           <span>Full Preview Sample</span>
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       </div>
 
-                      <div className="mt-2 flex shrink-0 items-center justify-between border-t border-black/10 pt-2 text-[9px] uppercase tracking-wider text-[#88746F] dark:border-white/10 dark:text-[#A79690] sm:mt-0 sm:pt-3 sm:text-[10px]">
+                      <div className="mt-4 flex shrink-0 items-center justify-between border-t border-black/10 pt-3 text-[9px] uppercase tracking-wider text-[#88746F] dark:border-white/10 dark:text-[#A79690] sm:text-[10px]">
                         <span>Collectors Issue</span>
                         <span>{selectedMagazine.name}</span>
                       </div>

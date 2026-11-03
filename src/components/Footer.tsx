@@ -1,7 +1,6 @@
 import React from 'react'
 import { ProductCategory, StoreSettings, StorefrontContent } from '../types'
 import { BrandLogo } from './BrandLogo'
-import { normalizeWhatsAppNumber } from '../utils/payment'
 
 interface FooterProps {
   isDarkMode: boolean
@@ -38,17 +37,6 @@ export const Footer: React.FC<FooterProps> = ({
             <p className="font-sans-body text-xs text-[#826F69] dark:text-[#A79791] max-w-sm leading-relaxed">
               {settings.description}
             </p>
-            <div className="space-y-1 pt-2 text-xs text-[#8E7973]">
-              {settings.contactEmail && <div>
-                Concierge: <a href={`mailto:${settings.contactEmail}`} className="hover:text-[#B36D6D]">{settings.contactEmail}</a>
-              </div>}
-              {settings.phone && <div>
-                Phone: <a href={`tel:${settings.phone}`} className="hover:text-[#B36D6D]">{settings.phone}</a>
-              </div>}
-              {settings.whatsappNumber && <div>
-                <a href={`https://wa.me/${normalizeWhatsAppNumber(settings.whatsappNumber)}`} target="_blank" rel="noopener noreferrer" className="hover:text-[#B36D6D]">WhatsApp concierge</a>
-              </div>}
-            </div>
           </div>
 
           {/* Shop Column */}

@@ -327,7 +327,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({
   }
 
   return (
-    <section className={`theme-surface py-20 ${
+    <section className={`theme-surface pb-20 pt-0 ${
       isDarkMode ? 'bg-[#181615] text-[#F3EBE6]' : 'bg-[#FAF7F2] text-[#2C2422]'
     }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

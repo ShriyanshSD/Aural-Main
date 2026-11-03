@@ -52,7 +52,7 @@ export const MomentsSection: React.FC<MomentsSectionProps> = ({
   const visibleMoments = moments.filter(moment => activeCategorySlugs.has(moment.category))
 
   return (
-    <section className={`py-20 sm:py-28 transition-colors duration-500 border-t ${
+    <section className={`pb-6 pt-20 sm:pb-8 sm:pt-28 transition-colors duration-500 border-t ${
       isDarkMode 
         ? 'bg-[#181615] border-[#2C2422] text-[#F3EBE6]' 
         : 'bg-[#FAF7F2] border-[#EAD5CD]/50 text-[#2C2422]'

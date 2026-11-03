@@ -128,23 +128,17 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
     magazineCard,
     ...(otherTopCategory ? [otherTopCategory] : [])
   ]
-  const topIds = new Set(visibleTopCategories.map(category => category.id))
-  const visibleBottomCategories = categoryCards.filter(category => !topIds.has(category.id))
-  const balancedBottomCategories = visibleBottomCategories.map((category, index) => {
-    const remainingSlots = visibleBottomCategories.length % 3
-    const isLastRow = index >= visibleBottomCategories.length - remainingSlots
-    return {
-      ...category,
-      cols: isLastRow && remainingSlots === 2
-        ? 'lg:col-span-6'
-        : isLastRow && remainingSlots === 1
-          ? 'lg:col-span-4 lg:col-start-5'
-          : category.cols
-    }
-  })
+  const featuredIds = new Set(visibleTopCategories.map(category => category.id))
+  const exploreCategories = [
+    ...visibleTopCategories,
+    ...categoryCards.filter(category => !featuredIds.has(category.id))
+  ].map((category, index) => ({
+    ...category,
+    isWide: [0, 5, 6].includes(index % 9)
+  }))
 
   return (
-    <section className={`theme-surface py-20 sm:py-28 ${
+    <section className={`theme-surface pb-8 pt-6 sm:pb-10 sm:pt-8 ${
       isDarkMode ? 'bg-[#151312] text-[#F3EBE6]' : 'bg-[#FAF7F2] text-[#2C2422]'
     }`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -162,10 +156,9 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
           </p>
         </div>
 
-        {/* Top 2 Large Visual Cards */}
         <MotionConfig reducedMotion="never">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
-          {visibleTopCategories.map((cat, idx) => (
+        <div className="grid grid-cols-2 gap-4 lg:auto-rows-[clamp(10rem,calc((min(100vw_-_4rem,_76rem)_-_3rem)_*_0.1875),16rem)] lg:grid-cols-4">
+          {exploreCategories.map((cat, idx) => (
             <motion.div
               key={cat.id}
               initial={{ opacity: 0, y: 25 }}
@@ -176,60 +169,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
               viewport={{ once: true }}
               transition={{ duration: 0.42, delay: idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
               onClick={() => cat.id === 'magazines' ? onOpenCustomMagazine() : onSelectCategory(cat.id)}
-              className={`${cat.cols} relative group rounded-3xl overflow-hidden cursor-pointer aspect-[16/10] sm:aspect-[16/9] shadow-md hover:shadow-2xl transition-all duration-500`}
-            >
-              <motion.img
-                src={cat.imageUrl}
-                alt={cat.title}
-                referrerPolicy="no-referrer"
-                loading="lazy"
-                decoding="async"
-                animate={{ scale: hoveredCategory === cat.id ? 1.045 : 1 }}
-                transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-                className="h-full w-full object-cover"
-              />
-
-              {/* Editorial Gradient Scrim */}
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/10 transition-opacity duration-300 group-hover:opacity-90" />
-
-              {/* Content Overlay */}
-              <div className="absolute inset-0 p-8 sm:p-10 flex flex-col justify-between">
-                <div className="flex justify-between items-start">
-                  <span className="text-[11px] uppercase tracking-widest text-white/90 font-medium px-3 py-1 rounded-full bg-white/20 backdrop-blur-md">
-                    {cat.tag}
-                  </span>
-                  <div className="p-3 rounded-full bg-white/20 backdrop-blur-md text-white transform transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1">
-                    <ArrowUpRight className="w-5 h-5" />
-                  </div>
-                </div>
-
-                <div className="transform transition-transform duration-500 group-hover:-translate-y-2">
-                  <h3 className="font-serif-title text-2xl sm:text-3xl text-white font-medium tracking-wide">
-                    {cat.title}
-                  </h3>
-                  <p className="font-sans-body text-xs sm:text-sm text-white/80 max-w-md mt-2 line-clamp-2 leading-relaxed">
-                    {cat.subtitle}
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Bottom 3 Medium Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-6">
-          {balancedBottomCategories.map((cat, idx) => (
-            <motion.div
-              key={cat.id}
-              initial={{ opacity: 0, y: 25 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -3 }}
-              onHoverStart={() => setHoveredCategory(cat.id)}
-              onHoverEnd={() => setHoveredCategory(null)}
-              viewport={{ once: true }}
-              transition={{ duration: 0.42, delay: 0.16 + idx * 0.06, ease: [0.22, 1, 0.36, 1] }}
-              onClick={() => cat.id === 'magazines' ? onOpenCustomMagazine() : onSelectCategory(cat.id)}
-              className={`${cat.cols} relative group rounded-3xl overflow-hidden cursor-pointer aspect-[4/3] sm:aspect-[1/1] shadow-md hover:shadow-2xl transition-all duration-500`}
+              className={`${cat.isWide ? 'col-span-2 aspect-[2.9/1]' : 'col-span-1 aspect-[4/3]'} relative group rounded-3xl overflow-hidden cursor-pointer shadow-md hover:shadow-2xl transition-all duration-500 lg:aspect-auto lg:h-full`}
             >
               <motion.img
                 src={cat.imageUrl}
@@ -244,21 +184,21 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
 
               <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/10 transition-opacity duration-300 group-hover:opacity-90" />
 
-              <div className="absolute inset-0 p-6 sm:p-8 flex flex-col justify-between">
+              <div className={`absolute inset-0 flex flex-col justify-between ${cat.isWide ? 'p-6 sm:p-8 lg:p-10' : 'p-4 sm:p-6'}`}>
                 <div className="flex justify-between items-start">
-                  <span className="text-[10px] uppercase tracking-widest text-white/90 font-medium px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md">
+                  <span className="text-[9px] sm:text-[10px] uppercase tracking-widest text-white/90 font-medium px-2.5 py-1 rounded-full bg-white/20 backdrop-blur-md">
                     {cat.tag}
                   </span>
-                  <div className="p-2.5 rounded-full bg-white/20 backdrop-blur-md text-white transform transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1">
+                  <div className="p-2 rounded-full bg-white/20 backdrop-blur-md text-white transform transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1">
                     <ArrowUpRight className="w-4 h-4" />
                   </div>
                 </div>
 
                 <div className="transform transition-transform duration-500 group-hover:-translate-y-2">
-                  <h3 className="font-serif-title text-xl sm:text-2xl text-white font-medium tracking-wide">
+                  <h3 className="font-serif-title text-base sm:text-lg lg:text-xl text-white font-medium tracking-wide">
                     {cat.title}
                   </h3>
-                  <p className="font-sans-body text-xs text-white/80 mt-1 line-clamp-2 leading-relaxed">
+                  <p className="font-sans-body text-[10px] sm:text-xs text-white/80 mt-1 line-clamp-2 leading-relaxed">
                     {cat.subtitle}
                   </p>
                 </div>

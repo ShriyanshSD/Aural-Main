@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { Star, Heart, Sparkles, Send, CheckCircle2, Mail, MessageCircle, Phone, Shield, Award } from 'lucide-react'
+import { Star, Sparkles, Send, CheckCircle2, Mail, MessageCircle, Phone, Shield, Award } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import type { StoreReview, StoreSettings } from '../types'
 import { normalizeWhatsAppNumber } from '../utils/payment'
@@ -48,33 +48,6 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
       symbol: '∞',
       title: 'Memorable',
       description: 'Because the best gestures become keepsakes that transcend passing years'
-    }
-  ]
-
-  const instagramCards = [
-    {
-      id: 'ig_1',
-      title: 'Anniversary Keepsake Book',
-      likes: 248,
-      imageUrl: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80'
-    },
-    {
-      id: 'ig_2',
-      title: 'Blush Garden Roses & Silk',
-      likes: 312,
-      imageUrl: 'https://images.unsplash.com/photo-1561181286-d3fee7d55364?auto=format&fit=crop&w=600&q=80'
-    },
-    {
-      id: 'ig_3',
-      title: 'A Bouquet to Remember',
-      likes: 420,
-      imageUrl: '/collections/Bouquets/Bloom%20elan%202.png'
-    },
-    {
-      id: 'ig_4',
-      title: 'Bespoke Keepsake Hamper',
-      likes: 289,
-      imageUrl: 'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=600&q=80'
     }
   ]
 
@@ -196,53 +169,6 @@ export const StoryAndReviews: React.FC<StoryAndReviewsProps> = ({
           {reviews.length > 0 && <div className="mt-8 text-xs text-[#8E7973] dark:text-[#A89690] tracking-wider uppercase font-medium">
             {`Average ${((reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length)).toFixed(1)} / 5 from ${reviews.length} customer review${reviews.length === 1 ? '' : 's'}`}
           </div>}
-
-        </div>
-      </section>
-
-      {/* 3. Moments Worth Sharing (Social Gallery) */}
-      <section className="py-20 sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          
-          <div className="text-center max-w-xl mx-auto mb-12">
-            <span className="font-editorial text-xs tracking-widest text-[#B36D6D] uppercase font-semibold">
-              Community Gallery
-            </span>
-            <h2 className="font-serif-title text-3xl sm:text-4xl tracking-tight mt-1">
-              Made for moments worth sharing
-            </h2>
-            <p className="font-sans-body text-xs sm:text-sm text-[#7D6B65] dark:text-[#BAAAA3] mt-2">
-              Glimpses of unboxings, anniversary smiles, and treasured keepsakes
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {instagramCards.map((item) => (
-              <div
-                key={item.id}
-                className="group relative aspect-square rounded-2xl overflow-hidden shadow-sm cursor-pointer border border-black/5"
-              >
-                <img
-                  src={item.imageUrl}
-                  alt={item.title}
-                  referrerPolicy="no-referrer"
-                  loading="lazy"
-                  decoding="async"
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-white p-4 text-center">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold mb-1">
-                    <Heart className="w-4 h-4 fill-white" />
-                    <span>{item.likes}</span>
-                  </div>
-                  <span className="text-xs font-serif-title">
-                    {item.title}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
 
         </div>
       </section>
