@@ -143,7 +143,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className={`min-h-screen py-8 sm:py-12 transition-colors duration-300 ${
+      className={`min-h-screen pt-20 pb-8 sm:pt-16 sm:pb-12 lg:py-12 transition-colors duration-300 ${
         isDark ? 'bg-[#181615] text-[#F3EBE6]' : 'bg-[#FAF8F4] text-[#352B25]'
       }`}
     >
