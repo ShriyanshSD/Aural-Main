@@ -1083,6 +1083,8 @@ function StorefrontApp() {
           >
             <React.Suspense fallback={null}><CustomGiftBuilder
               isDarkMode={isDarkMode}
+              categories={storeCategories}
+              products={catalogProducts}
               onClose={() => setActiveTab('home')}
               onAddCustomHamperToBag={handleAddCustomHamperToBag}
             /></React.Suspense>

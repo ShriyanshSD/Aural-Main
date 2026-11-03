@@ -1,371 +1,502 @@
-import React, { useState } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { Sparkles, Check, Plus, Trash2, ShoppingBag, ArrowRight, X } from 'lucide-react'
-import { BuilderItem, CartItem } from '../types'
-import { BUILDER_ITEMS } from '../data/products'
+import React, { useEffect, useState } from 'react'
+import { motion } from 'motion/react'
+import { Check, ChevronDown, Gift, Minus, Plus, ShoppingBag, Sparkles, X } from 'lucide-react'
+import type { BuilderItem, CartItem, Product, StoreCategory } from '../types'
+import { BUILDER_ITEMS, PRODUCTS } from '../data/products'
+import { MAGAZINE_PRICES } from '../data/magazinePricing'
 
 interface CustomGiftBuilderProps {
   isDarkMode: boolean
   onClose: () => void
   onAddCustomHamperToBag: (item: CartItem) => void
+  categories: StoreCategory[]
+  products: Product[]
 }
+
+const featuredCategoryLabels: Record<string, string> = {
+  magazines: 'Custom Magazines',
+  hampers: 'Custom Hampers',
+  bouquets: 'Bouquets',
+  'single-flowers': 'Single Flowers',
+  'desk-buddy': 'Desk Buddy',
+  'gift-box-hampers': 'Gift Box Hampers',
+  'hair-accessories': 'Hair Accessories',
+  'bag-charms': 'Bag Charms',
+  'key-chains': 'Key Chains',
+  'god-aasan': 'God Aasan'
+}
+
+const getCategoryLabel = (category: StoreCategory) => (
+  featuredCategoryLabels[category.slug]
+  ?? category.name
+  ?? category.slug.split('-').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ')
+)
+
+const previewPlacements = [
+  { left: '25%', top: '25%', width: '50%', height: '48%', rotate: -1, zIndex: 20 },
+  { left: '7%', top: '9%', width: '30%', height: '36%', rotate: -7, zIndex: 30 },
+  { left: '64%', top: '8%', width: '28%', height: '35%', rotate: 6, zIndex: 30 },
+  { left: '6%', top: '58%', width: '32%', height: '34%', rotate: 3, zIndex: 40 },
+  { left: '64%', top: '56%', width: '30%', height: '35%', rotate: -3, zIndex: 40 },
+  { left: '3%', top: '34%', width: '27%', height: '31%', rotate: -5, zIndex: 35 },
+  { left: '70%', top: '34%', width: '27%', height: '31%', rotate: 5, zIndex: 35 },
+  { left: '35%', top: '6%', width: '29%', height: '30%', rotate: 3, zIndex: 25 },
+  { left: '35%', top: '66%', width: '31%', height: '28%', rotate: -2, zIndex: 45 }
+]
+
+const formatPrice = (price: number) => `₹${price.toLocaleString('en-IN')}`
 
 export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
   isDarkMode,
   onClose,
-  onAddCustomHamperToBag
+  onAddCustomHamperToBag,
+  categories = [],
+  products = []
 }) => {
-  // Selected items state
-  const [selectedBox, setSelectedBox] = useState<BuilderItem>(BUILDER_ITEMS.find(i => i.category === 'box') || BUILDER_ITEMS[0])
-  const [selectedItems, setSelectedItems] = useState<BuilderItem[]>([
-    BUILDER_ITEMS.find(i => i.id === 'flower_single_rose') || BUILDER_ITEMS[2],
-    BUILDER_ITEMS.find(i => i.id === 'keep_candle') || BUILDER_ITEMS[4]
-  ])
+  const [selectedBox, setSelectedBox] = useState<BuilderItem>(
+    BUILDER_ITEMS.find(item => item.category === 'box') ?? BUILDER_ITEMS[0]
+  )
+  const [selectedItems, setSelectedItems] = useState<Product[]>([])
+  const [activeCategory, setActiveCategory] = useState(
+    categories.find(category => category.slug !== 'magazines')?.slug ?? categories[0]?.slug ?? ''
+  )
   const [recipientName, setRecipientName] = useState('')
   const [personalNote, setPersonalNote] = useState('')
-  const [hamperTitle, setHamperTitle] = useState('My Bespoke Keepsake Hamper')
 
-  // Total price calculation
   const totalPrice = selectedBox.price + selectedItems.reduce((sum, item) => sum + item.price, 0)
+  const selectedItemGroups = selectedItems.reduce<Array<{ item: Product; quantity: number }>>((groups, item) => {
+    const existing = groups.find(group => group.item.id === item.id)
+    if (existing) existing.quantity += 1
+    else groups.push({ item, quantity: 1 })
+    return groups
+  }, [])
+  const catalogItems = products
+    .filter(product => product.category === activeCategory && product.isActive !== false && product.isPublished !== false)
+    .slice(0, 3)
+  const magazineProduct = activeCategory === 'magazines'
+    ? PRODUCTS.find(product => product.category === 'magazines')
+    : undefined
+  const magazineOptions: Product[] = magazineProduct && catalogItems.length === 0
+    ? ([4, 8] as const).map(pageCount => ({
+      ...magazineProduct,
+      id: `${magazineProduct.id}-${pageCount}-page`,
+      name: `Custom Memory Magazine · ${pageCount} pages`,
+      price: MAGAZINE_PRICES[pageCount],
+      description: `A personalized ${pageCount}-page AUREL memory magazine`
+    }))
+    : []
+  const availableItems = catalogItems.length ? catalogItems : magazineOptions
+  const exploreCategories = [...categories].sort((left, right) => {
+    if (left.slug === 'magazines') return -1
+    if (right.slug === 'magazines') return 1
+    return (left.display_order ?? Number.MAX_SAFE_INTEGER) - (right.display_order ?? Number.MAX_SAFE_INTEGER)
+      || getCategoryLabel(left).localeCompare(getCategoryLabel(right))
+  })
+  const activeCategoryLabel = categories.find(category => category.slug === activeCategory)
+  const selectedCategoryName = activeCategoryLabel ? getCategoryLabel(activeCategoryLabel) : 'this category'
+  const previewItems = [selectedBox, ...selectedItems]
+  const isDark = isDarkMode
 
-  const toggleItemSelection = (item: BuilderItem) => {
-    if (selectedItems.some(i => i.id === item.id)) {
-      setSelectedItems(selectedItems.filter(i => i.id !== item.id))
-    } else {
-      setSelectedItems([...selectedItems, item])
-    }
+  useEffect(() => {
+    if (categories.some(category => category.slug === activeCategory)) return
+    setActiveCategory(categories.find(category => category.slug !== 'magazines')?.slug ?? categories[0]?.slug ?? '')
+  }, [activeCategory, categories])
+
+  const adjustItemQuantity = (item: Product, change: -1 | 1) => {
+    setSelectedItems(current => {
+      if (change === 1) return [...current, item]
+      const itemIndex = current.findIndex(selected => selected.id === item.id)
+      return itemIndex === -1 ? current : current.filter((_, index) => index !== itemIndex)
+    })
   }
 
   const handleCreateAndAdd = () => {
-    const itemNames = [selectedBox.name, ...selectedItems.map(i => i.name)]
     const newCartItem: CartItem = {
-      cartId: 'custom_' + Date.now(),
+      cartId: `custom_${Date.now()}`,
       productId: 'custom_hamper_mix',
-      name: hamperTitle.trim() || 'Custom Mix & Match Hamper',
+      name: 'Custom Mix & Match Hamper',
       price: totalPrice,
       quantity: 1,
       imageUrl: selectedBox.imageUrl,
       recipientName: recipientName.trim() || undefined,
       customMessage: personalNote.trim() || undefined,
-      customComponents: itemNames
+      customComponents: previewItems.map(item => item.name)
     }
 
     onAddCustomHamperToBag(newCartItem)
   }
 
-  const groupedCategories = [
-    { title: 'Step 1: Choose Your Keepsake Box', category: 'box' },
-    { title: 'Step 2: Add Botanical & Floral Stems', category: 'flower' },
-    { title: 'Step 3: Include Scented Keepsakes & Folios', category: 'keepsake' },
-    { title: 'Step 4: Indulgent Treats', category: 'treat' },
-    { title: 'Step 5: Ribbons & Parchment Cards', category: ['card', 'ribbon'] }
-  ]
+  const cardClass = isDark
+    ? 'border-[#3A302C] bg-[#221D1A]'
+    : 'border-[#E9DDD0] bg-white'
+  const mutedTextClass = isDark ? 'text-[#BBAAA1]' : 'text-[#82736A]'
+  const inputClass = isDark
+    ? 'border-[#463A35] bg-[#1C1816] text-[#F3EBE6] placeholder:text-[#81746D]'
+    : 'border-[#E3D7CC] bg-[#FFFEFC] text-[#352B25] placeholder:text-[#A69A90]'
 
   return (
-    <motion.div
+    <motion.main
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
-      className={`min-h-screen py-16 transition-colors duration-500 ${
-        isDarkMode ? 'bg-[#181615] text-[#F3EBE6]' : 'bg-[#FAF7F2] text-[#2C2422]'
+      transition={{ duration: 0.3 }}
+      className={`min-h-screen py-8 sm:py-12 transition-colors duration-300 ${
+        isDark ? 'bg-[#181615] text-[#F3EBE6]' : 'bg-[#FAF8F4] text-[#352B25]'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Studio Top Header */}
-        <div className="flex items-center justify-between pb-8 mb-10 border-b border-black/5 dark:border-white/5">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <header className={`mb-7 flex items-start justify-between gap-5 border-b pb-6 ${
+          isDark ? 'border-white/10' : 'border-[#E8DED4]'
+        }`}>
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider text-[#B36D6D] bg-[#B36D6D]/10 mb-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Mix & Match Studio</span>
-            </div>
-            <h1 className="font-serif-title text-3xl sm:text-4xl font-normal tracking-tight">
-              Create Your Custom Hamper
+            <p className="mb-2 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#A96F61]">
+              <Sparkles className="h-3.5 w-3.5" />
+              AUREL gift studio
+            </p>
+            <h1 className="font-serif-title text-3xl font-normal tracking-tight sm:text-4xl">
+              Create a gift, made personal
             </h1>
-            <p className="font-sans-body text-xs sm:text-sm text-[#7D6B65] dark:text-[#BBAAA3] mt-1">
-              Select your presentation box, pick individual treasures, and write your heartfelt message
+            <p className={`mt-2 max-w-xl text-sm leading-relaxed ${mutedTextClass}`}>
+              Choose a keepsake box, gather a few thoughtful things, and make it yours.
             </p>
           </div>
-
-          <button
+          <motion.button
+            type="button"
             onClick={onClose}
-            aria-label="Back to collection"
-            className={`p-3 rounded-full transition-colors ${
-              isDarkMode ? 'hover:bg-[#2A2321] text-[#E0D2CB]' : 'hover:bg-[#EFE2DC] text-[#4A3B37]'
+            aria-label="Close gift studio"
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.92 }}
+            className={`group rounded-full p-2.5 transition-colors ${
+              isDark ? 'text-[#E0D2CB] hover:bg-white/10' : 'text-[#65574F] hover:bg-[#EFE8E0]'
             }`}
           >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+            <span className="block transition-transform duration-300 ease-out group-hover:rotate-90 group-focus-visible:rotate-90">
+              <X className="h-5 w-5" />
+            </span>
+          </motion.button>
+        </header>
 
-        {/* Studio 2-Column Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-          
-          {/* Left Column: Selection Steps */}
-          <div className="lg:col-span-7 space-y-10">
-            
-            {/* Box Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-serif-title text-xl font-medium tracking-wide">
-                  1. Presentation Gift Box
-                </h3>
-                <span className="text-xs text-[#B36D6D] font-medium">
-                  Select 1 Box Base
-                </span>
+        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:gap-12">
+          <div className="min-w-0 space-y-8">
+            <section aria-labelledby="box-heading">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">01 · The foundation</p>
+                  <h2 id="box-heading" className="mt-1 font-serif-title text-2xl font-medium">Choose your gift box</h2>
+                </div>
+                <span className={`shrink-0 text-xs ${mutedTextClass}`}>Choose one</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {BUILDER_ITEMS.filter(i => i.category === 'box').map((box) => {
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {BUILDER_ITEMS.filter(item => item.category === 'box').slice(0, 3).map(box => {
                   const isSelected = selectedBox.id === box.id
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={box.id}
+                      aria-pressed={isSelected}
                       onClick={() => setSelectedBox(box)}
-                      className={`p-4 rounded-2xl cursor-pointer border transition-all duration-300 relative group flex gap-3.5 items-center ${
+                      className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
                         isSelected
-                          ? 'border-[#B36D6D] bg-[#B36D6D]/10 ring-2 ring-[#B36D6D]/20'
-                          : isDarkMode
-                            ? 'border-[#382C29] bg-[#221B1A] hover:border-[#523F3B]'
-                            : 'border-[#DFC6BD] bg-[#FAF5F1] hover:border-[#B36D6D]/50'
+                          ? 'border-[#B36D6D] bg-[#B36D6D]/[0.07] ring-1 ring-[#B36D6D]/25'
+                          : `${cardClass} hover:border-[#C79B8C]`
                       }`}
                     >
-                      <img
-                        src={box.imageUrl}
-                        alt={box.name}
-                        referrerPolicy="no-referrer"
-                        loading="lazy"
-                        decoding="async"
-                        className="w-16 h-16 rounded-xl object-cover shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-serif-title text-sm font-semibold truncate">
-                            {box.name}
-                          </h4>
-                          {isSelected && <Check className="w-4 h-4 text-[#B36D6D] shrink-0" />}
-                        </div>
-                        <p className="text-[11px] text-[#7E6B65] dark:text-[#A79690] line-clamp-1 mt-0.5">
-                          {box.description}
-                        </p>
-                        <span className="text-xs font-semibold text-[#B36D6D] tabular-nums mt-1 block">
-                          ₹{box.price}
-                        </span>
-                      </div>
-                    </div>
+                      <img src={box.imageUrl} alt="" className="h-[68px] w-[68px] shrink-0 rounded-xl object-cover" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-serif-title text-sm font-medium">{box.name}</span>
+                        <span className={`mt-1 block line-clamp-1 text-[11px] ${mutedTextClass}`}>{box.description}</span>
+                        <span className="mt-1.5 block text-xs font-semibold tabular-nums text-[#A96F61]">{formatPrice(box.price)}</span>
+                      </span>
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                        isSelected ? 'border-[#B36D6D] bg-[#B36D6D] text-white' : 'border-[#D9CEC4]'
+                      }`}>
+                        {isSelected && <Check className="h-3 w-3" />}
+                      </span>
+                    </button>
                   )
                 })}
               </div>
-            </div>
+            </section>
 
-            {/* Individual Items Mix & Match */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-serif-title text-xl font-medium tracking-wide">
-                  2. Choose Mix & Match Elements
-                </h3>
-                <span className="text-xs text-[#8E7B75] dark:text-[#BBAAA4]">
-                  {selectedItems.length} elements selected
+            <section aria-labelledby="items-heading">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">02 · The little details</p>
+                  <h2 id="items-heading" className="mt-1 font-serif-title text-2xl font-medium">Choose what goes inside</h2>
+                </div>
+                <span className={`shrink-0 text-xs ${mutedTextClass}`}>
+                  {selectedItems.length} {selectedItems.length === 1 ? 'item' : 'items'} chosen
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {BUILDER_ITEMS.filter(i => i.category !== 'box').map((item) => {
-                  const isSelected = selectedItems.some(i => i.id === item.id)
+              <div className="mb-4">
+                <label htmlFor="gift-item-category" className={`mb-2 block text-xs font-medium ${mutedTextClass}`}>
+                  Choose a category
+                </label>
+                <div className="relative max-w-md">
+                  <select
+                    id="gift-item-category"
+                    value={activeCategory}
+                  onChange={event => setActiveCategory(event.target.value)}
+                    aria-controls="gift-category-products"
+                    className={`w-full appearance-none rounded-xl border px-4 py-3 pr-11 text-sm outline-none transition-colors focus:border-[#B36D6D] ${
+                      isDark
+                        ? 'border-[#463A35] bg-[#221D1A] text-[#F3EBE6]'
+                        : 'border-[#E3D8CE] bg-white text-[#352B25]'
+                    }`}
+                  >
+                    {exploreCategories.map(category => (
+                      <option key={category.slug} value={category.slug}>{getCategoryLabel(category)}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className={`pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 ${mutedTextClass}`} />
+                </div>
+                <p className={`mt-2 text-xs ${mutedTextClass}`}>
+                  Showing up to 3 {selectedCategoryName.toLowerCase()} products. Select a few to make it yours.
+                </p>
+              </div>
+              <div id="gift-category-products" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {availableItems.slice(0, 3).map(item => {
+                  const quantity = selectedItems.filter(selected => selected.id === item.id).length
                   return (
                     <div
                       key={item.id}
-                      onClick={() => toggleItemSelection(item)}
-                      className={`p-4 rounded-2xl cursor-pointer border transition-all duration-300 relative group flex gap-3.5 items-center ${
-                        isSelected
-                          ? 'border-[#B36D6D] bg-[#B36D6D]/10 ring-2 ring-[#B36D6D]/20'
-                          : isDarkMode
-                            ? 'border-[#382C29] bg-[#221B1A] hover:border-[#523F3B]'
-                            : 'border-[#DFC6BD] bg-[#FAF5F1] hover:border-[#B36D6D]/50'
+                      className={`relative flex min-w-0 items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
+                        quantity > 0
+                          ? 'border-[#B36D6D] bg-[#B36D6D]/[0.07] ring-1 ring-[#B36D6D]/25'
+                          : `${cardClass} hover:border-[#C79B8C]`
                       }`}
                     >
-                      <img
-                        src={item.imageUrl}
-                        alt={item.name}
-                        referrerPolicy="no-referrer"
-                        loading="lazy"
-                        decoding="async"
-                        className="w-16 h-16 rounded-xl object-cover shrink-0"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-serif-title text-sm font-semibold truncate">
-                            {item.name}
-                          </h4>
-                          <span className={`p-1 rounded-full text-xs ${
-                            isSelected ? 'bg-[#B36D6D] text-white' : 'bg-black/5 dark:bg-white/5 text-[#887771]'
-                          }`}>
-                            {isSelected ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-[#7E6B65] dark:text-[#A79690] line-clamp-1 mt-0.5">
-                          {item.description}
-                        </p>
-                        <span className="text-xs font-semibold text-[#B36D6D] tabular-nums mt-1 block">
-                          +₹{item.price}
-                        </span>
+                      <img src={item.imageUrl} alt="" className="h-[68px] w-[68px] shrink-0 rounded-xl object-cover" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block line-clamp-2 font-serif-title text-sm font-medium">{item.name}</span>
+                        <span className={`mt-1 block line-clamp-1 text-[11px] ${mutedTextClass}`}>{item.description}</span>
+                        <span className="mt-1.5 block text-xs font-semibold tabular-nums text-[#A96F61]">{formatPrice(item.price)} each</span>
+                      </span>
+                      <div className={`flex shrink-0 items-center gap-2 rounded-full border p-1 ${
+                        isDark ? 'border-[#463A35] bg-[#1C1816]' : 'border-[#E5D9CE] bg-[#FFFEFC]'
+                      }`}>
+                        <button
+                          type="button"
+                          aria-label={`Decrease ${item.name} quantity`}
+                          disabled={quantity === 0}
+                          onClick={() => adjustItemQuantity(item, -1)}
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-[#A96F61] transition-colors hover:bg-[#A96F61]/10 disabled:cursor-not-allowed disabled:opacity-35"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span aria-live="polite" className="min-w-4 text-center text-xs font-medium tabular-nums">{quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Increase ${item.name} quantity`}
+                          onClick={() => adjustItemQuantity(item, 1)}
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-[#A96F61] transition-colors hover:bg-[#A96F61]/10"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                     </div>
                   )
                 })}
+                {availableItems.length === 0 && (
+                  <p className={`col-span-full rounded-2xl border border-dashed px-4 py-8 text-center text-sm ${mutedTextClass}`}>
+                    There are no available products in this collection yet.
+                  </p>
+                )}
               </div>
-            </div>
+            </section>
 
-            {/* Step 3: Personalized Dedication */}
-            <div className={`p-6 rounded-2xl border ${
-              isDarkMode ? 'bg-[#221B1A] border-[#382C29]' : 'bg-[#FAF4F0] border-[#E0CBC2]'
-            }`}>
-              <h3 className="font-serif-title text-xl font-medium tracking-wide mb-3">
-                3. Personalize The Keepsake Note
-              </h3>
-              
-              <div className="space-y-4">
+            <section aria-labelledby="note-heading" className={`rounded-2xl border p-5 sm:p-6 ${cardClass}`}>
+              <div className="mb-4 flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#A96F61]/10 text-[#A96F61]">
+                  <Gift className="h-4 w-4" />
+                </span>
                 <div>
-                  <label className="block text-xs font-medium tracking-wide uppercase text-[#8E7973] dark:text-[#BCAAA4] mb-1">
-                    Recipient Name
-                  </label>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">03 · A personal note</p>
+                  <h2 id="note-heading" className="font-serif-title text-xl font-medium">Add your finishing words</h2>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <label className="block">
+                  <span className={`mb-1.5 block text-xs ${mutedTextClass}`}>Recipient name</span>
                   <input
                     type="text"
                     value={recipientName}
-                    onChange={(e) => setRecipientName(e.target.value)}
-                    placeholder="E.g. Sahil or My Dearest Maya"
-                    className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors focus:outline-hidden focus:border-[#B36D6D] ${
-                      isDarkMode
-                        ? 'bg-[#1C1716] border-[#3F302D] text-[#EDE0DA]'
-                        : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
-                    }`}
+                    onChange={event => setRecipientName(event.target.value)}
+                    placeholder="Who is this little gift for?"
+                    className={`w-full rounded-xl border px-3.5 py-3 text-sm outline-none transition-colors focus:border-[#B36D6D] ${inputClass}`}
                   />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium tracking-wide uppercase text-[#8E7973] dark:text-[#BCAAA4] mb-1">
-                    Handwritten Parchment Note
-                  </label>
+                </label>
+                <label className="block">
+                  <span className={`mb-1.5 block text-xs ${mutedTextClass}`}>Gift message</span>
                   <textarea
                     rows={3}
                     value={personalNote}
-                    onChange={(e) => setPersonalNote(e.target.value)}
-                    placeholder="Write the message to be transcribed in calligraphy inside the hamper wax seal"
-                    className={`w-full px-4 py-2.5 rounded-xl border text-sm transition-colors focus:outline-hidden focus:border-[#B36D6D] resize-none ${
-                      isDarkMode
-                        ? 'bg-[#1C1716] border-[#3F302D] text-[#EDE0DA]'
-                        : 'bg-[#FFFFFF] border-[#DEC5BB] text-[#2C2321]'
-                    }`}
+                    onChange={event => setPersonalNote(event.target.value)}
+                    placeholder="A few heartfelt words..."
+                    className={`w-full resize-none rounded-xl border px-3.5 py-3 text-sm outline-none transition-colors focus:border-[#B36D6D] ${inputClass}`}
                   />
-                </div>
+                </label>
               </div>
-            </div>
-
+            </section>
           </div>
 
-          {/* Right Column: Live Hamper Summary & Add to Bag */}
-          <div className="lg:col-span-5">
-            <div className={`sticky top-28 p-6 sm:p-8 rounded-3xl border shadow-xl ${
-              isDarkMode 
-                ? 'bg-[#201A19] border-[#3C2E2B] text-[#F3EBE6]' 
-                : 'bg-[#FFFFFF] border-[#E8D4CB] text-[#2C2422]'
-            }`}>
-              <div className="flex items-center justify-between pb-4 border-b border-black/5 dark:border-white/5">
-                <span className="font-editorial text-xs uppercase tracking-widest text-[#B36D6D] font-semibold">
-                  Hamper Blueprint
-                </span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#B36D6D]/15 text-[#B36D6D] font-medium">
-                  {1 + selectedItems.length} items
-                </span>
+          <aside className="min-w-0 lg:sticky lg:top-6">
+            <div className="mb-3 flex items-end justify-between">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">Your gift, taking shape</p>
+                <h2 className="mt-1 font-serif-title text-2xl font-medium">A little preview</h2>
               </div>
+              <span className={`flex items-center gap-1 text-[11px] ${mutedTextClass}`}>
+                <ChevronDown className="h-3.5 w-3.5" />
+                Top view
+              </span>
+            </div>
 
-              {/* Box Presentation preview */}
-              <div className="py-4 border-b border-black/5 dark:border-white/5 flex items-center gap-3">
-                <img
-                  src={selectedBox.imageUrl}
-                  alt={selectedBox.name}
-                  referrerPolicy="no-referrer"
-                  loading="lazy"
-                  decoding="async"
-                  className="w-14 h-14 rounded-xl object-cover shrink-0"
+            <div
+              className="relative aspect-[1/0.88] min-h-[330px] w-full max-w-full overflow-hidden rounded-[1.75rem] border border-[#D7C8B3] p-[7%] shadow-[0_16px_40px_-24px_rgba(80,54,34,0.45)]"
+              style={{
+                backgroundColor: '#E7DBCB',
+                backgroundImage: 'radial-gradient(ellipse at 18% 20%, rgba(255,255,255,0.58), transparent 42%), radial-gradient(ellipse at 82% 78%, rgba(154,125,94,0.2), transparent 45%), repeating-linear-gradient(3deg, rgba(125,96,67,0.06) 0px, rgba(125,96,67,0.06) 1px, transparent 1px, transparent 5px), repeating-linear-gradient(93deg, rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 1px, transparent 1px, transparent 7px)'
+              }}
+            >
+              <div className="absolute inset-[9%] rounded-[1.2rem] border-[7px] border-[#B99465] bg-[#C6A77B] shadow-[0_9px_20px_rgba(91,70,44,0.24),inset_0_0_0_2px_rgba(255,255,255,0.32)]">
+                <div
+                  className="absolute inset-[2.5%] overflow-hidden rounded-[0.7rem] border border-[#9D805C]/60"
+                  style={{
+                    backgroundColor: '#D5C09E',
+                    backgroundImage: 'radial-gradient(ellipse at 48% 48%, rgba(255,250,231,0.7), transparent 64%), repeating-linear-gradient(0deg, rgba(119,87,53,0.08) 0px, rgba(119,87,53,0.08) 1px, transparent 1px, transparent 9px)'
+                  }}
                 />
-                <div className="flex-1">
-                  <span className="text-[10px] uppercase tracking-wider text-[#B36D6D] font-semibold">
-                    Foundation Box
-                  </span>
-                  <h4 className="font-serif-title text-sm font-semibold truncate">
-                    {selectedBox.name}
-                  </h4>
-                  <span className="text-xs text-[#8E7973] tabular-nums">
-                    ₹{selectedBox.price}
-                  </span>
-                </div>
+              </div>
+              <div className="absolute inset-x-[11%] top-[10%] z-[60] flex items-center justify-between">
+                <span className="max-w-[65%] truncate font-serif-title text-xs italic text-[#6F5C4B]">
+                  Made with love
+                </span>
+                <span className="rounded-full bg-[#FFF9ED]/90 px-2.5 py-1 text-[9px] uppercase tracking-[0.14em] text-[#80684E] shadow-sm">
+                  {previewItems.length} {previewItems.length === 1 ? 'piece' : 'pieces'}
+                </span>
               </div>
 
-              {/* Selected Items List */}
-              <div className="py-4 space-y-2.5 max-h-56 overflow-y-auto">
-                <span className="text-[10px] uppercase tracking-wider text-[#8E7973] font-semibold block">
-                  Included Treasures
-                </span>
-                {selectedItems.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between text-xs py-1">
-                    <span className="text-[#5E4C47] dark:text-[#C5B4AD] truncate pr-2">
-                      · {item.name}
+              <div className="absolute inset-[12%]">
+                {previewItems.map((item, index) => {
+                  const placement = previewPlacements[index % previewPlacements.length]
+                  return (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.84, rotate: placement.rotate }}
+                    animate={{ opacity: 1, scale: 1, rotate: placement.rotate }}
+                    transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                    className="absolute overflow-hidden rounded-lg border-[3px] border-[#F9F4E9] bg-[#F9F4E9] shadow-[0_8px_16px_rgba(61,45,29,0.32)] sm:rounded-xl sm:border-4"
+                    title={item.name}
+                    style={{
+                      left: placement.left,
+                      top: placement.top,
+                      width: placement.width,
+                      height: placement.height,
+                      zIndex: placement.zIndex
+                    }}
+                  >
+                    <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-[#35291F]/80 via-[#35291F]/45 to-transparent px-1 pb-1 pt-3 text-center text-[8px] font-medium text-white sm:text-[9px]">
+                      {item.name}
                     </span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="font-semibold text-[#B36D6D] tabular-nums">
-                        ₹{item.price}
-                      </span>
-                      <button
-                        onClick={() => toggleItemSelection(item)}
-                        className="text-[#98847E] hover:text-red-500 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  </motion.div>
+                  )
+                })}
+              </div>
+
+              {(recipientName.trim() || personalNote.trim()) && (
+                <motion.div
+                  key={`${recipientName}-${personalNote}`}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="absolute bottom-[10%] left-1/2 z-[70] max-w-[48%] -translate-x-1/2 rounded-md border border-[#E7D7C6] bg-[#FFFCF5]/95 px-2.5 py-1.5 text-center shadow-sm"
+                >
+                  {recipientName.trim() && (
+                    <p className="truncate font-serif-title text-[10px] italic text-[#80695A]">For {recipientName.trim()}</p>
+                  )}
+                  {personalNote.trim() && (
+                    <p className="mt-0.5 line-clamp-2 text-[8px] leading-tight text-[#8D7B6C]">{personalNote.trim()}</p>
+                  )}
+                </motion.div>
+              )}
+            </div>
+
+            <section aria-labelledby="total-heading" className={`mt-5 rounded-2xl border p-5 sm:p-6 ${cardClass}`}>
+              <div className="flex items-start justify-between gap-4 border-b border-black/[0.07] pb-4 dark:border-white/[0.09]">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">Your selection</p>
+                  <h3 className="mt-1 font-serif-title text-lg font-medium">Your custom gift</h3>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[10px] ${isDark ? 'bg-white/10' : 'bg-[#F4EEE7]'}`}>
+                  {previewItems.length} items
+                </span>
+              </div>
+              <div className={`mt-4 space-y-2.5 text-xs ${mutedTextClass}`}>
+                <div className="flex justify-between gap-4">
+                  <span className="truncate">{selectedBox.name}</span>
+                  <span className="shrink-0 tabular-nums">{formatPrice(selectedBox.price)}</span>
+                </div>
+                {selectedItemGroups.map(({ item, quantity }) => (
+                  <div key={item.id} className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <div className={`flex items-center gap-1 rounded-full border p-0.5 ${
+                        isDark ? 'border-[#463A35] bg-[#1C1816]' : 'border-[#E5D9CE] bg-[#FFFEFC]'
+                      }`}>
+                        <button
+                          type="button"
+                          aria-label={`Decrease ${item.name} quantity`}
+                          onClick={() => adjustItemQuantity(item, -1)}
+                          className="flex h-6 w-6 items-center justify-center rounded-full text-[#A96F61] transition-colors hover:bg-[#A96F61]/10"
+                        >
+                          <Minus className="h-3 w-3" />
+                        </button>
+                        <span className="min-w-4 text-center text-[11px] font-medium tabular-nums">{quantity}</span>
+                        <button
+                          type="button"
+                          aria-label={`Increase ${item.name} quantity`}
+                          onClick={() => adjustItemQuantity(item, 1)}
+                          className="flex h-6 w-6 items-center justify-center rounded-full text-[#A96F61] transition-colors hover:bg-[#A96F61]/10"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <span className="w-16 text-right tabular-nums">{formatPrice(item.price * quantity)}</span>
                     </div>
                   </div>
                 ))}
+                <div className="flex justify-between gap-4 border-t border-black/[0.07] pt-3 dark:border-white/[0.09]">
+                  <span>Gift note & presentation</span>
+                  <span className="font-medium text-[#74836E]">Complimentary</span>
+                </div>
+                <p className="text-[10px] leading-relaxed">Delivery charges, if applicable, are calculated at checkout.</p>
               </div>
-
-              {/* Recipient summary if typed */}
-              {recipientName && (
-                <div className="p-3 rounded-xl bg-[#B36D6D]/10 text-xs mb-4">
-                  <span className="font-semibold text-[#B36D6D]">To: </span>
-                  <span>{recipientName}</span>
+              <div className="mt-4 flex items-end justify-between border-t border-black/[0.07] pt-4 dark:border-white/[0.09]">
+                <div>
+                  <h2 id="total-heading" className="font-serif-title text-base font-medium">Total payable</h2>
+                  <p className={`mt-0.5 text-[10px] ${mutedTextClass}`}>For your gift selection</p>
                 </div>
-              )}
-
-              {/* Price Calculation */}
-              <div className="pt-4 border-t border-black/5 dark:border-white/5 space-y-2">
-                <div className="flex justify-between items-center text-xs text-[#8E7973]">
-                  <span>Crafting and Presentation</span>
-                  <span className="text-emerald-600 font-medium">Complimentary</span>
-                </div>
-                <div className="flex justify-between items-center pt-2">
-                  <span className="font-serif-title text-lg font-medium">Total Price</span>
-                  <span className="font-serif-title text-2xl font-bold text-[#B36D6D] tabular-nums">
-                    ₹{totalPrice.toLocaleString('en-IN')}
-                  </span>
-                </div>
+                <span className="font-serif-title text-2xl font-semibold tabular-nums text-[#A96F61]">
+                  {formatPrice(totalPrice)}
+                </span>
               </div>
-
-              {/* Action Button */}
               <motion.button
-                whileHover={{ scale: 1.02 }}
+                type="button"
+                whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleCreateAndAdd}
-                className="w-full mt-6 py-4 rounded-full bg-[#B36D6D] hover:bg-[#9E5B5B] text-white text-sm font-medium tracking-wider uppercase shadow-md transition-all flex items-center justify-center gap-2"
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#A96F61] px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#925D52]"
               >
-                <ShoppingBag className="w-4 h-4" />
-                <span>Add Custom Hamper to Bag</span>
+                <ShoppingBag className="h-4 w-4" />
+                Add your gift to bag
               </motion.button>
-
-            </div>
-          </div>
-
+            </section>
+          </aside>
         </div>
-
       </div>
-    </motion.div>
+    </motion.main>
   )
 }

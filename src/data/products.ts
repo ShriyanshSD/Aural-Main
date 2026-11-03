@@ -1036,6 +1036,14 @@ export const BUILDER_ITEMS: BuilderItem[] = [
     description: 'Handmade Belgian dark chocolate filled with raspberry ganache'
   },
   {
+    id: 'treat_rose_shortbread',
+    name: 'Rose Petal Shortbread Tin',
+    category: 'treat',
+    price: 279,
+    imageUrl: 'https://images.unsplash.com/photo-1481391319762-47dff72954d9?auto=format&fit=crop&w=600&q=80',
+    description: 'Buttery shortbread with rose petals, packed for gifting'
+  },
+  {
     id: 'card_wax_seal',
     name: 'Personalized Wax Sealed Letter',
     category: 'card',
