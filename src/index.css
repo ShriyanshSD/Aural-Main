@@ -36,6 +36,18 @@
   transition-timing-function: var(--theme-ease);
 }
 
+.owner-dashboard {
+  background-color: #f1e7d6;
+}
+
+.owner-dashboard .bg-white {
+  background-color: #fffaf0;
+}
+
+.owner-dashboard [class~="bg-white/95"] {
+  background-color: rgb(248 241 229 / 95%);
+}
+
 .hero-headline {
   view-transition-name: hero-headline;
   transition: none !important;

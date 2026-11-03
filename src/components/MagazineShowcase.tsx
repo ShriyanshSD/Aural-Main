@@ -41,6 +41,8 @@ interface MagazineShowcaseProps {
   onRequireAuth: () => void
   onCustomizeMagazine: (customization: MagazineCustomization) => boolean
   settings: StoreSettings
+  scrollRequestId: number
+  onScrollToPreview: (target: HTMLElement) => void
 }
 
 interface MagazineDraft {
@@ -107,7 +109,9 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
   onCustomizeMagazine,
   settings,
   userId,
-  onRequireAuth
+  onRequireAuth,
+  scrollRequestId,
+  onScrollToPreview
 }) => {
   const [initialDraft] = useState(readMagazineDraft)
   const [customizationId, setCustomizationId] = useState(() => initialDraft.customizationId ?? crypto.randomUUID())
@@ -130,6 +134,8 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
   const [pageDirection, setPageDirection] = useState(1)
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false)
   const orderButtonRef = useRef<HTMLButtonElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const handledScrollRequestRef = useRef(0)
 
   const selectedMagazine = magazineSamples[selectedMagazineIndex]
   const inputClass = `w-full rounded-xl border px-4 py-3 text-sm transition-colors focus:border-[#B36D6D] focus:outline-none ${
@@ -402,6 +408,12 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
     }
   }
 
+  useEffect(() => {
+    if (scrollRequestId <= handledScrollRequestRef.current || !previewRef.current) return
+    handledScrollRequestRef.current = scrollRequestId
+    onScrollToPreview(previewRef.current)
+  }, [onScrollToPreview, scrollRequestId])
+
   return (
     <section className={`border-y py-20 transition-colors duration-500 sm:py-28 ${
       isDarkMode
@@ -461,7 +473,7 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                 </button>
               )}
 
-              <div className="relative w-full max-w-md">
+              <div ref={previewRef} className="relative w-full max-w-md">
                 <AnimatePresence initial={false} mode="wait" custom={magazineDirection}>
                   <motion.div
                     key={selectedMagazineIndex}

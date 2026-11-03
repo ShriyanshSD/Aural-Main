@@ -32,7 +32,12 @@ const ChatbotModal = React.lazy(() => import('./components/ChatbotModal').then(m
 const StoryAndReviews = React.lazy(() => import('./components/StoryAndReviews').then(module => ({ default: module.StoryAndReviews })))
 const Footer = React.lazy(() => import('./components/Footer').then(module => ({ default: module.Footer })))
 
-const LazyViewport: React.FC<{ children: React.ReactNode; minHeight: number; id?: string }> = ({ children, minHeight, id }) => {
+const LazyViewport: React.FC<{
+  children: React.ReactNode
+  minHeight: number
+  id?: string
+  forceVisible?: boolean
+}> = ({ children, minHeight, id, forceVisible = false }) => {
   const [isVisible, setIsVisible] = React.useState(false)
   const containerRef = React.useRef<HTMLDivElement>(null)
 
@@ -55,7 +60,7 @@ const LazyViewport: React.FC<{ children: React.ReactNode; minHeight: number; id?
 
   return (
     <div id={id} ref={containerRef} style={{ minHeight }}>
-      {isVisible && <React.Suspense fallback={null}>{children}</React.Suspense>}
+      {(isVisible || forceVisible) && <React.Suspense fallback={null}>{children}</React.Suspense>}
     </div>
   )
 }
@@ -216,8 +221,17 @@ function StorefrontApp() {
   // Navigation & View state
   const [activeTab, setActiveTab] = useState<AppTab>(signupResume?.activeTab ?? 'home')
   const [activeCategory, setActiveCategory] = useState<ProductCategory>(signupResume?.activeCategory ?? 'all')
+  const [magazineScrollRequest, setMagazineScrollRequest] = useState(0)
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(PRODUCTS)
   const [storeCategories, setStoreCategories] = useState<StoreCategory[]>(initialCategories)
+  const browseProducts = React.useMemo(
+    () => catalogProducts.filter(product => product.category !== 'magazines'),
+    [catalogProducts]
+  )
+  const browseCategories = React.useMemo(
+    () => storeCategories.filter(category => category.slug !== 'magazines'),
+    [storeCategories]
+  )
   const [storeCollections, setStoreCollections] = useState<StoreCollection[]>([])
   const [storeReviews, setStoreReviews] = useState<StoreReview[]>([])
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
@@ -363,7 +377,7 @@ function StorefrontApp() {
   }, [storeSettings.storeName, storeSettings.tagline])
 
   useEffect(() => {
-    if (activeCategory !== 'all' && !storeCategories.some(category => category.slug === activeCategory)) {
+    if (activeCategory === 'magazines' || (activeCategory !== 'all' && !storeCategories.some(category => category.slug === activeCategory))) {
       setActiveCategory('all')
     }
   }, [activeCategory, storeCategories])
@@ -605,14 +619,7 @@ function StorefrontApp() {
     setActiveTab('home')
     setActiveCategory('all')
     setSelectedCollectionId('')
-    requestAnimationFrame(() => {
-      const magazineSection = document.getElementById('magazine-customizer')
-      if (magazineSection) {
-        smoothScrollTo(magazineSection)
-      } else {
-        console.error('Unable to find the custom magazine section.')
-      }
-    })
+    setMagazineScrollRequest(request => request + 1)
   }
 
   const handleToggleTheme = () => {
@@ -629,6 +636,12 @@ function StorefrontApp() {
 
   const handleSelectCategory = (category: ProductCategory) => {
     setSelectedCollectionId('')
+    if (category === 'magazines') {
+      setActiveCategory('all')
+      setActiveTab('home')
+      setMagazineScrollRequest(request => request + 1)
+      return
+    }
     setActiveCategory(category)
     setActiveTab('shop')
     requestAnimationFrame(() => {
@@ -921,7 +934,7 @@ function StorefrontApp() {
       
       {/* Top Navigation */}
       <Navigation
-        products={catalogProducts}
+        products={browseProducts}
         settings={storeSettings}
         isDarkMode={isDarkMode}
         onToggleTheme={handleToggleTheme}
@@ -965,7 +978,8 @@ function StorefrontApp() {
             setActiveCategory('all')
           }
           if (tab === 'home') {
-            smoothScrollTo(0)
+            setMagazineScrollRequest(0)
+            requestAnimationFrame(() => smoothScrollTo(0))
           } else if (tab === 'shop') {
             const el = document.getElementById('collection-grid')
             if (el) smoothScrollTo(el)
@@ -1118,8 +1132,8 @@ function StorefrontApp() {
             <LazyViewport id="collection-grid" minHeight={720}>
               <ProductCatalog
                 isDarkMode={isDarkMode}
-                products={catalogProducts}
-                categories={storeCategories}
+                products={browseProducts}
+                categories={browseCategories}
                 collections={storeCollections}
                 activeCollectionId={selectedCollectionId}
                 onSelectCollection={collectionId => {
@@ -1139,7 +1153,7 @@ function StorefrontApp() {
             {activeCategory !== 'hair-accessories' && (
               <>
                 {/* Magazine Feature Section with Live Preview */}
-                <LazyViewport id="magazine-customizer" minHeight={620}>
+                <LazyViewport id="magazine-customizer" minHeight={620} forceVisible={magazineScrollRequest > 0}>
                   <MagazineShowcase
                     isDarkMode={isDarkMode}
                     settings={storeSettings}
@@ -1149,6 +1163,11 @@ function StorefrontApp() {
                       setIsAuthOpen(true)
                     }}
                     onCustomizeMagazine={handleCustomizeMagazine}
+                    scrollRequestId={magazineScrollRequest}
+                    onScrollToPreview={target => {
+                      const targetY = window.scrollY + target.getBoundingClientRect().top - 88
+                      smoothScrollTo(targetY, 1100)
+                    }}
                   />
                 </LazyViewport>
 

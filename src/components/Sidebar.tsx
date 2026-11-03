@@ -128,7 +128,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
   }
   const visibleMenuCategories = menuCategories.filter(category =>
-    categories.some(storeCategory => storeCategory.slug === category.id)
+    category.id === 'magazines' || categories.some(storeCategory => storeCategory.slug === category.id)
   )
 
   return (

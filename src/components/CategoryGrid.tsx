@@ -17,6 +17,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   categories
 }) => {
   const [hoveredCategory, setHoveredCategory] = useState<ProductCategory | null>(null)
+  const magazineFeatureImage = '/collections/magazine-customer-editions.png'
 
   const topCategories = [
     {
@@ -24,7 +25,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
       title: 'Custom Magazines',
       subtitle: 'Turn your memories photographs and stories into a magazine made for them',
       tag: 'Gloss & Matte Finishes',
-      imageUrl: '/magazine-portfolio.jpg',
+      imageUrl: magazineFeatureImage,
       cols: 'lg:col-span-6'
     },
     {
@@ -98,7 +99,7 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
         subtitle: category.description || preset?.subtitle || 'Thoughtful finds, curated for meaningful moments.',
         tag: preset?.tag || (category.is_featured ? 'Featured collection' : 'Curated collection'),
         imageUrl: category.slug === 'magazines'
-          ? '/magazine-portfolio.jpg'
+          ? magazineFeatureImage
           : category.image_url || preset?.imageUrl || '/hero-image.png',
         cols: preset?.cols || 'lg:col-span-4',
         order: category.display_order ?? index,
@@ -114,15 +115,19 @@ export const CategoryGrid: React.FC<CategoryGridProps> = ({
   const explicitFeatured = categoryCards.filter(category => category.featured)
   const legacyFeaturedIds = new Set(topCategories.map(category => category.id))
   const defaultTopCategories = categoryCards.filter(category => legacyFeaturedIds.has(category.id))
-  const magazinePortfolio = categoryCards.find(category => category.id === 'magazines')
+  const magazineCard = {
+    ...categoryCards.find(category => category.id === 'magazines'),
+    ...topCategories[0],
+    order: -1,
+    featured: true
+  }
   const otherTopCategory = (explicitFeatured.length ? explicitFeatured : defaultTopCategories)
     .find(category => category.id !== 'magazines')
     ?? categoryCards.find(category => category.id !== 'magazines')
-  const visibleTopCategories = magazinePortfolio
-    ? [magazinePortfolio, ...(otherTopCategory ? [otherTopCategory] : [])]
-    : explicitFeatured.length
-      ? explicitFeatured.slice(0, 2)
-      : defaultTopCategories
+  const visibleTopCategories = [
+    magazineCard,
+    ...(otherTopCategory ? [otherTopCategory] : [])
+  ]
   const topIds = new Set(visibleTopCategories.map(category => category.id))
   const visibleBottomCategories = categoryCards.filter(category => !topIds.has(category.id))
   const balancedBottomCategories = visibleBottomCategories.map((category, index) => {
