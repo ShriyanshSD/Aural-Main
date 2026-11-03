@@ -95,6 +95,9 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
   const activeCategoryLabel = categories.find(category => category.slug === activeCategory)
   const selectedCategoryName = activeCategoryLabel ? getCategoryLabel(activeCategoryLabel) : 'this category'
   const previewItems = [selectedBox, ...selectedItems]
+  const boxPalette = selectedBox.id.includes('rose')
+    ? { edge: '#A66F68', side: '#C18D82', interior: '#E8D0C9' }
+    : { edge: '#A77C4E', side: '#B89160', interior: '#C8AA7D' }
   const isDark = isDarkMode
 
   useEffect(() => {
@@ -354,57 +357,82 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
             </div>
 
             <div
-              className="relative aspect-[1/0.88] min-h-[330px] w-full max-w-full overflow-hidden rounded-[1.75rem] border border-[#D7C8B3] p-[7%] shadow-[0_16px_40px_-24px_rgba(80,54,34,0.45)]"
+              className="relative aspect-[1/0.88] min-h-[330px] w-full max-w-full overflow-hidden rounded-[1.75rem] border border-[#D7C8B3] shadow-[0_20px_44px_-24px_rgba(80,54,34,0.5)]"
               style={{
-                backgroundColor: '#E7DBCB',
-                backgroundImage: 'radial-gradient(ellipse at 18% 20%, rgba(255,255,255,0.58), transparent 42%), radial-gradient(ellipse at 82% 78%, rgba(154,125,94,0.2), transparent 45%), repeating-linear-gradient(3deg, rgba(125,96,67,0.06) 0px, rgba(125,96,67,0.06) 1px, transparent 1px, transparent 5px), repeating-linear-gradient(93deg, rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 1px, transparent 1px, transparent 7px)'
+                backgroundColor: '#DDD0BE',
+                backgroundImage: 'radial-gradient(ellipse at 18% 18%, rgba(255,255,255,0.75), transparent 38%), radial-gradient(ellipse at 82% 75%, rgba(116,91,66,0.22), transparent 45%), repeating-linear-gradient(3deg, rgba(111,86,61,0.08) 0px, rgba(111,86,61,0.08) 1px, transparent 1px, transparent 5px), repeating-linear-gradient(93deg, rgba(255,255,255,0.28) 0px, rgba(255,255,255,0.28) 1px, transparent 1px, transparent 8px)'
               }}
             >
-              <div className="absolute inset-[9%] rounded-[1.2rem] border-[7px] border-[#B99465] bg-[#C6A77B] shadow-[0_9px_20px_rgba(91,70,44,0.24),inset_0_0_0_2px_rgba(255,255,255,0.32)]">
+              <div className="absolute inset-0 overflow-hidden">
+                <div className="absolute -left-[8%] -top-[22%] h-[72%] w-[50%] rotate-[-18deg] rounded-full bg-white/25 blur-3xl" />
+                <div className="absolute -bottom-[28%] -right-[8%] h-[66%] w-[58%] rounded-full bg-[#8C7052]/20 blur-3xl" />
+              </div>
+              <div
+                className="absolute inset-x-[6%] bottom-[4%] top-[8%] grid place-items-center"
+                style={{ perspective: '1000px' }}
+              >
                 <div
-                  className="absolute inset-[2.5%] overflow-hidden rounded-[0.7rem] border border-[#9D805C]/60"
-                  style={{
-                    backgroundColor: '#D5C09E',
-                    backgroundImage: 'radial-gradient(ellipse at 48% 48%, rgba(255,250,231,0.7), transparent 64%), repeating-linear-gradient(0deg, rgba(119,87,53,0.08) 0px, rgba(119,87,53,0.08) 1px, transparent 1px, transparent 9px)'
-                  }}
-                />
-              </div>
-              <div className="absolute inset-x-[11%] top-[10%] z-[60] flex items-center justify-between">
-                <span className="max-w-[65%] truncate font-serif-title text-xs italic text-[#6F5C4B]">
-                  Made with love
-                </span>
-                <span className="rounded-full bg-[#FFF9ED]/90 px-2.5 py-1 text-[9px] uppercase tracking-[0.14em] text-[#80684E] shadow-sm">
-                  {previewItems.length} {previewItems.length === 1 ? 'piece' : 'pieces'}
-                </span>
-              </div>
-
-              <div className="absolute inset-[12%]">
-                {previewItems.map((item, index) => {
-                  const placement = previewPlacements[index % previewPlacements.length]
-                  return (
-                  <motion.div
-                    key={item.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.84, rotate: placement.rotate }}
-                    animate={{ opacity: 1, scale: 1, rotate: placement.rotate }}
-                    transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-                    className="absolute overflow-hidden rounded-lg border-[3px] border-[#F9F4E9] bg-[#F9F4E9] shadow-[0_8px_16px_rgba(61,45,29,0.32)] sm:rounded-xl sm:border-4"
-                    title={item.name}
+                  className="relative h-[86%] w-[86%]"
+                  style={{ transform: 'rotateX(48deg) rotateZ(-3deg) scale(0.94)', transformStyle: 'preserve-3d' }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-[1.35rem] border-[10px] shadow-[0_24px_28px_rgba(65,46,26,0.4),inset_0_0_0_2px_rgba(255,242,212,0.45)] sm:border-[14px]"
+                    style={{ borderColor: boxPalette.edge, backgroundColor: boxPalette.side, transform: 'translateZ(-18px)' }}
+                  />
+                  <div
+                    className="absolute inset-[4%] overflow-hidden rounded-[0.85rem] border border-[#92704C]/70"
                     style={{
-                      left: placement.left,
-                      top: placement.top,
-                      width: placement.width,
-                      height: placement.height,
-                      zIndex: placement.zIndex
+                      transform: 'translateZ(-8px)',
+                      backgroundColor: boxPalette.interior,
+                      backgroundImage: 'radial-gradient(ellipse at 48% 42%, rgba(255,246,220,0.62), transparent 62%), repeating-linear-gradient(0deg, rgba(111,77,43,0.09) 0px, rgba(111,77,43,0.09) 1px, transparent 1px, transparent 10px)'
                     }}
-                  >
-                    <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
-                    <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-[#35291F]/80 via-[#35291F]/45 to-transparent px-1 pb-1 pt-3 text-center text-[8px] font-medium text-white sm:text-[9px]">
-                      {item.name}
+                  />
+                  <div
+                    className="absolute inset-x-[1%] bottom-0 h-[12%] rounded-b-xl border-t border-[#D6B98D]/70 bg-gradient-to-b from-[#BC9664] to-[#87613C] shadow-[0_14px_18px_rgba(64,43,24,0.38)]"
+                    style={{ transform: 'translateZ(22px)', backgroundImage: `linear-gradient(to bottom, ${boxPalette.side}, ${boxPalette.edge})` }}
+                  />
+                  <div
+                    className="absolute inset-y-[1%] right-0 w-[9%] rounded-r-xl bg-gradient-to-l from-[#805A37] to-[#B38A5A]"
+                    style={{ transform: 'translateZ(17px)', backgroundImage: `linear-gradient(to left, ${boxPalette.edge}, ${boxPalette.side})` }}
+                  />
+                  <div className="absolute inset-[9%]">
+                    {selectedItems.map((item, index) => {
+                      const placement = previewPlacements[index % previewPlacements.length]
+                      return (
+                        <motion.div
+                          key={`${item.id}-${index}`}
+                          layout
+                          initial={{ opacity: 0, scale: 0.84 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                          className="absolute"
+                          title={item.name}
+                          style={{
+                            left: placement.left,
+                            top: placement.top,
+                            width: placement.width,
+                            height: placement.height,
+                            zIndex: placement.zIndex,
+                            transform: `rotateZ(${placement.rotate}deg) translateZ(${index === 0 ? 8 : 14 + (index % 3) * 4}px)`,
+                            transformStyle: 'preserve-3d'
+                          }}
+                        >
+                          <div className="relative h-full w-full overflow-hidden rounded-md border-[3px] border-[#F8F1E3] bg-[#F8F1E3] shadow-[0_10px_12px_rgba(52,37,22,0.42)] sm:rounded-lg sm:border-4">
+                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-[#35291F]/85 via-[#35291F]/45 to-transparent px-1 pb-1 pt-3 text-center text-[8px] font-medium text-white sm:text-[9px]">
+                              {item.name}
+                            </span>
+                          </div>
+                        </motion.div>
+                      )
+                    })}
+                  </div>
+                  <div className="pointer-events-none absolute inset-x-0 bottom-[-8%] z-[55] flex justify-center">
+                    <span className="rounded-full border border-[#E6D3B7]/70 bg-[#FFF9ED]/90 px-3 py-1 text-[9px] uppercase tracking-[0.14em] text-[#715A42] shadow-[0_4px_12px_rgba(67,48,29,0.2)]">
+                      {previewItems.length} {previewItems.length === 1 ? 'piece' : 'pieces'} · made with love
                     </span>
-                  </motion.div>
-                  )
-                })}
+                  </div>
+                </div>
               </div>
 
               {(recipientName.trim() || personalNote.trim()) && (
@@ -412,7 +440,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                   key={`${recipientName}-${personalNote}`}
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-[10%] left-1/2 z-[70] max-w-[48%] -translate-x-1/2 rounded-md border border-[#E7D7C6] bg-[#FFFCF5]/95 px-2.5 py-1.5 text-center shadow-sm"
+                  className="absolute bottom-[6%] left-1/2 z-[70] max-w-[48%] -translate-x-1/2 rounded-md border border-[#E7D7C6] bg-[#FFFCF5]/95 px-2.5 py-1.5 text-center shadow-[0_5px_16px_rgba(67,48,29,0.22)]"
                 >
                   {recipientName.trim() && (
                     <p className="truncate font-serif-title text-[10px] italic text-[#80695A]">For {recipientName.trim()}</p>
@@ -423,6 +451,10 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                 </motion.div>
               )}
             </div>
+
+            <p className={`mt-2 px-1 text-[10px] leading-relaxed ${mutedTextClass}`}>
+              This preview is for 2D representation purposes only. The actual product may differ.
+            </p>
 
             <section aria-labelledby="total-heading" className={`mt-5 rounded-2xl border p-5 sm:p-6 ${cardClass}`}>
               <div className="flex items-start justify-between gap-4 border-b border-black/[0.07] pb-4 dark:border-white/[0.09]">
