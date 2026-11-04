@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { ChevronDown, Gift, Minus, Plus, ShoppingBag, Sparkles, X } from 'lucide-react'
+import { ChevronDown, Gift, Minus, Plus, ShoppingBag, Sparkles, Trash2, X } from 'lucide-react'
 import type { CartItem, Product, StoreCategory } from '../types'
 import { PRODUCTS } from '../data/products'
 import { MAGAZINE_PRICES } from '../data/magazinePricing'
@@ -371,9 +371,26 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">Your selection</p>
                   <h3 className="mt-1 font-serif-title text-lg font-medium">Your custom gift</h3>
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-[10px] ${isDark ? 'bg-white/10' : 'bg-[#F4EEE7]'}`}>
-                  {selectedItems.length} {selectedItems.length === 1 ? 'item' : 'items'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] ${isDark ? 'bg-white/10' : 'bg-[#F4EEE7]'}`}>
+                    {selectedItems.length} {selectedItems.length === 1 ? 'item' : 'items'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedItems([])}
+                    disabled={selectedItems.length === 0}
+                    title="Clear all selected gift items"
+                    aria-label="Clear all selection"
+                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      isDark
+                        ? 'border-[#55413B] text-[#E0B8AD] hover:bg-[#A96F61]/15'
+                        : 'border-[#E8D8D0] text-[#A45F60] hover:bg-[#A96F61]/[0.07]'
+                    }`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Clear all
+                  </button>
+                </div>
               </div>
               <div className={`mt-4 space-y-2.5 text-xs ${mutedTextClass}`}>
                 {selectedItemGroups.map(({ item, quantity }) => (
