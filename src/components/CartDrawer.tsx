@@ -183,7 +183,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       )}
                       {item.customGiftCustomization && (
                         <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block">
-                          Box: {item.customGiftCustomization.box.name} · ₹{item.customGiftCustomization.box.price.toLocaleString('en-IN')}
+                          {item.customGiftCustomization.box && (
+                            <span className="block">
+                              Box: {item.customGiftCustomization.box.name} · ₹{item.customGiftCustomization.box.price.toLocaleString('en-IN')}
+                            </span>
+                          )}
                           {item.customGiftCustomization.components.map(component => (
                             <span key={`${component.productId}-${component.magazinePageCount ?? ''}`} className="block truncate">
                               {component.name}{component.quantity > 1 ? ` × ${component.quantity}` : ''} · ₹{(component.price * component.quantity).toLocaleString('en-IN')}

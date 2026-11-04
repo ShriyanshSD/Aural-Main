@@ -641,7 +641,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                                   )}
                                   {item.customGiftCustomization && (
                                     <span className="mt-0.5 block whitespace-pre-wrap text-[10px] text-[#8E7973] dark:text-[#A79690]">
-                                      Box: {item.customGiftCustomization.box.name} · ₹{item.customGiftCustomization.box.price.toLocaleString('en-IN')}
+                                      {item.customGiftCustomization.box && `Box: ${item.customGiftCustomization.box.name} · ₹${item.customGiftCustomization.box.price.toLocaleString('en-IN')}\n`}
                                       {item.customGiftCustomization.components.map(component => (
                                         `\n${component.name}${component.quantity > 1 ? ` × ${component.quantity}` : ''} · ₹${(component.price * component.quantity).toLocaleString('en-IN')}`
                                       ))}

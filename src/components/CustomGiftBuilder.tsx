@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { Check, ChevronDown, Gift, Minus, Plus, ShoppingBag, Sparkles, X } from 'lucide-react'
-import type { BuilderItem, CartItem, Product, StoreCategory } from '../types'
-import { BUILDER_ITEMS, PRODUCTS } from '../data/products'
+import { ChevronDown, Gift, Minus, Plus, ShoppingBag, Sparkles, X } from 'lucide-react'
+import type { CartItem, Product, StoreCategory } from '../types'
+import { PRODUCTS } from '../data/products'
 import { MAGAZINE_PRICES } from '../data/magazinePricing'
 
 interface CustomGiftBuilderProps {
@@ -32,18 +32,6 @@ const getCategoryLabel = (category: StoreCategory) => (
   ?? category.slug.split('-').map(word => word[0]?.toUpperCase() + word.slice(1)).join(' ')
 )
 
-const previewPlacements = [
-  { left: '25%', top: '25%', width: '50%', height: '48%', rotate: -1, zIndex: 20 },
-  { left: '7%', top: '9%', width: '30%', height: '36%', rotate: -7, zIndex: 30 },
-  { left: '64%', top: '8%', width: '28%', height: '35%', rotate: 6, zIndex: 30 },
-  { left: '6%', top: '58%', width: '32%', height: '34%', rotate: 3, zIndex: 40 },
-  { left: '64%', top: '56%', width: '30%', height: '35%', rotate: -3, zIndex: 40 },
-  { left: '3%', top: '34%', width: '27%', height: '31%', rotate: -5, zIndex: 35 },
-  { left: '70%', top: '34%', width: '27%', height: '31%', rotate: 5, zIndex: 35 },
-  { left: '35%', top: '6%', width: '29%', height: '30%', rotate: 3, zIndex: 25 },
-  { left: '35%', top: '66%', width: '31%', height: '28%', rotate: -2, zIndex: 45 }
-]
-
 const formatPrice = (price: number) => `₹${price.toLocaleString('en-IN')}`
 
 export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
@@ -53,9 +41,6 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
   categories = [],
   products = []
 }) => {
-  const [selectedBox, setSelectedBox] = useState<BuilderItem>(
-    BUILDER_ITEMS.find(item => item.category === 'box') ?? BUILDER_ITEMS[0]
-  )
   const [selectedItems, setSelectedItems] = useState<Product[]>([])
   const [activeCategory, setActiveCategory] = useState(
     categories.find(category => category.slug !== 'magazines')?.slug ?? categories[0]?.slug ?? ''
@@ -63,13 +48,13 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
   const [recipientName, setRecipientName] = useState('')
   const [personalNote, setPersonalNote] = useState('')
 
-  const totalPrice = selectedBox.price + selectedItems.reduce((sum, item) => sum + item.price, 0)
   const selectedItemGroups = selectedItems.reduce<Array<{ item: Product; quantity: number }>>((groups, item) => {
     const existing = groups.find(group => group.item.id === item.id)
     if (existing) existing.quantity += 1
     else groups.push({ item, quantity: 1 })
     return groups
   }, [])
+  const totalPrice = selectedItemGroups.reduce((sum, group) => sum + group.item.price * group.quantity, 0)
   const catalogItems = products
     .filter(product => product.category === activeCategory && product.isActive !== false && product.isPublished !== false)
     .slice(0, 3)
@@ -94,10 +79,6 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
   })
   const activeCategoryLabel = categories.find(category => category.slug === activeCategory)
   const selectedCategoryName = activeCategoryLabel ? getCategoryLabel(activeCategoryLabel) : 'this category'
-  const previewItems = [selectedBox, ...selectedItems]
-  const boxPalette = selectedBox.id.includes('rose')
-    ? { edge: '#A66F68', side: '#C18D82', interior: '#E8D0C9' }
-    : { edge: '#A77C4E', side: '#B89160', interior: '#C8AA7D' }
   const isDark = isDarkMode
 
   useEffect(() => {
@@ -130,21 +111,13 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
       name: 'Custom Mix & Match Hamper',
       price: totalPrice,
       quantity: 1,
-      imageUrl: selectedBox.imageUrl,
+      imageUrl: selectedItems[0]?.imageUrl ?? '',
       recipientName: recipientName.trim() || undefined,
       customMessage: personalNote.trim() || undefined,
-      customComponents: [selectedBox.name, ...components.map(component => (
+      customComponents: components.map(component => (
         component.quantity > 1 ? `${component.quantity} × ${component.name}` : component.name
-      ))],
-      customGiftCustomization: {
-        box: {
-          id: selectedBox.id,
-          name: selectedBox.name,
-          price: selectedBox.price,
-          imageUrl: selectedBox.imageUrl
-        },
-        components
-      }
+      )),
+      customGiftCustomization: { components }
     }
 
     onAddCustomHamperToBag(newCartItem)
@@ -181,7 +154,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
               Create a gift, made personal
             </h1>
             <p className={`mt-2 max-w-xl text-sm leading-relaxed ${mutedTextClass}`}>
-              Choose a keepsake box, gather a few thoughtful things, and make it yours.
+              Pick the products you love, add a personal note, and make a gift that feels like them.
             </p>
           </div>
           <motion.button
@@ -202,51 +175,11 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
 
         <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)] lg:gap-12">
           <div className="min-w-0 space-y-8">
-            <section aria-labelledby="box-heading">
-              <div className="mb-4 flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">01 · The foundation</p>
-                  <h2 id="box-heading" className="mt-1 font-serif-title text-2xl font-medium">Choose your gift box</h2>
-                </div>
-                <span className={`shrink-0 text-xs ${mutedTextClass}`}>Choose one</span>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {BUILDER_ITEMS.filter(item => item.category === 'box').slice(0, 3).map(box => {
-                  const isSelected = selectedBox.id === box.id
-                  return (
-                    <button
-                      type="button"
-                      key={box.id}
-                      aria-pressed={isSelected}
-                      onClick={() => setSelectedBox(box)}
-                      className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all ${
-                        isSelected
-                          ? 'border-[#B36D6D] bg-[#B36D6D]/[0.07] ring-1 ring-[#B36D6D]/25'
-                          : `${cardClass} hover:border-[#C79B8C]`
-                      }`}
-                    >
-                      <img src={box.imageUrl} alt="" className="h-[68px] w-[68px] shrink-0 rounded-xl object-cover" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate font-serif-title text-sm font-medium">{box.name}</span>
-                        <span className={`mt-1 block line-clamp-1 text-[11px] ${mutedTextClass}`}>{box.description}</span>
-                        <span className="mt-1.5 block text-xs font-semibold tabular-nums text-[#A96F61]">{formatPrice(box.price)}</span>
-                      </span>
-                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-                        isSelected ? 'border-[#B36D6D] bg-[#B36D6D] text-white' : 'border-[#D9CEC4]'
-                      }`}>
-                        {isSelected && <Check className="h-3 w-3" />}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
-
             <section aria-labelledby="items-heading">
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">02 · The little details</p>
-                  <h2 id="items-heading" className="mt-1 font-serif-title text-2xl font-medium">Choose what goes inside</h2>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">01 · The little details</p>
+                  <h2 id="items-heading" className="mt-1 font-serif-title text-2xl font-medium">Choose your gift items</h2>
                 </div>
                 <span className={`shrink-0 text-xs ${mutedTextClass}`}>
                   {selectedItems.length} {selectedItems.length === 1 ? 'item' : 'items'} chosen
@@ -336,7 +269,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                   <Gift className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">03 · A personal note</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">02 · A personal note</p>
                   <h2 id="note-heading" className="font-serif-title text-xl font-medium">Add your finishing words</h2>
                 </div>
               </div>
@@ -373,110 +306,63 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#A96F61]">Your gift, taking shape</p>
                 <h2 className="mt-1 font-serif-title text-2xl font-medium">A little preview</h2>
               </div>
-              <span className={`flex items-center gap-1 text-[11px] ${mutedTextClass}`}>
-                <ChevronDown className="h-3.5 w-3.5" />
-                Top view
-              </span>
+              <span className={`text-[11px] ${mutedTextClass}`}>Open gift box</span>
             </div>
 
             <div
-              className="relative aspect-[1/0.88] min-h-[330px] w-full max-w-full overflow-hidden rounded-[1.75rem] border border-[#D7C8B3] shadow-[0_20px_44px_-24px_rgba(80,54,34,0.5)]"
+              className="relative mx-auto aspect-[3/4] w-full max-w-[420px] overflow-hidden rounded-[1.75rem] border border-[#E8E4DF] shadow-[0_20px_44px_-24px_rgba(80,54,34,0.28)]"
               style={{
-                backgroundColor: '#DDD0BE',
-                backgroundImage: 'radial-gradient(ellipse at 18% 18%, rgba(255,255,255,0.75), transparent 38%), radial-gradient(ellipse at 82% 75%, rgba(116,91,66,0.22), transparent 45%), repeating-linear-gradient(3deg, rgba(111,86,61,0.08) 0px, rgba(111,86,61,0.08) 1px, transparent 1px, transparent 5px), repeating-linear-gradient(93deg, rgba(255,255,255,0.28) 0px, rgba(255,255,255,0.28) 1px, transparent 1px, transparent 8px)'
+                background: isDark
+                  ? 'radial-gradient(ellipse at 50% 42%, #3b332f 0%, #211d1a 72%)'
+                  : 'radial-gradient(ellipse at 50% 42%, #fffdfa 0%, #f3efeb 75%)'
               }}
             >
-              <div className="absolute inset-0 overflow-hidden">
-                <div className="absolute -left-[8%] -top-[22%] h-[72%] w-[50%] rotate-[-18deg] rounded-full bg-white/25 blur-3xl" />
-                <div className="absolute -bottom-[28%] -right-[8%] h-[66%] w-[58%] rounded-full bg-[#8C7052]/20 blur-3xl" />
-              </div>
-              <div
-                className="absolute inset-x-[6%] bottom-[4%] top-[8%] grid place-items-center"
-                style={{ perspective: '1000px' }}
-              >
-                <div
-                  className="relative h-[86%] w-[86%]"
-                  style={{ transform: 'rotateX(48deg) rotateZ(-3deg) scale(0.94)', transformStyle: 'preserve-3d' }}
-                >
-                  <div
-                    className="absolute inset-0 rounded-[1.35rem] border-[10px] shadow-[0_24px_28px_rgba(65,46,26,0.4),inset_0_0_0_2px_rgba(255,242,212,0.45)] sm:border-[14px]"
-                    style={{ borderColor: boxPalette.edge, backgroundColor: boxPalette.side, transform: 'translateZ(-18px)' }}
-                  />
-                  <div
-                    className="absolute inset-[4%] overflow-hidden rounded-[0.85rem] border border-[#92704C]/70"
-                    style={{
-                      transform: 'translateZ(-8px)',
-                      backgroundColor: boxPalette.interior,
-                      backgroundImage: 'radial-gradient(ellipse at 48% 42%, rgba(255,246,220,0.62), transparent 62%), repeating-linear-gradient(0deg, rgba(111,77,43,0.09) 0px, rgba(111,77,43,0.09) 1px, transparent 1px, transparent 10px)'
-                    }}
-                  />
-                  <div
-                    className="absolute inset-x-[1%] bottom-0 h-[12%] rounded-b-xl border-t border-[#D6B98D]/70 bg-gradient-to-b from-[#BC9664] to-[#87613C] shadow-[0_14px_18px_rgba(64,43,24,0.38)]"
-                    style={{ transform: 'translateZ(22px)', backgroundImage: `linear-gradient(to bottom, ${boxPalette.side}, ${boxPalette.edge})` }}
-                  />
-                  <div
-                    className="absolute inset-y-[1%] right-0 w-[9%] rounded-r-xl bg-gradient-to-l from-[#805A37] to-[#B38A5A]"
-                    style={{ transform: 'translateZ(17px)', backgroundImage: `linear-gradient(to left, ${boxPalette.edge}, ${boxPalette.side})` }}
-                  />
-                  <div className="absolute inset-[9%]">
-                    {selectedItems.map((item, index) => {
-                      const placement = previewPlacements[index % previewPlacements.length]
-                      return (
-                        <motion.div
-                          key={`${item.id}-${index}`}
-                          layout
-                          initial={{ opacity: 0, scale: 0.84 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ type: 'spring', stiffness: 280, damping: 24 }}
-                          className="absolute"
-                          title={item.name}
-                          style={{
-                            left: placement.left,
-                            top: placement.top,
-                            width: placement.width,
-                            height: placement.height,
-                            zIndex: placement.zIndex,
-                            transform: `rotateZ(${placement.rotate}deg) translateZ(${index === 0 ? 8 : 14 + (index % 3) * 4}px)`,
-                            transformStyle: 'preserve-3d'
-                          }}
-                        >
-                          <div className="relative h-full w-full overflow-hidden rounded-md border-[3px] border-[#F8F1E3] bg-[#F8F1E3] shadow-[0_10px_12px_rgba(52,37,22,0.42)] sm:rounded-lg sm:border-4">
-                            <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
-                            <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-[#35291F]/85 via-[#35291F]/45 to-transparent px-1 pb-1 pt-3 text-center text-[8px] font-medium text-white sm:text-[9px]">
-                              {item.name}
-                            </span>
-                          </div>
-                        </motion.div>
-                      )
-                    })}
-                  </div>
-                  <div className="pointer-events-none absolute inset-x-0 bottom-[-8%] z-[55] flex justify-center">
-                    <span className="rounded-full border border-[#E6D3B7]/70 bg-[#FFF9ED]/90 px-3 py-1 text-[9px] uppercase tracking-[0.14em] text-[#715A42] shadow-[0_4px_12px_rgba(67,48,29,0.2)]">
-                      {previewItems.length} {previewItems.length === 1 ? 'piece' : 'pieces'} · made with love
+              <img
+                src="/illustrations/aurel-gift-box-preview.png"
+                alt="An open AUREL gift box with pink shopping bags"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-x-[24%] top-[64%] bottom-[13%] z-10 grid auto-rows-min grid-cols-3 content-start justify-items-center gap-x-1 gap-y-1 overflow-y-auto px-1 pt-1 sm:gap-x-2 sm:gap-y-2 sm:px-2">
+                {selectedItemGroups.length ? selectedItemGroups.map(({ item, quantity }) => (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.85, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                    title={item.name}
+                    className={`relative flex min-w-0 max-w-[72px] flex-col items-center rounded-md px-1 py-0.5 sm:max-w-[86px] sm:rounded-lg sm:px-1.5 sm:py-1 ${
+                      isDark ? 'bg-[#2A2522]/90' : 'bg-white/90'
+                    } shadow-[0_2px_7px_rgba(45,35,28,0.2)]`}
+                  >
+                    {quantity > 1 && (
+                      <span className="absolute -right-1 -top-1 z-10 grid h-4 min-w-4 place-items-center rounded-full bg-[#A96F61] px-1 text-[9px] font-bold text-white">
+                        {quantity}
+                      </span>
+                    )}
+                    <img
+                      src={item.imageUrl}
+                      alt=""
+                      className="h-7 w-full object-contain sm:h-9"
+                    />
+                    <span className={`mt-0.5 w-full truncate text-center text-[8px] font-medium leading-tight sm:text-[9px] ${
+                      isDark ? 'text-[#F3EBE6]' : 'text-[#51443D]'
+                    }`}>
+                      {item.name}
                     </span>
-                  </div>
-                </div>
+                  </motion.div>
+                )) : (
+                  <p className={`col-span-3 rounded-xl px-3 py-2 text-center text-[10px] ${
+                    isDark ? 'bg-[#2A2522]/80 text-[#BBAAA1]' : 'bg-white/85 text-[#82736A]'
+                  }`}>
+                    Your chosen items will appear here
+                  </p>
+                )}
               </div>
-
-              {(recipientName.trim() || personalNote.trim()) && (
-                <motion.div
-                  key={`${recipientName}-${personalNote}`}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="absolute bottom-[6%] left-1/2 z-[70] max-w-[48%] -translate-x-1/2 rounded-md border border-[#E7D7C6] bg-[#FFFCF5]/95 px-2.5 py-1.5 text-center shadow-[0_5px_16px_rgba(67,48,29,0.22)]"
-                >
-                  {recipientName.trim() && (
-                    <p className="truncate font-serif-title text-[10px] italic text-[#80695A]">For {recipientName.trim()}</p>
-                  )}
-                  {personalNote.trim() && (
-                    <p className="mt-0.5 line-clamp-2 text-[8px] leading-tight text-[#8D7B6C]">{personalNote.trim()}</p>
-                  )}
-                </motion.div>
-              )}
             </div>
 
             <p className={`mt-2 px-1 text-[10px] leading-relaxed ${mutedTextClass}`}>
-              This preview is for 2D representation purposes only. The actual product may differ.
+              Your selected items appear inside the open gift box, with short labels.
             </p>
 
             <section aria-labelledby="total-heading" className={`mt-5 rounded-2xl border p-5 sm:p-6 ${cardClass}`}>
@@ -486,14 +372,10 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                   <h3 className="mt-1 font-serif-title text-lg font-medium">Your custom gift</h3>
                 </div>
                 <span className={`rounded-full px-2.5 py-1 text-[10px] ${isDark ? 'bg-white/10' : 'bg-[#F4EEE7]'}`}>
-                  {previewItems.length} items
+                  {selectedItems.length} {selectedItems.length === 1 ? 'item' : 'items'}
                 </span>
               </div>
               <div className={`mt-4 space-y-2.5 text-xs ${mutedTextClass}`}>
-                <div className="flex justify-between gap-4">
-                  <span className="truncate">{selectedBox.name}</span>
-                  <span className="shrink-0 tabular-nums">{formatPrice(selectedBox.price)}</span>
-                </div>
                 {selectedItemGroups.map(({ item, quantity }) => (
                   <div key={item.id} className="flex items-center justify-between gap-3">
                     <span className="min-w-0 flex-1 truncate">{item.name}</span>
@@ -523,10 +405,6 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                     </div>
                   </div>
                 ))}
-                <div className="flex justify-between gap-4 border-t border-black/[0.07] pt-3 dark:border-white/[0.09]">
-                  <span>Gift note & presentation</span>
-                  <span className="font-medium text-[#74836E]">Complimentary</span>
-                </div>
                 <p className="text-[10px] leading-relaxed">Delivery charges, if applicable, are calculated at checkout.</p>
               </div>
               <div className="mt-4 flex items-end justify-between border-t border-black/[0.07] pt-4 dark:border-white/[0.09]">

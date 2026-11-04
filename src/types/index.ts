@@ -143,7 +143,7 @@ export interface CustomGiftComponent {
 }
 
 export interface CustomGiftCustomization {
-  box: {
+  box?: {
     id: string
     name: string
     price: number

@@ -1313,7 +1313,7 @@ interface MagazineCustomizationData {
 }
 
 interface CustomGiftSelectionData {
-  boxId: string
+  boxId?: string
   components: Array<{
     productId: string
     quantity: number
@@ -1331,8 +1331,8 @@ type PersistedOrderItem = Record<string, unknown> & {
 const isCustomGiftSelectionData = (value: unknown): value is CustomGiftSelectionData => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const data = value as Record<string, unknown>
-  return typeof data.boxId === 'string'
-    && /^[a-zA-Z0-9_-]{1,100}$/.test(data.boxId)
+  return (data.boxId === undefined
+    || (typeof data.boxId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(data.boxId)))
     && Array.isArray(data.components)
     && data.components.length >= 1
     && data.components.length <= 19
@@ -1881,8 +1881,12 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           ? item.customGiftCustomization
           : undefined
         if (giftSelection) {
-          const box = BUILDER_ITEMS.find(component => component.id === giftSelection.boxId && component.category === 'box')
-          if (!box) throw new OrderValidationError('The selected gift box is no longer available. Update your gift and try again.')
+          const legacyBox = giftSelection.boxId
+            ? BUILDER_ITEMS.find(component => component.id === giftSelection.boxId && component.category === 'box')
+            : undefined
+          if (giftSelection.boxId && !legacyBox) {
+            throw new OrderValidationError('The selected gift box is no longer available. Update your gift and try again.')
+          }
           const giftComponents = giftSelection.components.map(selection => {
             const product = productsById.get(selection.productId)
             if (!product || !product.is_active || !product.is_published) {
@@ -1917,7 +1921,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
             }
           })
           const customPrice = Math.round((
-            box.price + giftComponents.reduce((sum, component) => sum + component.price * component.quantity, 0)
+            (legacyBox?.price ?? 0) + giftComponents.reduce((sum, component) => sum + component.price * component.quantity, 0)
           ) * 100) / 100
           return {
             cartId: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : `custom-${randomBytes(8).toString('hex')}`,
@@ -1925,14 +1929,19 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
             name: 'Custom Mix & Match Hamper',
             price: customPrice,
             quantity: Number(item.quantity),
-            imageUrl: box.imageUrl,
+            imageUrl: legacyBox?.imageUrl ?? productsById.get(giftComponents[0].productId)?.image_url ?? '',
             ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
             ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
-            customComponents: [box.name, ...giftComponents.map(component => (
-              component.quantity > 1 ? `${component.quantity} × ${component.name}` : component.name
-            ))],
+            customComponents: [
+              ...(legacyBox ? [legacyBox.name] : []),
+              ...giftComponents.map(component => (
+                component.quantity > 1 ? `${component.quantity} × ${component.name}` : component.name
+              ))
+            ],
             customGiftCustomization: {
-              box: { id: box.id, name: box.name, price: box.price, imageUrl: box.imageUrl },
+              ...(legacyBox ? {
+                box: { id: legacyBox.id, name: legacyBox.name, price: legacyBox.price, imageUrl: legacyBox.imageUrl }
+              } : {}),
               components: giftComponents
             }
           }

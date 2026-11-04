@@ -1153,7 +1153,7 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
           const customization = item.customGiftCustomization && typeof item.customGiftCustomization === 'object'
             ? item.customGiftCustomization as Record<string, unknown>
             : {}
-          const box = customization.box && typeof customization.box === 'object'
+          const legacyBox = customization.box && typeof customization.box === 'object'
             ? customization.box as Record<string, unknown>
             : undefined
           const components = Array.isArray(customization.components)
@@ -1163,13 +1163,13 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
             <p className="font-medium">{String(item.name ?? 'Custom Gift Studio item')} × {String(item.quantity ?? 1)}</p>
             <p className="mt-1 text-xs font-semibold text-[#934f51]">Item amount: {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</p>
             {Boolean(item.recipientName) && <p className="mt-1 text-xs text-[#76645e]">Recipient: {String(item.recipientName)}</p>}
-            {Boolean(box) && <p className="mt-2 text-xs text-[#76645e]">Gift box: {String(box?.name)} · {money(box?.price)}</p>}
+            {Boolean(legacyBox) && <p className="mt-2 text-xs text-[#76645e]">Gift box: {String(legacyBox?.name)} · {money(legacyBox?.price)}</p>}
             {components.map((component, componentIndex) => <p key={`${String(component.productId)}-${componentIndex}`} className="mt-1 text-xs text-[#76645e]">
               {String(component.name)}{Number(component.quantity) > 1 ? ` × ${String(component.quantity)}` : ''} · {money(Number(component.price) * Number(component.quantity ?? 1))}
             </p>)}
             {Boolean(item.finish) && <p className="mt-1 text-xs text-[#76645e]">Finish: {String(item.finish)}</p>}
             {Boolean(item.customMessage) && <p className="mt-2 whitespace-pre-wrap text-xs text-[#76645e]">Gift message: {String(item.customMessage)}</p>}
-            {!box && Array.isArray(item.customComponents) && <p className="mt-1 text-xs text-[#76645e]">Components: {item.customComponents.map(String).join(', ')}</p>}
+            {!legacyBox && components.length === 0 && Array.isArray(item.customComponents) && <p className="mt-1 text-xs text-[#76645e]">Components: {item.customComponents.map(String).join(', ')}</p>}
           </div>
         })}
         {otherItems.length > 0 && <div className="rounded-xl border border-[#eee5df] p-3 text-xs text-[#76645e]">
