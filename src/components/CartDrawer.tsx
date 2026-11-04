@@ -8,6 +8,7 @@ interface CartDrawerProps {
   onClose: () => void
   isDarkMode: boolean
   cartItems: CartItem[]
+  onClearBag: () => void
   onUpdateQuantity: (cartId: string, delta: number) => void
   onRemoveItem: (cartId: string) => void
   onProceedToCheckout: () => void
@@ -19,6 +20,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClose,
   isDarkMode,
   cartItems,
+  onClearBag,
   onUpdateQuantity,
   onRemoveItem,
   onProceedToCheckout,
@@ -56,7 +58,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             }`}
           >
             {/* Header */}
-            <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+            <div className="p-6 border-b border-black/5 dark:border-white/5 flex items-center justify-between gap-3">
               <div>
                 <span className="font-editorial text-xs uppercase tracking-widest text-[#B36D6D] font-semibold">
                   Personal Bag
@@ -66,18 +68,37 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </h3>
               </div>
 
-              <motion.button
-                whileHover={{ rotate: 90 }}
-                whileTap={{ scale: 0.9 }}
-                transition={{ duration: 0.2 }}
-                onClick={onClose}
-                aria-label="Close bag"
-                className={`p-2 rounded-full transition-colors ${
-                  isDarkMode ? 'hover:bg-[#2A2321] text-[#E0D2CB]' : 'hover:bg-[#EFE2DC] text-[#4A3B37]'
-                }`}
-              >
-                <X className="w-5 h-5" />
-              </motion.button>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  disabled={!cartItems.length}
+                  onClick={() => {
+                    if (window.confirm('Clear every item from your bag?')) onClearBag()
+                  }}
+                  aria-label="Clear bag"
+                  title="Clear bag"
+                  className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                    isDarkMode
+                      ? 'border-[#55413B] text-[#E0B8AD] hover:bg-[#A96F61]/15'
+                      : 'border-[#E8D8D0] text-[#A45F60] hover:bg-[#A96F61]/[0.07]'
+                  }`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>Clear bag</span>
+                </button>
+                <motion.button
+                  whileHover={{ rotate: 90 }}
+                  whileTap={{ scale: 0.9 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={onClose}
+                  aria-label="Close bag"
+                  className={`p-2 rounded-full transition-colors ${
+                    isDarkMode ? 'hover:bg-[#2A2321] text-[#E0D2CB]' : 'hover:bg-[#EFE2DC] text-[#4A3B37]'
+                  }`}
+                >
+                  <X className="w-5 h-5" />
+                </motion.button>
+              </div>
             </div>
 
             {/* Body */}

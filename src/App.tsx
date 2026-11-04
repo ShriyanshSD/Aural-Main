@@ -1251,6 +1251,10 @@ function StorefrontApp() {
         onClose={() => setIsBagOpen(false)}
         isDarkMode={isDarkMode}
         cartItems={accountCartItems}
+        onClearBag={() => {
+          setCartItems([])
+          setCartFeedback(null)
+        }}
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveCartItem}
         onProceedToCheckout={() => {

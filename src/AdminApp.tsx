@@ -31,19 +31,6 @@ interface AdminProduct extends Product {
   isActive: boolean
   isPublished: boolean
 }
-interface CustomOrderOperation {
-  order_id: number
-  production_status: string
-  customer_approved_at: string | null
-  proof_sent_at: string | null
-  proof_url: string
-  expected_delivery_date: string | null
-  courier: string
-  tracking_number: string
-  owner_notes: string
-  checklist: { id: string; label: string; complete: boolean }[]
-  updated_at: string
-}
 interface AdminCustomOrder {
   id: number
   order_id: string
@@ -54,7 +41,6 @@ interface AdminCustomOrder {
   payment_status: string
   order_status: string
   paid_at: string | null
-  operation: CustomOrderOperation
 }
 interface AdminMagazineFile {
   id: string
@@ -768,7 +754,23 @@ export default function AdminApp() {
             giftHistoryCount={customOrders.length}
             magazineHistoryCount={customMagazines.length}
             search={search} setSearch={setSearch}
+            updatingStatusOrderId={updatingStatusOrderId}
             archivingHistory={archivingCustomHistory}
+            onUpdateGiftOrder={async (order, status) => {
+              setUpdatingStatusOrderId(String(order.id))
+              await runAction(async () => (
+                api<{ alreadyUpdated?: boolean; emailError?: string }>(`/api/admin/orders/${order.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ orderStatus: status })
+                })
+              ), result => {
+                const statusMessage = result.alreadyUpdated
+                  ? `${order.order_id} was already ${statusLabel(status)}.`
+                  : `${order.order_id} marked ${statusLabel(status).toLowerCase()}.`
+                return result.emailError ? `${statusMessage} ${result.emailError}` : statusMessage
+              })
+              setUpdatingStatusOrderId('')
+            }}
             onArchiveHistory={customType => {
               setArchivingCustomHistory(true)
               void runAction(async () => api<{ archivedCount: number }>('/api/admin/custom-orders/archive', {
@@ -776,22 +778,6 @@ export default function AdminApp() {
                 body: JSON.stringify({ customType })
               }), result => `${result.archivedCount} ${customType === 'magazines' ? 'custom magazine orders' : 'custom gift orders'} cleared from this owner history. Customer order records are unchanged.`)
                 .finally(() => setArchivingCustomHistory(false))
-            }}
-            onSave={(order, operation) => {
-              void runAction(async () => {
-                await api(`/api/admin/custom-orders/${order.id}`, {
-                  method: 'PATCH',
-                  body: JSON.stringify({
-                    productionStatus: operation.production_status,
-                    expectedDeliveryDate: operation.expected_delivery_date,
-                    courier: operation.courier,
-                    trackingNumber: operation.tracking_number,
-                    proofUrl: operation.proof_url,
-                    ownerNotes: operation.owner_notes,
-                    checklist: operation.checklist
-                  })
-                })
-              }, `Production workflow saved for ${order.order_id}.`)
             }}
           />}
           {section === 'customers' && <CustomersPage customers={filteredCustomers} search={search} setSearch={setSearch} onEdit={setCustomerDraft} onToggleStatus={customer => {
@@ -905,30 +891,17 @@ export default function AdminApp() {
 function AdminLoading() {
   return <div className="grid min-h-screen place-items-center bg-[#f7f3ef]"><LoaderCircle className="h-6 w-6 animate-spin text-[#a45f60]" /></div>
 }
-const productionStatusOptions = [
-  'awaiting_details', 'ready_for_design', 'design_in_progress', 'proof_sent',
-  'awaiting_customer_approval', 'approved_for_production', 'in_production',
-  'quality_check', 'packed', 'ready_to_dispatch', 'completed', 'on_hold', 'cancelled'
-]
-const defaultProductionChecklist = [
-  ['verify_personalization', 'Verify spelling and personalization'],
-  ['confirm_materials', 'Confirm materials'],
-  ['prepare_product', 'Prepare product'],
-  ['quality_check', 'Quality-check item'],
-  ['gift_message', 'Add gift message'],
-  ['package_label', 'Package and label'],
-  ['delivery_details', 'Confirm delivery details']
-]
-function CustomOrdersPage({ orders, magazines, giftHistoryCount, magazineHistoryCount, search, setSearch, archivingHistory, onArchiveHistory, onSave }: {
+function CustomOrdersPage({ orders, magazines, giftHistoryCount, magazineHistoryCount, search, setSearch, updatingStatusOrderId, archivingHistory, onUpdateGiftOrder, onArchiveHistory }: {
   orders: AdminCustomOrder[]
   magazines: AdminMagazineOrder[]
   giftHistoryCount: number
   magazineHistoryCount: number
   search: string
   setSearch: (value: string) => void
+  updatingStatusOrderId: string
   archivingHistory: boolean
+  onUpdateGiftOrder: (order: AdminCustomOrder, status: 'shipped' | 'delivered') => Promise<void>
   onArchiveHistory: (customType: 'magazines' | 'gift-studio') => void
-  onSave: (order: AdminCustomOrder, operation: CustomOrderOperation) => void
 }) {
   const [tab, setTab] = useState<'magazines' | 'gift-studio'>('magazines')
   const activeHistoryCount = tab === 'magazines' ? magazineHistoryCount : giftHistoryCount
@@ -977,7 +950,12 @@ function CustomOrdersPage({ orders, magazines, giftHistoryCount, magazineHistory
         : <EmptyState text="No paid custom magazine orders yet. Magazine details appear here after payment is confirmed." />
       : orders.length
         ? <div role="tabpanel" className="space-y-4">{orders.map(order =>
-          <CustomOrderCard key={order.id} order={order} onSave={operation => onSave(order, operation)} />
+          <CustomOrderCard
+            key={order.id}
+            order={order}
+            updatingStatus={updatingStatusOrderId === String(order.id)}
+            onUpdateStatus={status => onUpdateGiftOrder(order, status)}
+          />
         )}</div>
         : <EmptyState text="No paid Custom Gift Studio orders yet. Gift details appear here after payment is confirmed." />}
   </section>
@@ -1124,11 +1102,11 @@ function CustomMagazineCard({ magazine }: { magazine: AdminMagazineOrder }) {
   </article>
 }
 
-function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (operation: CustomOrderOperation) => void }) {
-  const [operation, setOperation] = useState(() => ({
-    ...order.operation,
-    checklist: order.operation.checklist.length ? order.operation.checklist : defaultProductionChecklist.map(([id, label]) => ({ id, label, complete: false }))
-  }))
+function CustomOrderCard({ order, updatingStatus, onUpdateStatus }: {
+  order: AdminCustomOrder
+  updatingStatus: boolean
+  onUpdateStatus: (status: 'shipped' | 'delivered') => void
+}) {
   const data = order.order_data
   const items = Array.isArray(data.items) ? data.items as Record<string, unknown>[] : []
   const customItems = items.filter(item => item.productId === 'custom_hamper_mix')
@@ -1141,14 +1119,19 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
         <p className="text-[11px] font-medium text-emerald-700">Payment {statusLabel(order.payment_status)}</p>
       </div>
     </div>
-    <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      <div className="space-y-3">
-        <div className="rounded-xl bg-[#fbf8f6] p-3 text-xs text-[#76645e]">
-          <p className="font-semibold text-[#3d302e]">Customer and delivery</p>
+    <div className="mt-4 space-y-4">
+      <div className="grid gap-3 rounded-xl bg-[#fbf8f6] p-3 text-xs text-[#76645e] sm:grid-cols-2">
+        <div>
+          <p className="font-semibold text-[#3d302e]">Customer</p>
           <p className="mt-1">{String(data.phoneNumber ?? 'No phone')} · {String(data.email ?? 'No email')}</p>
-          <p className="mt-1">{[data.address, data.city, data.state, data.postalCode].filter(Boolean).map(String).join(', ') || 'No delivery address'}</p>
-          {Boolean(data.notes) && <p className="mt-1 whitespace-pre-wrap">Order note: {String(data.notes)}</p>}
         </div>
+        <div>
+          <p className="font-semibold text-[#3d302e]">Delivery address</p>
+          <p className="mt-1">{[data.address, data.city, data.state, data.postalCode].filter(Boolean).map(String).join(', ') || 'No delivery address'}</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-[#9a827a]">Custom gift details</h4>
         {customItems.map((item, index) => {
           const customization = item.customGiftCustomization && typeof item.customGiftCustomization === 'object'
             ? item.customGiftCustomization as Record<string, unknown>
@@ -1160,41 +1143,50 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
             ? customization.components as Record<string, unknown>[]
             : []
           return <div key={`${String(item.productId)}-${index}`} className="rounded-xl bg-[#fbf8f6] p-3 text-sm">
-            <p className="font-medium">{String(item.name ?? 'Custom Gift Studio item')} × {String(item.quantity ?? 1)}</p>
-            <p className="mt-1 text-xs font-semibold text-[#934f51]">Item amount: {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</p>
-            {Boolean(item.recipientName) && <p className="mt-1 text-xs text-[#76645e]">Recipient: {String(item.recipientName)}</p>}
+            <p className="font-medium">{String(item.name ?? 'Custom Gift Studio item')}</p>
+            <p className="mt-2 text-xs text-[#76645e]"><strong>Recipient:</strong> {String(item.recipientName || 'Not specified')}</p>
+            <p className="mt-2 text-xs font-semibold text-[#3d302e]">Gift items</p>
             {Boolean(legacyBox) && <p className="mt-2 text-xs text-[#76645e]">Gift box: {String(legacyBox?.name)} · {money(legacyBox?.price)}</p>}
-            {components.map((component, componentIndex) => <p key={`${String(component.productId)}-${componentIndex}`} className="mt-1 text-xs text-[#76645e]">
-              {String(component.name)}{Number(component.quantity) > 1 ? ` × ${String(component.quantity)}` : ''} · {money(Number(component.price) * Number(component.quantity ?? 1))}
-            </p>)}
-            {Boolean(item.finish) && <p className="mt-1 text-xs text-[#76645e]">Finish: {String(item.finish)}</p>}
-            {Boolean(item.customMessage) && <p className="mt-2 whitespace-pre-wrap text-xs text-[#76645e]">Gift message: {String(item.customMessage)}</p>}
-            {!legacyBox && components.length === 0 && Array.isArray(item.customComponents) && <p className="mt-1 text-xs text-[#76645e]">Components: {item.customComponents.map(String).join(', ')}</p>}
+            {components.length
+              ? components.map((component, componentIndex) => <p key={`${String(component.productId)}-${componentIndex}`} className="mt-1 text-xs text-[#76645e]">
+                {String(component.name)}{Number(component.quantity) > 1 ? ` × ${String(component.quantity)}` : ''}
+              </p>)
+              : Array.isArray(item.customComponents) && item.customComponents
+                .filter(component => !legacyBox || component !== legacyBox.name)
+                .map((component, componentIndex) => <p key={`${String(item.productId)}-${componentIndex}`} className="mt-1 text-xs text-[#76645e]">{String(component)}</p>)}
+            {Boolean(item.customMessage) && <p className="mt-3 whitespace-pre-wrap rounded-lg border border-[#eadbd4] bg-white p-3 text-xs text-[#76645e]"><strong>Gift message:</strong><br />{String(item.customMessage)}</p>}
           </div>
         })}
+      </div>
         {otherItems.length > 0 && <div className="rounded-xl border border-[#eee5df] p-3 text-xs text-[#76645e]">
           <p className="font-semibold text-[#3d302e]">Other items in this bag</p>
           {otherItems.map((item, index) => <p key={`${String(item.productId)}-${index}`} className="mt-1">
             {String(item.name ?? 'Item')} × {String(item.quantity ?? 1)} · {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}
           </p>)}
         </div>}
-      </div>
-      <div className="space-y-3">
-        <label className="block text-xs font-medium">Production status<select className="form-input mt-1" value={operation.production_status} onChange={event => setOperation(current => ({ ...current, production_status: event.target.value }))}>
-          {productionStatusOptions.map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}
-        </select></label>
-        {operation.production_status === 'approved_for_production' && !operation.customer_approved_at && <p className="text-xs text-amber-800">Customer approval is not recorded. The server will reject this transition.</p>}
-        <label className="block text-xs font-medium">Secure proof link (HTTPS)<input className="form-input mt-1" type="url" value={operation.proof_url} onChange={event => setOperation(current => ({ ...current, proof_url: event.target.value }))} /></label>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs font-medium">Expected delivery date<input className="form-input mt-1" type="date" value={operation.expected_delivery_date ?? ''} onChange={event => setOperation(current => ({ ...current, expected_delivery_date: event.target.value || null }))} /></label>
-          <label className="block text-xs font-medium">Courier<input className="form-input mt-1" value={operation.courier} onChange={event => setOperation(current => ({ ...current, courier: event.target.value }))} /></label>
-          <label className="block text-xs font-medium sm:col-span-2">Tracking number<input className="form-input mt-1" value={operation.tracking_number} onChange={event => setOperation(current => ({ ...current, tracking_number: event.target.value }))} /></label>
-        </div>
-        <label className="block text-xs font-medium">Private owner notes<textarea className="form-input mt-1" rows={3} value={operation.owner_notes} onChange={event => setOperation(current => ({ ...current, owner_notes: event.target.value }))} /></label>
-        <fieldset><legend className="mb-2 text-xs font-semibold">Preparation checklist</legend><div className="space-y-2">{operation.checklist.map(item =>
-          <label key={item.id} className="flex items-start gap-2 text-xs"><input type="checkbox" checked={item.complete} onChange={event => setOperation(current => ({ ...current, checklist: current.checklist.map(row => row.id === item.id ? { ...row, complete: event.target.checked } : row) }))} />{item.label}</label>
-        )}</div></fieldset>
-        <button onClick={() => onSave(operation)} className="rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white">Save production workflow</button>
+      <div className="flex flex-wrap justify-end gap-2 border-t border-[#f1ebe7] pt-4">
+        {order.order_status === 'paid' && <button
+          type="button"
+          disabled={updatingStatus}
+          onClick={() => {
+            if (window.confirm(`Mark order ${order.order_id} as shipped?`)) onUpdateStatus('shipped')
+          }}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#a45f60]/35 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5 disabled:cursor-wait disabled:opacity-60"
+        >
+          {updatingStatus ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
+          {updatingStatus ? 'Updating…' : 'Mark as shipped'}
+        </button>}
+        {['paid', 'shipped'].includes(order.order_status) && <button
+          type="button"
+          disabled={updatingStatus}
+          onClick={() => {
+            if (window.confirm(`Mark order ${order.order_id} as delivered?`)) onUpdateStatus('delivered')
+          }}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#a45f60]/35 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5 disabled:cursor-wait disabled:opacity-60"
+        >
+          {updatingStatus ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
+          {updatingStatus ? 'Updating…' : 'Mark as delivered'}
+        </button>}
       </div>
     </div>
   </article>
