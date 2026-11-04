@@ -297,6 +297,7 @@ export default function AdminApp() {
   const [confirmingOrderId, setConfirmingOrderId] = useState<string>('')
   const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState<string>('')
   const [archivingDeliveredOrders, setArchivingDeliveredOrders] = useState(false)
+  const [archivingCustomHistory, setArchivingCustomHistory] = useState(false)
   const [customers, setCustomers] = useState<AdminCustomer[]>([])
   const [reviews, setReviews] = useState<AdminReview[]>([])
   const [notifications, setNotifications] = useState<AdminNotification[]>([])
@@ -764,7 +765,18 @@ export default function AdminApp() {
           {section === 'custom-orders' && <CustomOrdersPage
             orders={customOrders.filter(order => `${order.order_id} ${String(order.order_data.customerName ?? '')} ${JSON.stringify(order.order_data.items ?? [])}`.toLowerCase().includes(search.toLowerCase()))}
             magazines={customMagazines.filter(order => `${order.orderId} ${order.customerName} ${order.customerEmail} ${JSON.stringify(order.item)}`.toLowerCase().includes(search.toLowerCase()))}
+            giftHistoryCount={customOrders.length}
+            magazineHistoryCount={customMagazines.length}
             search={search} setSearch={setSearch}
+            archivingHistory={archivingCustomHistory}
+            onArchiveHistory={customType => {
+              setArchivingCustomHistory(true)
+              void runAction(async () => api<{ archivedCount: number }>('/api/admin/custom-orders/archive', {
+                method: 'POST',
+                body: JSON.stringify({ customType })
+              }), result => `${result.archivedCount} ${customType === 'magazines' ? 'custom magazine orders' : 'custom gift orders'} cleared from this owner history. Customer order records are unchanged.`)
+                .finally(() => setArchivingCustomHistory(false))
+            }}
             onSave={(order, operation) => {
               void runAction(async () => {
                 await api(`/api/admin/custom-orders/${order.id}`, {
@@ -907,16 +919,38 @@ const defaultProductionChecklist = [
   ['package_label', 'Package and label'],
   ['delivery_details', 'Confirm delivery details']
 ]
-function CustomOrdersPage({ orders, magazines, search, setSearch, onSave }: {
+function CustomOrdersPage({ orders, magazines, giftHistoryCount, magazineHistoryCount, search, setSearch, archivingHistory, onArchiveHistory, onSave }: {
   orders: AdminCustomOrder[]
   magazines: AdminMagazineOrder[]
+  giftHistoryCount: number
+  magazineHistoryCount: number
   search: string
   setSearch: (value: string) => void
+  archivingHistory: boolean
+  onArchiveHistory: (customType: 'magazines' | 'gift-studio') => void
   onSave: (order: AdminCustomOrder, operation: CustomOrderOperation) => void
 }) {
   const [tab, setTab] = useState<'magazines' | 'gift-studio'>('magazines')
+  const activeHistoryCount = tab === 'magazines' ? magazineHistoryCount : giftHistoryCount
   return <section className="space-y-5">
-    <PageHeading title="Custom Orders" description="Paid custom items are organized here after payment is confirmed in Awaiting Confirmation." />
+    <PageHeading title="Custom Orders" description="Paid custom items are organized here after payment is confirmed in Awaiting Confirmation." action={
+      <button
+        type="button"
+        disabled={!activeHistoryCount || archivingHistory}
+        onClick={() => {
+          const label = tab === 'magazines' ? 'custom magazine' : 'custom gift'
+          if (window.confirm(`Clear ${activeHistoryCount} ${label} order${activeHistoryCount === 1 ? '' : 's'} from this owner history? Customer order history and the regular order list will be preserved.`)) {
+            onArchiveHistory(tab)
+          }
+        }}
+        title={`Clear ${tab === 'magazines' ? 'custom magazine' : 'custom gift'} history from this owner tab`}
+        aria-label={`Clear history of ${activeHistoryCount} ${tab === 'magazines' ? 'custom magazine' : 'custom gift'} orders`}
+        className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        {archivingHistory ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+        <span>{archivingHistory ? 'Clearing…' : 'Clear history'}</span>
+      </button>
+    } />
     <SearchBox value={search} onChange={setSearch} placeholder="Search order, customer or item personalization" />
     <div role="tablist" aria-label="Custom order categories" className="flex flex-wrap gap-2 rounded-2xl border border-[#eee5df] bg-white p-2 shadow-sm">
       {([
@@ -1098,6 +1132,7 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
   const data = order.order_data
   const items = Array.isArray(data.items) ? data.items as Record<string, unknown>[] : []
   const customItems = items.filter(item => item.productId === 'custom_hamper_mix')
+  const otherItems = items.filter(item => item.productId !== 'custom_hamper_mix')
   return <article className="rounded-2xl border border-[#eee5df] bg-white p-5">
     <div className="flex flex-col justify-between gap-2 border-b border-[#f2ece8] pb-4 sm:flex-row">
       <div><h3 className="font-semibold">{order.order_id}</h3><p className="mt-1 text-xs text-[#8f7c75]">{String(data.customerName ?? 'Customer')} · {dateLabel(order.created_at)}</p></div>
@@ -1107,16 +1142,43 @@ function CustomOrderCard({ order, onSave }: { order: AdminCustomOrder; onSave: (
       </div>
     </div>
     <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      <div className="space-y-3">{customItems.map((item, index) =>
-        <div key={`${String(item.productId)}-${index}`} className="rounded-xl bg-[#fbf8f6] p-3 text-sm">
-          <p className="font-medium">{String(item.name ?? 'Custom Gift Studio item')} × {String(item.quantity ?? 1)}</p>
-          <p className="mt-1 text-xs font-semibold text-[#934f51]">Item amount: {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</p>
-          {Boolean(item.recipientName) && <p className="mt-1 text-xs text-[#76645e]">Recipient: {String(item.recipientName)}</p>}
-          {Boolean(item.finish) && <p className="mt-1 text-xs text-[#76645e]">Finish: {String(item.finish)}</p>}
-          {Boolean(item.customMessage) && <p className="mt-1 whitespace-pre-wrap text-xs text-[#76645e]">Message: {String(item.customMessage)}</p>}
-          {Array.isArray(item.customComponents) && <p className="mt-1 text-xs text-[#76645e]">Components: {item.customComponents.map(String).join(', ')}</p>}
+      <div className="space-y-3">
+        <div className="rounded-xl bg-[#fbf8f6] p-3 text-xs text-[#76645e]">
+          <p className="font-semibold text-[#3d302e]">Customer and delivery</p>
+          <p className="mt-1">{String(data.phoneNumber ?? 'No phone')} · {String(data.email ?? 'No email')}</p>
+          <p className="mt-1">{[data.address, data.city, data.state, data.postalCode].filter(Boolean).map(String).join(', ') || 'No delivery address'}</p>
+          {Boolean(data.notes) && <p className="mt-1 whitespace-pre-wrap">Order note: {String(data.notes)}</p>}
         </div>
-      )}</div>
+        {customItems.map((item, index) => {
+          const customization = item.customGiftCustomization && typeof item.customGiftCustomization === 'object'
+            ? item.customGiftCustomization as Record<string, unknown>
+            : {}
+          const box = customization.box && typeof customization.box === 'object'
+            ? customization.box as Record<string, unknown>
+            : undefined
+          const components = Array.isArray(customization.components)
+            ? customization.components as Record<string, unknown>[]
+            : []
+          return <div key={`${String(item.productId)}-${index}`} className="rounded-xl bg-[#fbf8f6] p-3 text-sm">
+            <p className="font-medium">{String(item.name ?? 'Custom Gift Studio item')} × {String(item.quantity ?? 1)}</p>
+            <p className="mt-1 text-xs font-semibold text-[#934f51]">Item amount: {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}</p>
+            {Boolean(item.recipientName) && <p className="mt-1 text-xs text-[#76645e]">Recipient: {String(item.recipientName)}</p>}
+            {Boolean(box) && <p className="mt-2 text-xs text-[#76645e]">Gift box: {String(box?.name)} · {money(box?.price)}</p>}
+            {components.map((component, componentIndex) => <p key={`${String(component.productId)}-${componentIndex}`} className="mt-1 text-xs text-[#76645e]">
+              {String(component.name)}{Number(component.quantity) > 1 ? ` × ${String(component.quantity)}` : ''} · {money(Number(component.price) * Number(component.quantity ?? 1))}
+            </p>)}
+            {Boolean(item.finish) && <p className="mt-1 text-xs text-[#76645e]">Finish: {String(item.finish)}</p>}
+            {Boolean(item.customMessage) && <p className="mt-2 whitespace-pre-wrap text-xs text-[#76645e]">Gift message: {String(item.customMessage)}</p>}
+            {!box && Array.isArray(item.customComponents) && <p className="mt-1 text-xs text-[#76645e]">Components: {item.customComponents.map(String).join(', ')}</p>}
+          </div>
+        })}
+        {otherItems.length > 0 && <div className="rounded-xl border border-[#eee5df] p-3 text-xs text-[#76645e]">
+          <p className="font-semibold text-[#3d302e]">Other items in this bag</p>
+          {otherItems.map((item, index) => <p key={`${String(item.productId)}-${index}`} className="mt-1">
+            {String(item.name ?? 'Item')} × {String(item.quantity ?? 1)} · {money(Number(item.price ?? 0) * Number(item.quantity ?? 1))}
+          </p>)}
+        </div>}
+      </div>
       <div className="space-y-3">
         <label className="block text-xs font-medium">Production status<select className="form-input mt-1" value={operation.production_status} onChange={event => setOperation(current => ({ ...current, production_status: event.target.value }))}>
           {productionStatusOptions.map(status => <option key={status} value={status}>{statusLabel(status)}</option>)}

@@ -114,6 +114,16 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
   }
 
   const handleCreateAndAdd = () => {
+    const components = selectedItemGroups.map(({ item, quantity }) => {
+      const magazineOption = item.id.match(/^(.*)-([48])-page$/)
+      return {
+        productId: magazineOption?.[1] ?? item.id,
+        name: item.name,
+        price: item.price,
+        quantity,
+        ...(magazineOption ? { magazinePageCount: Number(magazineOption[2]) as 4 | 8 } : {})
+      }
+    })
     const newCartItem: CartItem = {
       cartId: `custom_${Date.now()}`,
       productId: 'custom_hamper_mix',
@@ -123,7 +133,18 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
       imageUrl: selectedBox.imageUrl,
       recipientName: recipientName.trim() || undefined,
       customMessage: personalNote.trim() || undefined,
-      customComponents: previewItems.map(item => item.name)
+      customComponents: [selectedBox.name, ...components.map(component => (
+        component.quantity > 1 ? `${component.quantity} × ${component.name}` : component.name
+      ))],
+      customGiftCustomization: {
+        box: {
+          id: selectedBox.id,
+          name: selectedBox.name,
+          price: selectedBox.price,
+          imageUrl: selectedBox.imageUrl
+        },
+        components
+      }
     }
 
     onAddCustomHamperToBag(newCartItem)
@@ -326,6 +347,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                     type="text"
                     value={recipientName}
                     onChange={event => setRecipientName(event.target.value)}
+                    maxLength={100}
                     placeholder="Who is this little gift for?"
                     className={`w-full rounded-xl border px-3.5 py-3 text-sm outline-none transition-colors focus:border-[#B36D6D] ${inputClass}`}
                   />
@@ -336,6 +358,7 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                     rows={3}
                     value={personalNote}
                     onChange={event => setPersonalNote(event.target.value)}
+                    maxLength={1000}
                     placeholder="A few heartfelt words..."
                     className={`w-full resize-none rounded-xl border px-3.5 py-3 text-sm outline-none transition-colors focus:border-[#B36D6D] ${inputClass}`}
                   />
@@ -520,10 +543,11 @@ export const CustomGiftBuilder: React.FC<CustomGiftBuilderProps> = ({
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleCreateAndAdd}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#A96F61] px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#925D52]"
+                disabled={selectedItems.length === 0}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-[#A96F61] px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition-colors hover:bg-[#925D52] disabled:cursor-not-allowed disabled:opacity-45"
               >
                 <ShoppingBag className="h-4 w-4" />
-                Add your gift to bag
+                {selectedItems.length ? 'Add your gift to bag' : 'Choose at least one gift item'}
               </motion.button>
             </section>
           </aside>

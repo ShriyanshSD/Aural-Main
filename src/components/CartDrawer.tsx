@@ -176,9 +176,24 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                           {item.magazineCustomization.messageUploadId ? ' · TXT message' : ''}
                         </span>
                       )}
-                      {item.customComponents && item.customComponents.length > 0 && (
+                      {!item.customGiftCustomization && item.customComponents && item.customComponents.length > 0 && (
                         <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block truncate">
                           Includes: {item.customComponents.join(', ')}
+                        </span>
+                      )}
+                      {item.customGiftCustomization && (
+                        <span className="text-[10px] text-[#786660] dark:text-[#B6A6A0] block">
+                          Box: {item.customGiftCustomization.box.name} · ₹{item.customGiftCustomization.box.price.toLocaleString('en-IN')}
+                          {item.customGiftCustomization.components.map(component => (
+                            <span key={`${component.productId}-${component.magazinePageCount ?? ''}`} className="block truncate">
+                              {component.name}{component.quantity > 1 ? ` × ${component.quantity}` : ''} · ₹{(component.price * component.quantity).toLocaleString('en-IN')}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                      {item.customGiftCustomization && item.customMessage && (
+                        <span className="block whitespace-pre-wrap break-words text-[10px] text-[#786660] dark:text-[#B6A6A0]">
+                          Gift message: {item.customMessage}
                         </span>
                       )}
 

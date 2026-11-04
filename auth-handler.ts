@@ -1312,11 +1312,42 @@ interface MagazineCustomizationData {
   additionalPreferences: string
 }
 
+interface CustomGiftSelectionData {
+  boxId: string
+  components: Array<{
+    productId: string
+    quantity: number
+    magazinePageCount?: 4 | 8
+  }>
+}
+
 type PersistedOrderItem = Record<string, unknown> & {
   productId: string
   price: number
   quantity: number
   magazineCustomization?: MagazineCustomizationData
+}
+
+const isCustomGiftSelectionData = (value: unknown): value is CustomGiftSelectionData => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const data = value as Record<string, unknown>
+  return typeof data.boxId === 'string'
+    && /^[a-zA-Z0-9_-]{1,100}$/.test(data.boxId)
+    && Array.isArray(data.components)
+    && data.components.length >= 1
+    && data.components.length <= 19
+    && data.components.every(component => {
+      if (!component || typeof component !== 'object' || Array.isArray(component)) return false
+      const selection = component as Record<string, unknown>
+      return typeof selection.productId === 'string'
+        && /^[a-zA-Z0-9_-]{1,100}$/.test(selection.productId)
+        && Number.isInteger(selection.quantity)
+        && Number(selection.quantity) > 0
+        && Number(selection.quantity) <= 99
+        && (selection.magazinePageCount === undefined
+          || selection.magazinePageCount === 4
+          || selection.magazinePageCount === 8)
+    })
 }
 
 const isMagazineCustomizationData = (value: unknown): value is MagazineCustomizationData => {
@@ -1729,8 +1760,11 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         && (item.customMessage === undefined || (typeof item.customMessage === 'string' && item.customMessage.length <= (item.magazineCustomization === undefined ? 1000 : 10000)))
         && (item.customComponents === undefined || (Array.isArray(item.customComponents) && item.customComponents.length <= 20
           && item.customComponents.every((value: unknown) => typeof value === 'string' && value.length <= 100)))
+        && (item.customGiftCustomization === undefined || isCustomGiftSelectionData(item.customGiftCustomization))
         && (item.magazineCustomization === undefined || isMagazineCustomizationData(item.magazineCustomization))
-        && (item.productId !== 'custom_hamper_mix' || (Array.isArray(item.customComponents) && item.customComponents.length >= 2)))
+        && (item.productId !== 'custom_hamper_mix'
+          || isCustomGiftSelectionData(item.customGiftCustomization)
+          || (Array.isArray(item.customComponents) && item.customComponents.length >= 2)))
     ) return sendJson(res, 400, { error: 'The order details are incomplete or invalid.' })
 
     const details = customer as Record<string, unknown>
@@ -1785,21 +1819,40 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       is_customizable: boolean
       available_finishes: string[]
     }
-    const productIds = [...new Set((items as Array<{ productId: string }>)
-      .map(item => item.productId)
-      .filter(productId => productId !== 'custom_hamper_mix'))]
+    const requestedItems = items as Array<Record<string, unknown>>
+    const giftComponentProductIds = requestedItems.flatMap(item => (
+      isCustomGiftSelectionData(item.customGiftCustomization)
+        ? item.customGiftCustomization.components.map(component => component.productId)
+        : []
+    ))
+    const productIds = [...new Set([
+      ...requestedItems.map(item => String(item.productId)),
+      ...giftComponentProductIds
+    ].filter(productId => productId !== 'custom_hamper_mix'))]
+    const hasLegacyCustomGift = requestedItems.some(item => (
+      item.productId === 'custom_hamper_mix' && !isCustomGiftSelectionData(item.customGiftCustomization)
+    ))
+    const productQuery = new URLSearchParams({
+      select: 'id,name,category,price,image_url,variants,stock_quantity,is_active,is_published,is_customizable,available_finishes',
+      limit: hasLegacyCustomGift ? '1000' : '100'
+    })
+    if (hasLegacyCustomGift) {
+      productQuery.set('is_active', 'eq.true')
+      productQuery.set('is_published', 'eq.true')
+    } else {
+      productQuery.set('id', `in.(${productIds.join(',')})`)
+    }
     const products = await supabaseRequest<CheckoutProduct[]>(
       'aurel_products',
-      new URLSearchParams({
-        id: `in.(${productIds.join(',')})`,
-        select: 'id,name,category,price,image_url,variants,stock_quantity,is_active,is_published,is_customizable,available_finishes',
-        limit: '100'
-      })
+      productQuery
     )
     const productsById = new Map(products.map(product => [product.id, product]))
-    const usesBuiltInMagazine = (items as Array<Record<string, unknown>>).some(item =>
-      item.productId === 'prod_magazine_legacy' && isMagazineCustomizationData(item.magazineCustomization)
-    )
+    const usesBuiltInMagazine = requestedItems.some(item => (
+      (item.productId === 'prod_magazine_legacy' && isMagazineCustomizationData(item.magazineCustomization))
+      || (item.productId === 'custom_hamper_mix'
+        && Array.isArray(item.customComponents)
+        && item.customComponents.some(component => typeof component === 'string' && /^Custom Memory Magazine · [48] pages$/.test(component)))
+    )) || giftComponentProductIds.includes('prod_magazine_legacy')
     const builtInMagazine = PRODUCTS.find(product => product.id === 'prod_magazine_legacy')
     if (usesBuiltInMagazine && builtInMagazine) {
       productsById.set(builtInMagazine.id, {
@@ -1816,29 +1869,137 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         available_finishes: builtInMagazine.availableFinishes ?? []
       })
     }
-    if (productsById.size !== productIds.length) return sendJson(res, 409, { error: 'One or more products are no longer available. Refresh your cart and try again.' })
+    if (productIds.some(productId => !productsById.has(productId))) {
+      return sendJson(res, 409, { error: 'One or more products are no longer available. Refresh your cart and try again.' })
+    }
 
     await validateMagazineOrderUploads(account.id, items as Array<Record<string, unknown>>)
     const quantities = new Map<string, number>()
     const orderItems: PersistedOrderItem[] = (items as Array<Record<string, unknown>>).map(item => {
       if (item.productId === 'custom_hamper_mix') {
+        const giftSelection = isCustomGiftSelectionData(item.customGiftCustomization)
+          ? item.customGiftCustomization
+          : undefined
+        if (giftSelection) {
+          const box = BUILDER_ITEMS.find(component => component.id === giftSelection.boxId && component.category === 'box')
+          if (!box) throw new OrderValidationError('The selected gift box is no longer available. Update your gift and try again.')
+          const giftComponents = giftSelection.components.map(selection => {
+            const product = productsById.get(selection.productId)
+            if (!product || !product.is_active || !product.is_published) {
+              throw new OrderValidationError('One or more gift components are no longer available. Update your gift and try again.')
+            }
+            if (selection.magazinePageCount !== undefined
+              && (product.category !== 'magazines' || !product.is_customizable)) {
+              throw new OrderValidationError('The selected magazine option is invalid. Update your gift and try again.')
+            }
+            const price = selection.magazinePageCount
+              ? MAGAZINE_PRICES[selection.magazinePageCount]
+              : Number(product.price)
+            if (!Number.isFinite(price) || price < 0) {
+              throw new OrderValidationError(`The price for ${product.name} is unavailable.`)
+            }
+            if (selection.magazinePageCount === undefined) {
+              const stockKey = `${product.id}:`
+              quantities.set(stockKey, (quantities.get(stockKey) ?? 0) + selection.quantity * Number(item.quantity))
+              const selectedStock = product.stock_quantity
+              if (selectedStock !== null && quantities.get(stockKey)! > selectedStock) {
+                throw new OrderValidationError(`${product.name} does not have enough stock for the requested quantity.`)
+              }
+            }
+            return {
+              productId: product.id,
+              name: selection.magazinePageCount
+                ? `Custom Memory Magazine · ${selection.magazinePageCount} pages`
+                : product.name,
+              price,
+              quantity: selection.quantity,
+              ...(selection.magazinePageCount ? { magazinePageCount: selection.magazinePageCount } : {})
+            }
+          })
+          const customPrice = Math.round((
+            box.price + giftComponents.reduce((sum, component) => sum + component.price * component.quantity, 0)
+          ) * 100) / 100
+          return {
+            cartId: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : `custom-${randomBytes(8).toString('hex')}`,
+            productId: 'custom_hamper_mix',
+            name: 'Custom Mix & Match Hamper',
+            price: customPrice,
+            quantity: Number(item.quantity),
+            imageUrl: box.imageUrl,
+            ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
+            ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
+            customComponents: [box.name, ...giftComponents.map(component => (
+              component.quantity > 1 ? `${component.quantity} × ${component.name}` : component.name
+            ))],
+            customGiftCustomization: {
+              box: { id: box.id, name: box.name, price: box.price, imageUrl: box.imageUrl },
+              components: giftComponents
+            }
+          }
+        }
         const components = item.customComponents as string[]
-        const selectedComponents = components.map(name => BUILDER_ITEMS.find(component => component.name === name))
-        if (!selectedComponents.length || selectedComponents.some(component => !component) || selectedComponents[0]?.category !== 'box') {
+        const box = BUILDER_ITEMS.find(component => component.name === components[0] && component.category === 'box')
+        const selectedComponents = components.slice(1).map(name => {
+          const magazineOption = name.match(/^Custom Memory Magazine · ([48]) pages$/)
+          if (magazineOption) {
+            const magazine = productsById.get('prod_magazine_legacy')
+            const pageCount = Number(magazineOption[1]) as 4 | 8
+            return magazine
+              ? {
+                productId: magazine.id,
+                name,
+                price: MAGAZINE_PRICES[pageCount],
+                imageUrl: magazine.image_url
+              }
+              : undefined
+          }
+          const builderComponent = BUILDER_ITEMS.find(component => component.name === name && component.category !== 'box')
+          if (builderComponent) {
+            return { productId: builderComponent.id, name: builderComponent.name, price: builderComponent.price, imageUrl: builderComponent.imageUrl }
+          }
+          const product = products.find(candidate => candidate.name === name && candidate.is_active && candidate.is_published)
+          return product
+            ? { productId: product.id, name: product.name, price: Number(product.price), imageUrl: product.image_url }
+            : undefined
+        })
+        if (!box || selectedComponents.length === 0 || selectedComponents.some(component => !component)) {
           throw new OrderValidationError('The custom hamper contains an unavailable component. Update it and try again.')
         }
-        const customPrice = selectedComponents.reduce((sum, component) => sum + (component?.price ?? 0), 0)
-        const customName = typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 160) : 'Custom Mix & Match Hamper'
+        const giftComponents = selectedComponents.filter((component): component is NonNullable<typeof component> => Boolean(component))
+          .reduce<Array<{ productId: string; name: string; price: number; imageUrl: string; quantity: number }>>((result, component) => {
+            const existing = result.find(entry => entry.productId === component.productId)
+            if (existing) existing.quantity += 1
+            else result.push({ ...component, quantity: 1 })
+            return result
+          }, [])
+        for (const component of giftComponents) {
+          const product = productsById.get(component.productId)
+          if (!product) continue
+          const stockKey = `${product.id}:`
+          quantities.set(stockKey, (quantities.get(stockKey) ?? 0) + component.quantity * Number(item.quantity))
+          if (product.stock_quantity !== null && quantities.get(stockKey)! > product.stock_quantity) {
+            throw new OrderValidationError(`${product.name} does not have enough stock for the requested quantity.`)
+          }
+        }
+        const customPrice = Math.round((
+          box.price + giftComponents.reduce((sum, component) => sum + component.price * component.quantity, 0)
+        ) * 100) / 100
         return {
           cartId: typeof item.cartId === 'string' ? item.cartId.slice(0, 120) : `custom-${randomBytes(8).toString('hex')}`,
           productId: 'custom_hamper_mix',
-          name: customName,
+          name: 'Custom Mix & Match Hamper',
           price: customPrice,
           quantity: Number(item.quantity),
-          imageUrl: selectedComponents[0]?.imageUrl ?? '',
+          imageUrl: box.imageUrl,
           ...(typeof item.recipientName === 'string' && item.recipientName.trim() ? { recipientName: item.recipientName.trim() } : {}),
           ...(typeof item.customMessage === 'string' && item.customMessage.trim() ? { customMessage: item.customMessage.trim() } : {}),
-          customComponents: components
+          customComponents: [box.name, ...giftComponents.map(component => (
+            component.quantity > 1 ? `${component.quantity} × ${component.name}` : component.name
+          ))],
+          customGiftCustomization: {
+            box: { id: box.id, name: box.name, price: box.price, imageUrl: box.imageUrl },
+            components: giftComponents.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity }))
+          }
         }
       }
       const product = productsById.get(String(item.productId))

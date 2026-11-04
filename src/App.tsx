@@ -115,6 +115,23 @@ const isCartItem = (value: unknown): value is CartItem => {
       Array.isArray(item.customComponents)
       && item.customComponents.every(component => typeof component === 'string')
     ))
+    && (item.customGiftCustomization === undefined || (
+      typeof item.customGiftCustomization === 'object'
+      && item.customGiftCustomization !== null
+      && typeof item.customGiftCustomization.box?.id === 'string'
+      && typeof item.customGiftCustomization.box?.name === 'string'
+      && typeof item.customGiftCustomization.box?.price === 'number'
+      && typeof item.customGiftCustomization.box?.imageUrl === 'string'
+      && Array.isArray(item.customGiftCustomization.components)
+      && item.customGiftCustomization.components.every(component => (
+        typeof component.productId === 'string'
+        && typeof component.name === 'string'
+        && typeof component.price === 'number'
+        && Number.isInteger(component.quantity)
+        && component.quantity > 0
+        && (component.magazinePageCount === undefined || component.magazinePageCount === 4 || component.magazinePageCount === 8)
+      ))
+    ))
     && (item.magazineCustomization === undefined || (
       typeof item.magazineCustomization.customizationId === 'string'
       && /^[a-f0-9-]{36}$/i.test(item.magazineCustomization.customizationId)
@@ -693,6 +710,7 @@ function StorefrontApp() {
           && i.recipientName === item.recipientName
           && i.customMessage === item.customMessage
           && JSON.stringify(i.customComponents ?? []) === JSON.stringify(item.customComponents ?? [])
+          && JSON.stringify(i.customGiftCustomization ?? null) === JSON.stringify(item.customGiftCustomization ?? null)
           && i.magazineCustomization?.customizationId === item.magazineCustomization?.customizationId
       )
       if (existing) {
@@ -836,7 +854,15 @@ function StorefrontApp() {
           finish: item.finish,
           recipientName: item.recipientName,
           customMessage: item.customMessage,
-          customComponents: item.customComponents,
+          customComponents: item.customGiftCustomization ? undefined : item.customComponents,
+          customGiftCustomization: item.customGiftCustomization ? {
+            boxId: item.customGiftCustomization.box.id,
+            components: item.customGiftCustomization.components.map(component => ({
+              productId: component.productId,
+              quantity: component.quantity,
+              magazinePageCount: component.magazinePageCount
+            }))
+          } : undefined,
           magazineCustomization: item.magazineCustomization
         }))
       })

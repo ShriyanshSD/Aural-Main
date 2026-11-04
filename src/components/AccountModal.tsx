@@ -630,13 +630,21 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                               <li key={`${item.productId}-${index}`} className="flex justify-between gap-3">
                                 <span className="min-w-0">
                                   <span className="block">{item.name}{item.variantName ? ` — ${item.variantName}` : ''} × {item.quantity}</span>
-                                  {(item.finish || item.recipientName || item.customComponents?.length) && (
+                                  {(item.finish || item.recipientName || (!item.customGiftCustomization && item.customComponents?.length)) && (
                                     <span className="mt-0.5 block text-[10px] text-[#8E7973] dark:text-[#A79690]">
                                       {[
                                         item.finish && `Finish: ${item.finish}`,
                                         item.recipientName && `For: ${item.recipientName}`,
                                         ...(item.customComponents ?? [])
                                       ].filter(Boolean).join(' · ')}
+                                    </span>
+                                  )}
+                                  {item.customGiftCustomization && (
+                                    <span className="mt-0.5 block whitespace-pre-wrap text-[10px] text-[#8E7973] dark:text-[#A79690]">
+                                      Box: {item.customGiftCustomization.box.name} · ₹{item.customGiftCustomization.box.price.toLocaleString('en-IN')}
+                                      {item.customGiftCustomization.components.map(component => (
+                                        `\n${component.name}${component.quantity > 1 ? ` × ${component.quantity}` : ''} · ₹${(component.price * component.quantity).toLocaleString('en-IN')}`
+                                      ))}
                                     </span>
                                   )}
                                   {item.customMessage && (

@@ -109,6 +109,7 @@ export interface CartItem {
   recipientName?: string
   customMessage?: string
   customComponents?: string[]
+  customGiftCustomization?: CustomGiftCustomization
   magazineCustomization?: MagazineCustomization
 }
 
@@ -131,6 +132,24 @@ export interface MagazineCustomization {
   dedicationMessage: string
   messageUploadId?: string
   additionalPreferences: string
+}
+
+export interface CustomGiftComponent {
+  productId: string
+  name: string
+  price: number
+  quantity: number
+  magazinePageCount?: 4 | 8
+}
+
+export interface CustomGiftCustomization {
+  box: {
+    id: string
+    name: string
+    price: number
+    imageUrl: string
+  }
+  components: CustomGiftComponent[]
 }
 
 export interface BuilderItem {

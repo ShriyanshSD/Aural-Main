@@ -1207,9 +1207,11 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
         payment_status: string
         order_status: string
         paid_at: string | null
+        custom_gift_archived_at: string | null
+        custom_magazine_archived_at: string | null
       }>('aurel_orders', new URLSearchParams({
         payment_status: 'eq.paid',
-        select: 'id,order_id,user_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at',
+        select: 'id,order_id,user_id,order_data,created_at,fulfillment_status,payment_status,order_status,paid_at,custom_gift_archived_at,custom_magazine_archived_at',
         order: 'created_at.desc',
         limit: '500'
       })),
@@ -1266,7 +1268,8 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     const uploadsById = new Map(uploads.map(upload => [upload.id, upload]))
     const customOrders = paidOrders.filter(order => {
       const items = Array.isArray(order.order_data.items) ? order.order_data.items : []
-      return items.some(item => item && typeof item === 'object' && (item as Record<string, unknown>).productId === 'custom_hamper_mix')
+      return !order.custom_gift_archived_at
+        && items.some(item => item && typeof item === 'object' && (item as Record<string, unknown>).productId === 'custom_hamper_mix')
     }).map(order => ({
       ...order,
       operation: operationMap.get(order.id) ?? {
@@ -1284,6 +1287,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       }
     }))
     const magazines = paidOrders.flatMap(order => {
+      if (order.custom_magazine_archived_at) return []
       const items = Array.isArray(order.order_data.items) ? order.order_data.items : []
       return items.flatMap((rawItem, itemIndex) => {
         if (!rawItem || typeof rawItem !== 'object') return []
@@ -1339,6 +1343,24 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       })
     })
     return sendJson(res, 200, { orders: customOrders, magazines })
+  }
+  if (path === '/api/admin/custom-orders/archive' && method === 'POST') {
+    const body = parseBody(req)
+    if (body.customType !== 'magazines' && body.customType !== 'gift-studio') {
+      return sendJson(res, 400, { error: 'Choose a valid custom order history to clear.' })
+    }
+    const result = await supabaseRequest<{ success: boolean; archivedCount?: number }>(
+      'rpc/aurel_archive_custom_order_history',
+      new URLSearchParams(),
+      {
+        method: 'POST',
+        body: JSON.stringify({ p_owner_id: session.user_id, p_custom_type: body.customType })
+      }
+    )
+    if (!result.success || !Number.isSafeInteger(result.archivedCount) || (result.archivedCount ?? -1) < 0) {
+      return sendJson(res, 500, { error: 'Custom order history could not be cleared. Refresh and try again.' })
+    }
+    return sendJson(res, 200, { success: true, archivedCount: result.archivedCount })
   }
   const customOrderMatch = path.match(/^\/api\/admin\/custom-orders\/(\d+)$/)
   if (customOrderMatch && method === 'PATCH') {
