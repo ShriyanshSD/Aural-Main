@@ -20,6 +20,7 @@ import {
 import { chatHandler } from '../chat-handler.js'
 import { indiaCitiesHandler, indiaStatesHandler } from '../locations-handler.js'
 import { adminApiHandler, publicCatalogHandler } from '../admin-handler.js'
+import { handleNativeCors } from '../native-origin.js'
 
 type ApiRequest = IncomingMessage & {
   body?: unknown
@@ -50,6 +51,7 @@ const routes: Record<string, ApiHandler> = {
 }
 
 export default function handler(req: ApiRequest, res: ServerResponse) {
+  if (handleNativeCors(req, res)) return
   const rewrittenRoute = req.query?.route
   const requestedRoute = Array.isArray(rewrittenRoute) ? rewrittenRoute[0] : rewrittenRoute
   const pathname = requestedRoute

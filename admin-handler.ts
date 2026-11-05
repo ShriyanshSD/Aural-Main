@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { isAllowedNativeOrigin } from './native-origin.js'
 import { PRODUCTS } from './src/data/products.js'
 import type { Product, StorefrontContent } from './src/types/index.js'
 import { createMagazineSignedDownloadUrl, getSupabaseAuthKey, getSupabaseConfig, supabaseRequest } from './auth-handler.js'
@@ -21,6 +22,18 @@ interface AdminSession {
   access_token: string
   refresh_token: string
   expires_at: string
+}
+
+interface NativeAdminSession {
+  id: string
+  user_id: string
+  access_token_hash: string
+  refresh_token_hash: string
+  access_expires_at: string
+  refresh_expires_at: string
+  supabase_access_token: string
+  supabase_refresh_token: string
+  supabase_expires_at: string
 }
 
 interface DeletionAuthUser {
@@ -186,6 +199,8 @@ const productionStatuses = [
 
 const cookieName = 'aurel_admin_session'
 const sessionDurationSeconds = 60 * 60 * 8
+const nativeAccessDurationSeconds = 10 * 60
+const nativeRefreshDurationSeconds = 30 * 24 * 60 * 60
 const defaultSettings: StoreSettings = {
   storeName: 'AUREL',
   tagline: 'Made With Love For You',
@@ -265,6 +280,15 @@ const cookieHeader = (token: string, clear = false) => {
   return `${cookieName}=${clear ? '' : token}; HttpOnly; SameSite=Lax; Path=/api/admin; Max-Age=${clear ? 0 : sessionDurationSeconds}${secure}`
 }
 
+const hashNativeToken = (token: string) => createHash('sha256').update(token).digest('hex')
+
+const getNativeBearerToken = (req: AdminRequest): string | undefined => {
+  const authorization = req.headers.authorization
+  if (!authorization) return undefined
+  const match = /^Bearer ([a-f0-9]{64})$/i.exec(authorization)
+  return match?.[1]
+}
+
 const requestAuth = async <T>(path: string, body?: unknown, accessToken?: string): Promise<T> => {
   const { supabaseUrl } = getSupabaseConfig()
   const response = await fetch(`${supabaseUrl}/auth/v1/${path}`, {
@@ -335,6 +359,7 @@ const upsertSession = async (tokenHash: string, userId: string, tokens: AuthToke
 const requireAdmin = async (req: AdminRequest): Promise<AdminSession | undefined> => {
   const allowedEmails = getAdminEmails()
   if (!allowedEmails.size) throw new Error('ADMIN_EMAILS is not configured.')
+  if (req.headers.authorization) return requireNativeAdmin(req, allowedEmails)
   const token = getCookieToken(req)
   if (!token) return undefined
   const tokenHash = createHash('sha256').update(token).digest('hex')
@@ -380,9 +405,252 @@ const requireAdmin = async (req: AdminRequest): Promise<AdminSession | undefined
   return session
 }
 
+const getNativeSession = async (
+  column: 'access_token_hash' | 'refresh_token_hash',
+  tokenHash: string
+): Promise<NativeAdminSession | undefined> => {
+  const sessions = await supabaseRequest<NativeAdminSession[]>(
+    'aurel_native_admin_sessions',
+    new URLSearchParams({
+      [column]: `eq.${tokenHash}`,
+      select: 'id,user_id,access_token_hash,refresh_token_hash,access_expires_at,refresh_expires_at,supabase_access_token,supabase_refresh_token,supabase_expires_at',
+      limit: '1'
+    })
+  )
+  return sessions[0]
+}
+
+const revokeNativeSession = async (id: string): Promise<void> => {
+  await supabaseRequest('aurel_native_admin_sessions', new URLSearchParams({ id: `eq.${id}` }), {
+    method: 'DELETE'
+  })
+}
+
+const persistNativeIdentityTokens = async (
+  session: NativeAdminSession,
+  tokens: AuthTokens
+): Promise<NativeAdminSession | undefined> => {
+  if (!tokens.access_token || !tokens.refresh_token || !tokens.expires_in) {
+    throw new Error('Supabase Auth returned an incomplete native owner session.')
+  }
+  const rows = await supabaseRequest<NativeAdminSession[]>(
+    'aurel_native_admin_sessions',
+    new URLSearchParams({ id: `eq.${session.id}` }),
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        supabase_access_token: tokens.access_token,
+        supabase_refresh_token: tokens.refresh_token,
+        supabase_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+      })
+    }
+  )
+  return rows[0]
+}
+
+const validateNativeIdentity = async (
+  initialSession: NativeAdminSession,
+  allowedEmails: Set<string>
+): Promise<{session: NativeAdminSession; user: NonNullable<AuthTokens['user']>} | undefined> => {
+  let session = initialSession
+  if (Date.parse(session.supabase_expires_at) < Date.now() + 60_000) {
+    try {
+      const refreshed = await requestAuth<AuthTokens>('token?grant_type=refresh_token', {
+        refresh_token: session.supabase_refresh_token
+      })
+      const updated = await persistNativeIdentityTokens(session, refreshed)
+      if (!updated) return undefined
+      session = updated
+    } catch (error) {
+      if (error instanceof AdminIdentityError && [400, 401, 403].includes(error.status)) {
+        await revokeNativeSession(session.id)
+        return undefined
+      }
+      throw error
+    }
+  }
+
+  let user: AuthTokens['user']
+  try {
+    user = await requestAuth<AuthTokens['user']>('user', undefined, session.supabase_access_token)
+  } catch (error) {
+    if (error instanceof AdminIdentityError && [400, 401, 403].includes(error.status)) {
+      await revokeNativeSession(session.id)
+      return undefined
+    }
+    throw error
+  }
+  if (!user?.id || user.id !== session.user_id || !user.email || !user.email_confirmed_at
+    || !allowedEmails.has(user.email.toLowerCase())) {
+    await revokeNativeSession(session.id)
+    return undefined
+  }
+  return {session, user}
+}
+
+const nativeOriginIsAllowed = (req: AdminRequest): boolean => {
+  const origin = req.headers.origin
+  return Boolean(origin && isAllowedNativeOrigin(origin))
+}
+
+const sendNativeTokens = (
+  res: ServerResponse,
+  accessToken: string,
+  refreshToken: string,
+  accessExpiresAt: string,
+  refreshExpiresAt: string,
+  user: NonNullable<AuthTokens['user']>
+) => sendJson(res, 200, {
+  accessToken,
+  refreshToken,
+  accessExpiresAt,
+  refreshExpiresAt,
+  user: { id: user.id, email: user.email }
+})
+
+const nativeAdminLogin = async (req: AdminRequest, res: ServerResponse) => {
+  if (!nativeOriginIsAllowed(req)) {
+    return sendJson(res, 403, { error: 'The native app origin could not be verified.' })
+  }
+  const body = parseBody(req)
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+  const password = typeof body.password === 'string' ? body.password : ''
+  const allowedEmails = getAdminEmails()
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return sendJson(res, 503, { error: 'The owner dashboard requires Supabase server configuration.' })
+  }
+  if (!allowedEmails.size) return sendJson(res, 503, { error: 'The owner dashboard is not configured. Set ADMIN_EMAILS on the server.' })
+  if (!email || email.length > 254 || !password || password.length > 128 || !allowedEmails.has(email)) {
+    return sendJson(res, 401, { error: 'Unable to sign in with those owner credentials.' })
+  }
+
+  try {
+    const identityTokens = await requestAuth<AuthTokens>('token?grant_type=password', { email, password })
+    const user = identityTokens.user
+    if (!user?.id || !user.email || !user.email_confirmed_at
+      || !allowedEmails.has(user.email.toLowerCase())) {
+      return sendJson(res, 403, { error: 'The owner account must be allowlisted and have a verified email address.' })
+    }
+    if (!identityTokens.access_token || !identityTokens.refresh_token || !identityTokens.expires_in) {
+      throw new Error('Supabase Auth returned an incomplete owner session.')
+    }
+
+    const accessToken = randomBytes(32).toString('hex')
+    const refreshToken = randomBytes(32).toString('hex')
+    const now = Date.now()
+    const accessExpiresAt = new Date(now + nativeAccessDurationSeconds * 1000).toISOString()
+    const refreshExpiresAt = new Date(now + nativeRefreshDurationSeconds * 1000).toISOString()
+    const session: Omit<NativeAdminSession, 'id'> = {
+      user_id: user.id,
+      access_token_hash: hashNativeToken(accessToken),
+      refresh_token_hash: hashNativeToken(refreshToken),
+      access_expires_at: accessExpiresAt,
+      refresh_expires_at: refreshExpiresAt,
+      supabase_access_token: identityTokens.access_token,
+      supabase_refresh_token: identityTokens.refresh_token,
+      supabase_expires_at: new Date(now + identityTokens.expires_in * 1000).toISOString()
+    }
+    await supabaseRequest('aurel_native_admin_sessions', new URLSearchParams(), {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(session)
+    })
+    return sendNativeTokens(res, accessToken, refreshToken, accessExpiresAt, refreshExpiresAt, user)
+  } catch (error) {
+    if (error instanceof AdminIdentityError && error.status >= 400 && error.status < 500) {
+      return sendJson(res, error.status === 429 ? 429 : 401, { error: 'Unable to sign in with those owner credentials.' })
+    }
+    console.error('Native admin sign-in failed:', error)
+    return sendJson(res, 503, { error: 'Native owner sign-in is temporarily unavailable.' })
+  }
+}
+
+const nativeAdminRefresh = async (req: AdminRequest, res: ServerResponse) => {
+  if (!nativeOriginIsAllowed(req)) {
+    return sendJson(res, 403, { error: 'The native app origin could not be verified.' })
+  }
+  const refreshToken = parseBody(req).refreshToken
+  if (typeof refreshToken !== 'string' || !/^[a-f0-9]{64}$/i.test(refreshToken)) {
+    return sendJson(res, 401, { error: 'The native owner session is invalid. Sign in again.' })
+  }
+  const tokenHash = hashNativeToken(refreshToken)
+  const session = await getNativeSession('refresh_token_hash', tokenHash)
+  if (!session || Date.parse(session.refresh_expires_at) <= Date.now()) {
+    if (session) await revokeNativeSession(session.id)
+    return sendJson(res, 401, { error: 'The native owner session has expired. Sign in again.' })
+  }
+  const allowedEmails = getAdminEmails()
+  if (!allowedEmails.size) return sendJson(res, 503, { error: 'The owner dashboard is not configured. Set ADMIN_EMAILS on the server.' })
+  const identity = await validateNativeIdentity(session, allowedEmails)
+  if (!identity) return sendJson(res, 401, { error: 'The native owner session is no longer authorized. Sign in again.' })
+
+  const accessToken = randomBytes(32).toString('hex')
+  const nextRefreshToken = randomBytes(32).toString('hex')
+  const now = Date.now()
+  const accessExpiresAt = new Date(now + nativeAccessDurationSeconds * 1000).toISOString()
+  const refreshExpiresAt = new Date(now + nativeRefreshDurationSeconds * 1000).toISOString()
+  const rotated = await supabaseRequest<NativeAdminSession[]>(
+    'aurel_native_admin_sessions',
+    new URLSearchParams({
+      id: `eq.${session.id}`,
+      refresh_token_hash: `eq.${tokenHash}`
+    }),
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        access_token_hash: hashNativeToken(accessToken),
+        refresh_token_hash: hashNativeToken(nextRefreshToken),
+        access_expires_at: accessExpiresAt,
+        refresh_expires_at: refreshExpiresAt
+      })
+    }
+  )
+  if (!rotated[0]) return sendJson(res, 401, { error: 'The native owner session was already rotated. Sign in again.' })
+  return sendNativeTokens(res, accessToken, nextRefreshToken, accessExpiresAt, refreshExpiresAt, identity.user)
+}
+
+const nativeAdminLogout = async (req: AdminRequest, res: ServerResponse) => {
+  if (!nativeOriginIsAllowed(req)) {
+    return sendJson(res, 403, { error: 'The native app origin could not be verified.' })
+  }
+  const refreshToken = parseBody(req).refreshToken
+  if (typeof refreshToken !== 'string' || !/^[a-f0-9]{64}$/i.test(refreshToken)) {
+    return sendJson(res, 400, { error: 'A valid native refresh token is required to sign out.' })
+  }
+  const session = await getNativeSession('refresh_token_hash', hashNativeToken(refreshToken))
+  if (session) await revokeNativeSession(session.id)
+  return sendJson(res, 200, { success: true })
+}
+
+const requireNativeAdmin = async (
+  req: AdminRequest,
+  allowedEmails: Set<string>
+): Promise<AdminSession | undefined> => {
+  if (!nativeOriginIsAllowed(req)) return undefined
+  const token = getNativeBearerToken(req)
+  if (!token) return undefined
+  const session = await getNativeSession('access_token_hash', hashNativeToken(token))
+  if (!session || Date.parse(session.access_expires_at) <= Date.now()
+    || Date.parse(session.refresh_expires_at) <= Date.now()) {
+    if (session) await revokeNativeSession(session.id)
+    return undefined
+  }
+  const identity = await validateNativeIdentity(session, allowedEmails)
+  if (!identity) return undefined
+  return {
+    user_id: identity.session.user_id,
+    access_token: identity.session.supabase_access_token,
+    refresh_token: identity.session.supabase_refresh_token,
+    expires_at: identity.session.supabase_expires_at
+  }
+}
+
 const isSameOrigin = (req: AdminRequest): boolean => {
   const origin = req.headers.origin
   if (!origin) return false
+  if (isAllowedNativeOrigin(origin)) return true
   try {
     const originHost = new URL(origin).host.toLowerCase()
     const forwardedHost = req.headers['x-forwarded-host']
@@ -739,6 +1007,9 @@ const productPayload = (body: Record<string, unknown>, existing?: ProductRecord)
 
 const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: string) => {
   const method = req.method ?? 'GET'
+  if (path === '/api/admin/native/login' && method === 'POST') return nativeAdminLogin(req, res)
+  if (path === '/api/admin/native/refresh' && method === 'POST') return nativeAdminRefresh(req, res)
+  if (path === '/api/admin/native/logout' && method === 'POST') return nativeAdminLogout(req, res)
   if (path === '/api/admin/login' && method === 'POST') return adminLogin(req, res)
   if (path === '/api/admin/logout' && method === 'POST') {
     if (!isSameOrigin(req)) return sendJson(res, 403, { error: 'The request origin could not be verified.' })

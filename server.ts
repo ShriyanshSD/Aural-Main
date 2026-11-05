@@ -24,6 +24,7 @@ import {
 } from './auth-handler'
 import { indiaCitiesHandler, indiaStatesHandler } from './locations-handler'
 import { adminApiHandler, publicCatalogHandler } from './admin-handler'
+import { handleNativeCors } from './native-origin'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -50,6 +51,11 @@ for (let i = 0; i < cliArgs.length; i += 1) {
 const app = express()
 const PORT = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 3000
 
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next()
+  if (handleNativeCors(req, res)) return
+  next()
+})
 app.use('/api/admin/products/upload', express.json({ limit: '4mb' }))
 app.use(express.json())
 app.get('/api/catalog', (req, res) => publicCatalogHandler(req, res))
