@@ -11,6 +11,8 @@ import type { Product } from './types'
 import type { StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
 import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
+import { isOwnerNativeBuild, ownerApiUrl, ownerAssetUrl, ownerStorefrontUrl } from './utils/ownerApi'
+import { ownerAuthAdapter } from './utils/ownerAuthAdapter'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -222,6 +224,9 @@ const readAnalyticsRange = (): AnalyticsRange => {
   const saved = window.localStorage.getItem(analyticsRangeStorageKey)
   return analyticsRanges.find(range => range === saved) ?? '30d'
 }
+const ownerPathFromLocation = () => isOwnerNativeBuild
+  ? window.location.hash.startsWith('#/admin/') ? window.location.hash.slice(1) : '/admin/dashboard'
+  : window.location.pathname
 const sectionFromPath = (path: string): Section => {
   const segment = path.split('/').filter(Boolean)[1]
   if (segment === 'collections') return 'categories'
@@ -230,10 +235,9 @@ const sectionFromPath = (path: string): Section => {
 }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  ownerAuthAdapter.assertAvailable()
+  const response = await ownerAuthAdapter.fetch(ownerApiUrl(path), {
     ...init,
-    credentials: 'same-origin',
-    cache: 'no-store',
     headers: {
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers
@@ -260,7 +264,7 @@ function usePagination<T>(items: T[], pageSize = 15) {
 }
 
 export default function AdminApp() {
-  const [section, setSection] = useState<Section>(() => sectionFromPath(window.location.pathname))
+  const [section, setSection] = useState<Section>(() => sectionFromPath(ownerPathFromLocation()))
   const [ownerEmail, setOwnerEmail] = useState('')
   const [signedIn, setSignedIn] = useState(false)
   const [authReady, setAuthReady] = useState(false)
@@ -295,7 +299,7 @@ export default function AdminApp() {
   const [customerDraft, setCustomerDraft] = useState<AdminCustomer | null>(null)
 
   const navigateSection = (target: Section) => {
-    window.history.pushState(null, '', `/admin/${target}`)
+    window.history.pushState(null, '', isOwnerNativeBuild ? `#/admin/${target}` : `/admin/${target}`)
     setSection(target)
   }
 
@@ -306,7 +310,7 @@ export default function AdminApp() {
   }
 
   useEffect(() => {
-    const handleRouteChange = () => setSection(sectionFromPath(window.location.pathname))
+    const handleRouteChange = () => setSection(sectionFromPath(ownerPathFromLocation()))
     window.addEventListener('popstate', handleRouteChange)
     return () => window.removeEventListener('popstate', handleRouteChange)
   }, [])
@@ -314,7 +318,7 @@ export default function AdminApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.has('code') || params.has('access_token')) {
-      window.history.replaceState(null, '', '/admin/login')
+      window.history.replaceState(null, '', isOwnerNativeBuild ? '#/admin/login' : '/admin/login')
     }
     void api<{ user: { id: string; email: string } }>('/api/admin/me')
       .then(({ user }) => {
@@ -417,10 +421,12 @@ export default function AdminApp() {
     setBusy(true)
     setError('')
     try {
-      const { user } = await api<{ user: { id: string; email: string } }>('/api/admin/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: loginEmail, password: loginPassword })
-      })
+      const { user } = isOwnerNativeBuild
+        ? await ownerAuthAdapter.login(loginEmail, loginPassword)
+        : await api<{ user: { id: string; email: string } }>('/api/admin/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: loginEmail, password: loginPassword })
+        })
       setOwnerEmail(user.email)
       setSignedIn(true)
       setLoginPassword('')
@@ -433,12 +439,13 @@ export default function AdminApp() {
 
   const logout = async () => {
     try {
-      await api('/api/admin/logout', { method: 'POST', body: '{}' })
+      if (isOwnerNativeBuild) await ownerAuthAdapter.logout()
+      else await api('/api/admin/logout', { method: 'POST', body: '{}' })
       setSignedIn(false)
       setOwnerEmail('')
       setNotice('')
       setSection('dashboard')
-      window.history.replaceState(null, '', '/admin/login')
+      window.history.replaceState(null, '', isOwnerNativeBuild ? '#/admin/login' : '/admin/login')
     } catch (logoutError) {
       setError(logoutError instanceof Error ? logoutError.message : 'Unable to sign out.')
     }
@@ -562,7 +569,7 @@ export default function AdminApp() {
     return (
       <main className="min-h-screen bg-[#f7f3ef] px-5 py-12 text-[#342825]">
         <div className="mx-auto max-w-md">
-          <a href="/" className="inline-flex items-center gap-2 text-sm text-[#8d7068] hover:text-[#a95f60]">
+          <a href={ownerStorefrontUrl()} className="inline-flex items-center gap-2 text-sm text-[#8d7068] hover:text-[#a95f60]">
             <ArrowLeft className="h-4 w-4" /> Return to storefront
           </a>
           <div className="mt-16 rounded-3xl border border-[#eadbd4] bg-white p-8 shadow-xl shadow-[#5d3a2d]/5 sm:p-10">
@@ -570,16 +577,17 @@ export default function AdminApp() {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#a45f60]">Aurel Studio</p>
             <h1 className="mt-2 font-serif-title text-3xl">Owner sign in</h1>
             <p className="mt-3 text-sm leading-6 text-[#826f69]">This private dashboard is for authorized store owners.</p>
+            {ownerAuthAdapter.unavailableMessage && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">{ownerAuthAdapter.unavailableMessage}</p>}
             {error && <AlertMessage message={error} />}
             <form onSubmit={submitLogin} className="mt-7 space-y-4">
               <label className="block text-sm font-medium">Owner email
-                <input autoComplete="username" type="email" required value={loginEmail} onChange={event => setLoginEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
+                <input autoComplete="username" enterKeyHint="next" inputMode="email" type="email" required value={loginEmail} onChange={event => setLoginEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
               </label>
               <div className="block text-sm font-medium">
                 <label htmlFor="owner-login-password">Password</label>
-                <PasswordInput id="owner-login-password" autoComplete="current-password" required value={loginPassword} onChange={event => setLoginPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
+                <PasswordInput id="owner-login-password" autoComplete="current-password" enterKeyHint="go" required value={loginPassword} onChange={event => setLoginPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
               </div>
-              <button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-3 font-semibold text-white transition hover:bg-[#8c4e50] disabled:opacity-60">
+              <button disabled={busy || !ownerAuthAdapter.available} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-3 font-semibold text-white transition hover:bg-[#8c4e50] disabled:opacity-60">
                 {busy && <LoaderCircle className="h-4 w-4 animate-spin" />} Sign in securely
               </button>
             </form>
@@ -594,12 +602,12 @@ export default function AdminApp() {
   return (
     <div className="owner-dashboard min-h-screen bg-[#f1e7d6] text-[#322825]">
       <aside className="owner-sidebar fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-[#e7dac6] bg-[#f8f1e5]/95 shadow-[10px_0_40px_rgba(74,49,39,0.025)] backdrop-blur-xl lg:flex">
-        <a href="/" className="flex h-24 items-center gap-3 border-b border-[#e7dac6] px-6 transition-colors hover:bg-[#f1e8d9]">
+        <a href={ownerStorefrontUrl()} className="flex h-24 items-center gap-3 border-b border-[#e7dac6] px-6 transition-colors hover:bg-[#f1e8d9]">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#bd7e78] to-[#925256] text-white shadow-lg shadow-[#a45f60]/20">
             <Store className="h-5 w-5" />
           </span>
           <span className="flex flex-col items-start">
-            <img src="/aurel-logo.png" alt="AUREL" className="block h-14 w-32 object-contain object-left" />
+            <img src={ownerAssetUrl('/aurel-logo.png')} alt="AUREL" className="block h-14 w-32 object-contain object-left" />
             <span className="mt-1 text-[10px] uppercase tracking-[.18em] text-[#9d7c74]">Owner studio</span>
           </span>
         </a>
@@ -611,7 +619,7 @@ export default function AdminApp() {
         </nav>
         <div className="border-t border-[#e7dac6] bg-[#f8f1e5] p-4">
           <div className="truncate px-2 text-xs text-[#92817b]" title={ownerEmail}>{ownerEmail}</div>
-          <button onClick={() => { window.location.href = '/' }} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#776762] hover:bg-[#f1e8d9]"><ArrowUpRight className="h-4 w-4" /> View storefront</button>
+          <button onClick={() => { window.location.href = ownerStorefrontUrl() }} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#776762] hover:bg-[#f1e8d9]"><ArrowUpRight className="h-4 w-4" /> View storefront</button>
           <button onClick={() => void logout()} className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[#9e5353] hover:bg-[#fff4f2]"><LogOut className="h-4 w-4" /> Sign out</button>
         </div>
       </aside>
@@ -1382,7 +1390,7 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
             <button type="button" onClick={() => onOpenSection('orders')} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-[#483536] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#fff8f5]">
               <Clock3 className="h-4 w-4" /> Review {awaitingCount} awaiting confirmation
             </button>
-            <a href="/" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10">
+            <a href={ownerStorefrontUrl()} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-white/10">
               Open storefront <ArrowUpRight className="h-4 w-4" />
             </a>
           </div>
@@ -1523,7 +1531,7 @@ function ProductsPage({ products, categories, search, setSearch, onRefresh, onEd
       <section className="hidden overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm lg:block">
         <div className="overflow-x-auto"><table className="w-full min-w-[880px] text-left text-sm"><thead className="bg-[#fbf8f6] text-[10px] uppercase tracking-wider text-[#967f77]"><tr><th className="px-3 py-3">Select</th><th className="px-5 py-3">Product</th><th className="px-5 py-3">Category</th><th className="px-5 py-3">Price</th><th className="px-5 py-3">Stock</th><th className="px-5 py-3">Visibility</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-[#f2ece8]">{visibleItems.map(product => <tr key={product.id}>
           <td className="px-3 py-3"><input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={event => toggleProductSelection(product.id, event.target.checked)} /></td>
-          <td className="px-5 py-3"><div className="flex items-center gap-3"><img src={product.imageUrl || '/favicon.ico'} alt="" className="h-11 w-11 rounded-xl bg-[#f5eeea] object-cover" /><div className="min-w-0"><p className="font-medium">{product.name}</p><p className="mt-1 text-[10px] text-[#a18c84]">{product.id}</p></div></div></td>
+          <td className="px-5 py-3"><div className="flex items-center gap-3"><img src={ownerAssetUrl(product.imageUrl || '/favicon.ico')} alt="" className="h-11 w-11 rounded-xl bg-[#f5eeea] object-cover" /><div className="min-w-0"><p className="font-medium">{product.name}</p><p className="mt-1 text-[10px] text-[#a18c84]">{product.id}</p></div></div></td>
           <td className="px-5 py-3">{categories.find(item => item.slug === product.category)?.name ?? product.category}</td><td className="px-5 py-3 font-semibold">{money(product.price)}</td>
           <td className="px-5 py-3">{product.stockQuantity === null ? <span className="text-[#9c8982]">Not tracked</span> : <span className={product.stockQuantity <= product.lowStockThreshold ? 'font-semibold text-amber-700' : ''}>{product.stockQuantity}</span>}</td>
           <td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${product.isActive && product.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4efec] text-[#88766f]'}`}>{product.isActive && product.isPublished ? 'Live' : 'Hidden'}</span></td>
@@ -1534,7 +1542,7 @@ function ProductsPage({ products, categories, search, setSearch, onRefresh, onEd
         {visibleItems.map(product => <article key={product.id} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm">
           <div className="flex items-start gap-3 p-4">
             <input type="checkbox" aria-label={`Select ${product.name}`} checked={selectedIds.includes(product.id)} onChange={event => toggleProductSelection(product.id, event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#a45f60]" />
-            <img src={product.imageUrl || '/favicon.ico'} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-[#f5eeea] object-cover" />
+            <img src={ownerAssetUrl(product.imageUrl || '/favicon.ico')} alt="" className="h-16 w-16 shrink-0 rounded-xl bg-[#f5eeea] object-cover" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-[#40332f]">{product.name}</h3><span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ${product.isActive && product.isPublished ? 'bg-emerald-50 text-emerald-700' : 'bg-[#f4efec] text-[#88766f]'}`}>{product.isActive && product.isPublished ? 'Live' : 'Hidden'}</span></div>
               <p className="mt-1 truncate text-[10px] text-[#a18c84]">{product.id}</p>
@@ -1571,7 +1579,7 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
     {categories.length ? <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{categories.map(category => <article key={category.slug} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm">
       <div className="relative h-36 overflow-hidden bg-gradient-to-br from-[#f7ebe5] via-[#f5f0ec] to-[#e9d8d0] sm:h-40">
         {category.image_url
-          ? <img src={category.image_url} alt={category.name} loading="lazy" className="h-full w-full object-cover transition duration-500 hover:scale-[1.03]" />
+          ? <img src={ownerAssetUrl(category.image_url)} alt={category.name} loading="lazy" className="h-full w-full object-cover transition duration-500 hover:scale-[1.03]" />
           : <div className="grid h-full place-items-center"><Boxes className="h-10 w-10 text-[#b77d75]/60" /></div>}
         <div className="absolute inset-x-0 bottom-0 flex flex-wrap gap-2 bg-gradient-to-t from-black/50 to-transparent px-4 pb-3 pt-10">
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold backdrop-blur ${category.is_active ? 'bg-emerald-50/95 text-emerald-700' : 'bg-white/90 text-[#88766f]'}`}>{category.is_active ? 'Active' : 'Hidden'}</span>
@@ -1991,7 +1999,7 @@ function ProductEditor({ product, isNew, categories, onClose, onSave }: { produc
       <label className="block text-sm font-medium">Image URL<input value={draft.imageUrl} onChange={event => set('imageUrl', event.target.value)} className="form-input" /></label>
       <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#eadfd9] px-3 py-2 text-xs font-semibold text-[#a45f60]"><ImagePlus className="h-4 w-4" />{uploading ? 'Uploading image…' : 'Upload product image'}<input type="file" accept="image/jpeg,image/png,image/webp,image/avif" className="sr-only" onChange={event => void upload(event.target.files?.[0])} /></label>
       <label className="block text-sm font-medium">Additional image URLs (one per line)<textarea rows={3} value={(draft.imageUrls ?? []).filter(url => url !== draft.imageUrl).join('\n')} onChange={event => set('imageUrls', [draft.imageUrl, ...event.target.value.split('\n').map(url => url.trim()).filter(Boolean)])} className="form-input" /><span className="mt-1 block text-xs font-normal text-[#938079]">The primary image is tried first; additional images are used as fallbacks. Up to 10 images.</span></label>
-      <div className="flex flex-wrap gap-2">{[...new Set([draft.imageUrl, ...(draft.imageUrls ?? [])].filter(Boolean))].map(imageUrl => <img key={imageUrl} src={imageUrl} alt="Product image preview" className="h-20 w-20 rounded-xl bg-[#f5eeea] object-cover" />)}</div>
+      <div className="flex flex-wrap gap-2">{[...new Set([draft.imageUrl, ...(draft.imageUrls ?? [])].filter(Boolean))].map(imageUrl => <img key={imageUrl} src={ownerAssetUrl(imageUrl)} alt="Product image preview" className="h-20 w-20 rounded-xl bg-[#f5eeea] object-cover" />)}</div>
       <label className="block text-sm font-medium">Tagline<input value={draft.tagline} onChange={event => set('tagline', event.target.value)} className="form-input" /></label>
       <label className="block text-sm font-medium">Description<textarea rows={3} value={draft.description} onChange={event => set('description', event.target.value)} className="form-input" /></label>
       <label className="block text-sm font-medium">Features, one per line<textarea rows={3} value={draft.features.join('\n')} onChange={event => set('features', event.target.value.split('\n').map(value => value.trim()).filter(Boolean))} className="form-input" /></label>

@@ -53,6 +53,24 @@ npm run dev
 To verify and build for production:
 npm run build
 
+## AUREL Owner Android target
+
+The Android owner app has its own Vite entry (`owner.html` and `src/owner-main.tsx`) and build output (`dist-owner`). It mounts the existing `AdminApp` directly. The website continues to use `index.html`, `src/main.tsx`, relative API URLs, and the unchanged `dist` output.
+
+The owner build uses `https://aural-main.vercel.app` as its public API and storefront origin. Override it at build time with `VITE_OWNER_API_BASE_URL`, for example in `.env.owner` (which must contain only public build settings, never server credentials). The website build does not use this setting.
+
+Build the Android web assets with `npm run build:owner`. Once the Android platform has been added, `npm run android:sync` rebuilds those assets and synchronizes them into the Capacitor project. `capacitor.config.ts` points Capacitor at `dist-owner`, not the website's `dist` directory. Add the native platform once with `npx cap add android`.
+
+The API accepts native-origin CORS requests only from exact HTTPS origins listed in the server-only `OWNER_NATIVE_ORIGINS` environment variable. The default is `https://localhost`, Capacitor's Android WebView origin. Configure the same comma-separated allowlist in the local server and Vercel environment if it changes. Preflight requests are restricted to the listed origin, supported HTTP methods, and the `Content-Type` and `Authorization` headers; wildcard origins and credentialed CORS are not enabled. The existing website continues using same-origin relative requests and does not rely on CORS.
+
+### Native owner authentication
+
+The Android target uses dedicated `/api/admin/native/login`, `/refresh`, and `/logout` endpoints. The server verifies credentials with Supabase Auth and enforces the same verified-email `ADMIN_EMAILS` allowlist as website sign-in. Native access and rotating refresh tokens are opaque, stored hashed on the server, and only returned to the app; Supabase Auth tokens remain server-side. The Android client stores its token pair using `@aparajita/capacitor-secure-storage`, which encrypts data with an Android Keystore-generated AES-GCM key. Native requests use a bearer token and are checked against the server-side session and owner allowlist. Website login remains on the existing HTTP-only cookie flow.
+
+Apply `supabase/migrations/202611080001_native_owner_sessions.sql` before running the native auth endpoints. Set `OWNER_NATIVE_ORIGINS` to the exact native WebView origins. Do not place Supabase or server credentials in any `VITE_` variable. The website cookie flow and its same-origin checks remain unchanged.
+
+`npm run android` builds the owner web assets, syncs the existing Capacitor Android project, and assembles a debug APK. Android packaging and device builds require a supported JDK and Android SDK/Gradle components.
+
 For local development, the server loads `.env` from the `aural` project folder and the workspace root, with project-local values taking precedence. Keep server-only values such as `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_EMAILS` out of browser-prefixed variables.
 
 ## Supabase Account Setup
