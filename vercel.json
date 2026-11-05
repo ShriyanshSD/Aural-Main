@@ -4,6 +4,9 @@
   "rewrites": [
     { "source": "/api/payment/config", "destination": "/api/index?route=/api/payment/config" },
     { "source": "/api/catalog", "destination": "/api/index?route=/api/catalog" },
+    { "source": "/api/admin/native/login", "destination": "/api/index?route=/api/admin/native/login" },
+    { "source": "/api/admin/native/refresh", "destination": "/api/index?route=/api/admin/native/refresh" },
+    { "source": "/api/admin/native/logout", "destination": "/api/index?route=/api/admin/native/logout" },
     { "source": "/api/admin/:path*", "destination": "/api/index?route=/api/admin/:path*" },
     { "source": "/api/chat", "destination": "/api/index?route=/api/chat" },
     { "source": "/api/chat/history", "destination": "/api/index?route=/api/chat/history" },

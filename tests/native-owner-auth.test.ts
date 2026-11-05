@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { createServer, request, type IncomingMessage, type Server } from 'node:http'
 import { after, before, beforeEach, test } from 'node:test'
-import { adminApiHandler } from '../admin-handler'
+import apiHandler from '../api/index'
 
 const ownerEmail = 'owner@example.test'
 const nativeOrigin = 'https://localhost'
@@ -29,6 +30,7 @@ interface NativeAuthResponse {
 
 interface TestIncomingMessage extends IncomingMessage {
   body?: unknown
+  query?: Record<string, string | string[]>
 }
 
 let server: Server
@@ -109,18 +111,27 @@ const mockSupabaseFetch: typeof fetch = async (input, init) => {
 
 const requestJson = async <T,>(
   path: string,
-  options: {method?: string; origin?: string; token?: string; body?: unknown} = {},
-): Promise<{status: number; body: T}> => new Promise((resolve, reject) => {
+  options: {
+    method?: string
+    origin?: string
+    token?: string
+    body?: unknown
+    preflightMethod?: string
+    preflightHeaders?: string
+  } = {},
+): Promise<{status: number; body: T; headers: IncomingMessage['headers']}> => new Promise((resolve, reject) => {
   const body = options.body === undefined ? undefined : JSON.stringify(options.body)
   const headers: Record<string, string> = {'Origin': options.origin ?? nativeOrigin}
   if (body) headers['Content-Type'] = 'application/json'
   if (body) headers['Content-Length'] = String(Buffer.byteLength(body))
   if (options.token) headers.Authorization = `Bearer ${options.token}`
+  if (options.preflightMethod) headers['Access-Control-Request-Method'] = options.preflightMethod
+  if (options.preflightHeaders) headers['Access-Control-Request-Headers'] = options.preflightHeaders
   const parsedOrigin = new URL(serverOrigin)
   const outgoing = request({
     hostname: parsedOrigin.hostname,
     port: parsedOrigin.port,
-    path,
+    path: `/api/index?route=${path}`,
     method: options.method ?? 'GET',
     headers,
   }, response => {
@@ -129,7 +140,11 @@ const requestJson = async <T,>(
     response.on('data', chunk => { responseBody += chunk })
     response.on('end', () => {
       try {
-        resolve({status: response.statusCode ?? 0, body: JSON.parse(responseBody) as T})
+        resolve({
+          status: response.statusCode ?? 0,
+          body: responseBody ? JSON.parse(responseBody) as T : {} as T,
+          headers: response.headers,
+        })
       } catch (error) {
         reject(error)
       }
@@ -154,7 +169,9 @@ before(async () => {
     requestMessage.on('end', () => {
       const req = requestMessage as TestIncomingMessage
       if (requestBody) req.body = JSON.parse(requestBody) as unknown
-      void adminApiHandler(req, response)
+      const rewrittenRoute = new URL(req.url ?? '/', 'http://localhost').searchParams.get('route')
+      req.query = rewrittenRoute ? {route: rewrittenRoute} : {}
+      void apiHandler(req, response)
     })
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -193,6 +210,47 @@ test('rejects invalid credentials and origins', async () => {
   })
   assert.equal(invalidOrigin.status, 403)
   assert.equal(sessions.length, 0)
+})
+
+test('matches Vercel native rewrites and handles unauthenticated preflight before owner auth', async () => {
+  const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8')) as {
+    rewrites: Array<{source: string; destination: string}>
+  }
+  const nativeRoutes = [
+    '/api/admin/native/login',
+    '/api/admin/native/refresh',
+    '/api/admin/native/logout',
+  ]
+  const adminCatchAllIndex = config.rewrites.findIndex(rewrite => rewrite.source === '/api/admin/:path*')
+  assert.notEqual(adminCatchAllIndex, -1)
+  for (const route of nativeRoutes) {
+    const rewriteIndex = config.rewrites.findIndex(rewrite => rewrite.source === route)
+    assert.notEqual(rewriteIndex, -1, `Missing explicit Vercel rewrite for ${route}`)
+    assert.ok(rewriteIndex < adminCatchAllIndex, `${route} must precede the admin catch-all rewrite`)
+    assert.equal(
+      config.rewrites[rewriteIndex].destination,
+      `/api/index?route=${route}`,
+    )
+  }
+
+  const preflight = await requestJson<Record<string, never>>('/api/admin/native/login', {
+    method: 'OPTIONS',
+    preflightMethod: 'POST',
+    preflightHeaders: 'authorization,content-type',
+  })
+  assert.equal(preflight.status, 204)
+  assert.equal(preflight.headers['access-control-allow-origin'], nativeOrigin)
+  assert.match(String(preflight.headers['access-control-allow-methods']), /POST/)
+  assert.match(String(preflight.headers['access-control-allow-headers']), /Authorization/i)
+
+  const login = await requestJson<{error: string}>('/api/admin/native/login', {
+    method: 'POST',
+    body: {email: ownerEmail, password: 'wrong-password'},
+  })
+  assert.equal(login.status, 401)
+  assert.equal(login.body.error, 'Unable to sign in with those owner credentials.')
+  assert.notEqual(login.body.error, 'Owner sign-in required.')
+  assert.equal(login.headers['access-control-allow-origin'], nativeOrigin)
 })
 
 test('rejects unverified and non-allowlisted owner accounts', async () => {
