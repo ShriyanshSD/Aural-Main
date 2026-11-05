@@ -65,31 +65,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const deliveryFee = subtotal === 0 ? 0 : isFreeDelivery ? 0 : 99
   const grandTotal = subtotal + deliveryFee
 
-  // Quick autofill for instant testing
-  const handleAutofillTestData = () => {
-    setCustomerName('Ananya Sharma')
-    setPhoneNumber('9876543210')
-    setEmail('ananya.sharma@example.com')
-    setAddress('Penthouse 14, Lotus Villa, Silver Beach Road')
-    setCity('Mumbai')
-    setState('Maharashtra')
-    setPostalCode('400049')
-    setNotes('Please tie with blush rose silk ribbon and add wax seal')
-    setFormErrors([])
-  }
-
-  const handleClearForm = () => {
-    setCustomerName('')
-    setPhoneNumber('')
-    setEmail('')
-    setAddress('')
-    setCity('')
-    setState('')
-    setPostalCode('')
-    setNotes('')
-    setFormErrors([])
-  }
-
   const validateCurrentCheckout = () => {
     if (locations.error) {
       setFormErrors([locations.error])
@@ -325,31 +300,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               /* Checkout form and demo-order handoff */
               <div className="space-y-6">
                 
-                {/* Test Helper Bar */}
-                <div className={`p-3 rounded-2xl border flex flex-wrap items-center justify-between gap-2 text-xs ${
-                  isDarkMode ? 'bg-[#221B1A] border-[#382C29]' : 'bg-[#FAF2EC] border-[#DEC7BC]'
-                }`}>
-                  <span className="text-[#88756F] dark:text-[#BCAAA3] text-[11px]">
-                    Testing Controls
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleAutofillTestData}
-                      className="px-3 py-1 rounded-full bg-[#B36D6D]/15 text-[#B36D6D] hover:bg-[#B36D6D]/25 font-medium transition-colors text-[11px]"
-                    >
-                      Fill Sample Test Data
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleClearForm}
-                      className="px-3 py-1 rounded-full border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[11px]"
-                    >
-                      Clear Fields
-                    </button>
-                  </div>
-                </div>
-
                 {/* Security Errors Alert Banner */}
                 {formErrors.length > 0 && (
                   <motion.div
