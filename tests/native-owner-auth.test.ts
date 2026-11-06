@@ -33,13 +33,24 @@ interface TestIncomingMessage extends IncomingMessage {
   query?: Record<string, string | string[]>
 }
 
+interface StoredPushDevice {
+  user_id: string
+  owner_email: string
+  token: string
+  token_hash: string
+  platform: string
+  enabled: boolean
+}
+
 let server: Server
 let serverOrigin: string
 let sessions: StoredNativeSession[] = []
+let pushDevices: StoredPushDevice[] = []
 let userEmail = ownerEmail
 let emailConfirmedAt: string | null = new Date().toISOString()
 let nextSessionId = 0
 const originalFetch = globalThis.fetch
+const originalFirebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
 
 const jsonResponse = (payload: unknown, status = 200): Response =>
   new Response(JSON.stringify(payload), {
@@ -106,6 +117,22 @@ const mockSupabaseFetch: typeof fetch = async (input, init) => {
     }
   }
 
+  if (url.pathname === '/rest/v1/aurel_owner_push_devices') {
+    if (method === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as StoredPushDevice
+      pushDevices = [...pushDevices.filter(device => device.token_hash !== body.token_hash), body]
+      return new Response(null, {status: 201})
+    }
+    if (method === 'DELETE') {
+      const tokenHash = url.searchParams.get('token_hash')?.slice(3)
+      const userId = url.searchParams.get('user_id')?.slice(3)
+      pushDevices = pushDevices.filter(device =>
+        (tokenHash && device.token_hash !== tokenHash)
+        || (userId && device.user_id !== userId))
+      return new Response(null, {status: 204})
+    }
+  }
+
   return jsonResponse({message: `Unexpected test request: ${method} ${url.pathname}`}, 500)
 }
 
@@ -157,9 +184,10 @@ const requestJson = async <T,>(
 
 before(async () => {
   process.env.SUPABASE_URL = 'https://supabase.test'
-  process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-server-secret'
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'unit-test-placeholder'
   process.env.ADMIN_EMAILS = ownerEmail
   process.env.OWNER_NATIVE_ORIGINS = nativeOrigin
+  delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   globalThis.fetch = mockSupabaseFetch
 
   server = createServer((requestMessage, response) => {
@@ -182,6 +210,7 @@ before(async () => {
 
 beforeEach(() => {
   sessions = []
+  pushDevices = []
   userEmail = ownerEmail
   emailConfirmedAt = new Date().toISOString()
   nextSessionId = 0
@@ -194,6 +223,8 @@ after(async () => {
   delete process.env.SUPABASE_SERVICE_ROLE_KEY
   delete process.env.ADMIN_EMAILS
   delete process.env.OWNER_NATIVE_ORIGINS
+  if (originalFirebaseServiceAccount === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+  else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = originalFirebaseServiceAccount
 })
 
 test('rejects invalid credentials and origins', async () => {
@@ -267,6 +298,43 @@ test('rejects unverified and non-allowlisted owner accounts', async () => {
     body: {email: 'other@example.test', password: 'GoodPassword1'},
   })
   assert.equal(notAllowlisted.status, 401)
+})
+
+test('registers and removes push devices only for an authenticated native owner', async () => {
+  const unauthenticated = await requestJson<{error: string}>('/api/admin/notifications/device', {
+    method: 'POST',
+    body: {token: 'f'.repeat(80)},
+  })
+  assert.equal(unauthenticated.status, 401)
+
+  const login = await requestJson<NativeAuthResponse>('/api/admin/native/login', {
+    method: 'POST',
+    body: {email: ownerEmail, password: 'GoodPassword1'},
+  })
+  assert.equal(login.status, 200)
+
+  const token = 'device-registration-token'.repeat(4)
+  const registered = await requestJson<{success: boolean; deliveryConfigured: boolean}>('/api/admin/notifications/device', {
+    method: 'POST',
+    token: login.body.accessToken,
+    body: {token},
+  })
+  assert.equal(registered.status, 200)
+  assert.equal(registered.body.success, true)
+  assert.equal(registered.body.deliveryConfigured, false)
+  assert.equal(pushDevices.length, 1)
+  assert.equal(pushDevices[0].user_id, ownerId)
+  assert.equal(pushDevices[0].owner_email, ownerEmail)
+  assert.notEqual(pushDevices[0].token_hash, token)
+
+  const removed = await requestJson<{success: boolean}>('/api/admin/notifications/device', {
+    method: 'DELETE',
+    token: login.body.accessToken,
+    body: {token},
+  })
+  assert.equal(removed.status, 200)
+  assert.equal(removed.body.success, true)
+  assert.equal(pushDevices.length, 0)
 })
 
 test('issues protected native sessions, rotates refresh tokens, and revokes on logout', async () => {

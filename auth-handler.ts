@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { BUILDER_ITEMS, PRODUCTS } from './src/data/products.js'
 import { MAGAZINE_PRICES } from './src/data/magazinePricing.js'
 import { isValidAccountEmail, normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
+import { sendNewOrderPushNotification } from './firebase-push.js'
 
 interface AuthRequest extends IncomingMessage {
   body?: unknown
@@ -1499,6 +1500,35 @@ const isSecureProofUrl = (value: string): boolean => {
   }
 }
 
+const notifyOwnerDevicesOfNewOrder = async (orderId: string): Promise<void> => {
+  const credentialsConfigured = Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
+  const allowedEmails = new Set((process.env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map(email => email.trim().toLowerCase())
+    .filter(Boolean))
+  if (!credentialsConfigured || !allowedEmails.size) return
+
+  const devices = await supabaseRequest<Array<{token: string; token_hash: string; owner_email: string}>>(
+    'aurel_owner_push_devices',
+    new URLSearchParams({ enabled: 'eq.true', select: 'token,token_hash,owner_email', limit: '1000' })
+  )
+  const recipients = devices.filter(device => allowedEmails.has(device.owner_email.toLowerCase()))
+  if (!recipients.length) return
+
+  const invalidTokens = await sendNewOrderPushNotification(
+    recipients.map(device => device.token),
+    orderId
+  )
+  const invalidTokenHashes = new Set(invalidTokens.map(token => createHash('sha256').update(token).digest('hex')))
+  for (const device of recipients) {
+    if (invalidTokenHashes.has(device.token_hash)) {
+      await supabaseRequest('aurel_owner_push_devices', new URLSearchParams({
+        token_hash: `eq.${device.token_hash}`
+      }), { method: 'DELETE' })
+    }
+  }
+}
+
 export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse): Promise<void> {
   try {
     const account = await getSessionAccount(req)
@@ -2117,6 +2147,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       orderStatus: 'pending_payment'
     }
     let stored: StoredAccountOrder[]
+    let createdNewOrder = false
     try {
       stored = await supabaseRequest<StoredAccountOrder[]>(
         'aurel_orders',
@@ -2136,6 +2167,7 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           })
         }
       )
+      createdNewOrder = true
     } catch (insertError) {
       if (!(insertError instanceof AccountServiceError) || String(insertError.code) !== '23505') throw insertError
       stored = await supabaseRequest<StoredAccountOrder[]>(
@@ -2151,6 +2183,14 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
     const row = stored[0]
     if (!row) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
     if (typeof row.id !== 'number') throw new Error('The saved order did not return its database ID.')
+    if (createdNewOrder) {
+      try {
+        await notifyOwnerDevicesOfNewOrder(row.order_id)
+      } catch (pushError) {
+        const detail = pushError instanceof Error ? pushError.message : 'Unknown Firebase delivery error.'
+        console.error('The order was saved, but owner push notifications could not be delivered:', detail)
+      }
+    }
     await associateMagazineOrderItems(row.id, account.id, orderItems)
     return sendJson(res, 201, {
       order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status },

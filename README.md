@@ -69,6 +69,12 @@ The Android target uses dedicated `/api/admin/native/login`, `/refresh`, and `/l
 
 Apply `supabase/migrations/202611080001_native_owner_sessions.sql` before running the native auth endpoints. Set `OWNER_NATIVE_ORIGINS` to the exact native WebView origins. Do not place Supabase or server credentials in any `VITE_` variable. The website cookie flow and its same-origin checks remain unchanged.
 
+### Owner Android push notifications
+
+The Android owner app uses Capacitor Push Notifications and Firebase Cloud Messaging for new-order alerts. Register the Firebase Android app with package ID `com.aurel.owner`, place its `google-services.json` in `android/app/`, then run `npm run android` to sync and build. The app asks the signed-in owner for notification permission and registers its device token using native owner authentication.
+
+Apply `supabase/migrations/202611090001_owner_push_devices.sql` before registering devices. Enable Firebase Cloud Messaging for the Firebase project, then configure `FIREBASE_SERVICE_ACCOUNT_JSON` as a server-only Vercel Environment Variable containing a service account with Firebase Cloud Messaging send permission for that same project. The Firebase Admin SDK requires Node.js 22 or later in the Vercel function runtime. Never add that service-account JSON to the repository, `google-services.json`, a `VITE_` variable, or the APK. When this variable is absent, order creation still succeeds and push delivery is skipped. Push delivery failures do not fail checkout.
+
 `npm run android` builds the owner web assets, syncs the existing Capacitor Android project, and assembles a debug APK. Android packaging and device builds require a supported JDK and Android SDK/Gradle components.
 
 For local development, the server loads `.env` from the `aural` project folder and the workspace root, with project-local values taking precedence. Keep server-only values such as `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_EMAILS` out of browser-prefixed variables.

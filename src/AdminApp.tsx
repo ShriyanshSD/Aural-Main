@@ -13,6 +13,7 @@ import PasswordInput from './components/PasswordInput'
 import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
 import { isOwnerNativeBuild, ownerApiUrl, ownerAssetUrl, ownerStorefrontUrl } from './utils/ownerApi'
 import { ownerAuthAdapter } from './utils/ownerAuthAdapter'
+import { startOwnerPushNotifications, unregisterOwnerPushNotifications } from './utils/ownerPushNotifications'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -330,6 +331,34 @@ export default function AdminApp() {
       .finally(() => setAuthReady(true))
   }, [])
 
+  useEffect(() => {
+    if (!signedIn || !isOwnerNativeBuild) return
+    let cancelled = false
+    let cleanup = () => {}
+    void startOwnerPushNotifications(pushError => {
+      console.error('Owner push notification registration failed.', pushError)
+      if (!cancelled) setNotice('Order alerts are temporarily unavailable on this device.')
+    }).then(setup => {
+      if (cancelled) {
+        setup.cleanup()
+        return
+      }
+      cleanup = setup.cleanup
+      if (setup.status === 'permission-denied') {
+        setNotice('Allow notifications for AUREL Owner in Android settings to receive new order alerts.')
+      } else if (setup.status === 'server-not-configured') {
+        setNotice('Device alerts are enabled, but server-side Firebase delivery still needs configuration.')
+      }
+    }).catch(pushError => {
+      console.error('Owner push notification setup failed.', pushError)
+      if (!cancelled) setNotice('Order alerts are temporarily unavailable on this device.')
+    })
+    return () => {
+      cancelled = true
+      cleanup()
+    }
+  }, [signedIn])
+
   const loadSection = async (target: Section) => {
     setBusy(true)
     setError('')
@@ -439,7 +468,14 @@ export default function AdminApp() {
 
   const logout = async () => {
     try {
-      if (isOwnerNativeBuild) await ownerAuthAdapter.logout()
+      if (isOwnerNativeBuild) {
+        try {
+          await unregisterOwnerPushNotifications()
+        } catch (pushError) {
+          console.error('Unable to unregister this device for owner notifications.', pushError)
+        }
+        await ownerAuthAdapter.logout()
+      }
       else await api('/api/admin/logout', { method: 'POST', body: '{}' })
       setSignedIn(false)
       setOwnerEmail('')
