@@ -14,6 +14,7 @@ import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
 import { isOwnerNativeBuild, ownerApiUrl, ownerAssetUrl, ownerStorefrontUrl } from './utils/ownerApi'
 import { ownerAuthAdapter } from './utils/ownerAuthAdapter'
 import { listenForOwnerOrderNotifications, startOwnerPushNotifications, unregisterOwnerPushNotifications } from './utils/ownerPushNotifications'
+import { saveOwnerDownload } from './utils/ownerFileDownloads'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -1044,15 +1045,10 @@ function CustomMagazineCard({ magazine }: { magazine: AdminMagazineOrder }) {
         await zipWriter.add(file.filename, new HttpReader(file.downloadUrl), { level: 0 })
       }
       const archive = await zipWriter.close()
-      const objectUrl = URL.createObjectURL(archive)
-      const link = document.createElement('a')
-      link.href = objectUrl
-      link.download = result.downloadFilename
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
-      setDownloadNotice('Photos ZIP downloaded. You can download it again at any time.')
+      const location = await saveOwnerDownload(archive, result.downloadFilename, 'application/zip')
+      setDownloadNotice(location === 'device'
+        ? 'Photos ZIP saved to Downloads/AUREL Owner.'
+        : 'Photos ZIP downloaded. You can download it again at any time.')
     } catch (error) {
       setDownloadError(error instanceof Error ? error.message : 'The photos ZIP could not be prepared.')
     } finally {
@@ -1072,15 +1068,11 @@ function CustomMagazineCard({ magazine }: { magazine: AdminMagazineOrder }) {
       )
       const response = await fetch(result.downloadUrl, { cache: 'no-store' })
       if (!response.ok) throw new Error('The private TXT attachment could not be downloaded.')
-      const objectUrl = URL.createObjectURL(await response.blob())
-      const link = document.createElement('a')
-      link.href = objectUrl
-      link.download = result.filename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'Magazine_Message.txt'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
-      setDownloadNotice('Message downloaded. You can download it again at any time.')
+      const filename = result.filename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'Magazine_Message.txt'
+      const location = await saveOwnerDownload(await response.blob(), filename, 'text/plain')
+      setDownloadNotice(location === 'device'
+        ? 'Message saved to Downloads/AUREL Owner.'
+        : 'Message downloaded. You can download it again at any time.')
     } catch (error) {
       setDownloadError(error instanceof Error ? error.message : 'The TXT attachment could not be downloaded.')
     } finally {
