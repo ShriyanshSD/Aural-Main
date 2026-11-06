@@ -22,6 +22,8 @@ interface AdminSession {
   access_token: string
   refresh_token: string
   expires_at: string
+  native?: boolean
+  user_email?: string
 }
 
 interface NativeAdminSession {
@@ -643,7 +645,9 @@ const requireNativeAdmin = async (
     user_id: identity.session.user_id,
     access_token: identity.session.supabase_access_token,
     refresh_token: identity.session.supabase_refresh_token,
-    expires_at: identity.session.supabase_expires_at
+    expires_at: identity.session.supabase_expires_at,
+    native: true,
+    user_email: identity.user.email
   }
 }
 
@@ -1034,6 +1038,42 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
   if (!session) return sendJson(res, 401, { error: 'Owner sign-in required.' })
   if (!['GET', 'HEAD'].includes(method) && !isSameOrigin(req)) {
     return sendJson(res, 403, { error: 'The request origin could not be verified.' })
+  }
+
+  if (path === '/api/admin/notifications/device' && ['POST', 'DELETE'].includes(method)) {
+    if (!session.native || !session.user_email) {
+      return sendJson(res, 403, { error: 'Device notifications are only available in the authenticated Owner app.' })
+    }
+    const token = parseBody(req).token
+    if (typeof token !== 'string' || token.length < 20 || token.length > 4096) {
+      return sendJson(res, 400, { error: 'A valid device notification token is required.' })
+    }
+    const tokenHash = createHash('sha256').update(token).digest('hex')
+    if (method === 'POST') {
+      await supabaseRequest('aurel_owner_push_devices', new URLSearchParams({ on_conflict: 'token_hash' }), {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({
+          user_id: session.user_id,
+          owner_email: session.user_email.toLowerCase(),
+          token,
+          token_hash: tokenHash,
+          platform: 'android',
+          enabled: true,
+          updated_at: new Date().toISOString()
+        })
+      })
+      return sendJson(res, 200, {
+        success: true,
+        deliveryConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
+      })
+    }
+
+    await supabaseRequest('aurel_owner_push_devices', new URLSearchParams({
+      user_id: `eq.${session.user_id}`,
+      token_hash: `eq.${tokenHash}`
+    }), { method: 'DELETE' })
+    return sendJson(res, 200, { success: true })
   }
 
   if (path === '/api/admin/me' && method === 'GET') {

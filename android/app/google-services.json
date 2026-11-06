@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "363620614384",
+    "project_id": "aurel-bb325",
+    "storage_bucket": "aurel-bb325.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:363620614384:android:59be827babf6c3b924c235",
+        "android_client_info": {
+          "package_name": "com.aurel.owner"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQKx0cisyg7XW6gw7oiYEQn_XgbRtzyak"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
