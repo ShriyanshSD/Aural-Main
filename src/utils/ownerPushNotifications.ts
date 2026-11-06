@@ -6,6 +6,43 @@ import { ownerAuthAdapter } from './ownerAuthAdapter'
 import { isOwnerNativeBuild, ownerApiUrl } from './ownerApi'
 
 const storedPushTokenKey = 'owner_native_push_token'
+type OwnerOrderNotificationListener = (orderId: string) => void
+const ownerOrderNotificationListeners = new Set<OwnerOrderNotificationListener>()
+let pendingOwnerOrderId: string | null = null
+
+const dispatchOwnerOrderNotification = (data: unknown): void => {
+  if (!data || typeof data !== 'object') return
+  const notificationData = data as Record<string, unknown>
+  const orderId = notificationData.orderId
+  if (notificationData.type !== 'new_order' || typeof orderId !== 'string') return
+
+  if (!ownerOrderNotificationListeners.size) {
+    pendingOwnerOrderId = orderId
+    return
+  }
+  ownerOrderNotificationListeners.forEach(listener => listener(orderId))
+}
+
+if (isOwnerNativeBuild && Capacitor.getPlatform() === 'android') {
+  void PushNotifications.addListener('pushNotificationActionPerformed', action => {
+    dispatchOwnerOrderNotification(action.notification.data)
+  }).catch(error => console.error('Unable to listen for owner push notification actions.', error))
+  void LocalNotifications.addListener('localNotificationActionPerformed', action => {
+    dispatchOwnerOrderNotification(action.notification.extra)
+  }).catch(error => console.error('Unable to listen for owner local notification actions.', error))
+}
+
+export const listenForOwnerOrderNotifications = (
+  listener: OwnerOrderNotificationListener,
+): (() => void) => {
+  ownerOrderNotificationListeners.add(listener)
+  if (pendingOwnerOrderId) {
+    const orderId = pendingOwnerOrderId
+    pendingOwnerOrderId = null
+    listener(orderId)
+  }
+  return () => ownerOrderNotificationListeners.delete(listener)
+}
 
 export interface OwnerPushSetup {
   status: 'enabled' | 'server-not-configured' | 'permission-denied' | 'not-native'
@@ -87,6 +124,7 @@ export const startOwnerPushNotifications = async (
         title: notification.title || 'AUREL owner update',
         body: notification.body || 'You have a new owner notification.',
         channelId: 'aurel-orders',
+        extra: notification.data,
       }],
     }).catch(onError)
   }))
