@@ -13,7 +13,7 @@ import PasswordInput from './components/PasswordInput'
 import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
 import { isOwnerNativeBuild, ownerApiUrl, ownerAssetUrl, ownerStorefrontUrl } from './utils/ownerApi'
 import { ownerAuthAdapter } from './utils/ownerAuthAdapter'
-import { startOwnerPushNotifications, unregisterOwnerPushNotifications } from './utils/ownerPushNotifications'
+import { listenForOwnerOrderNotifications, startOwnerPushNotifications, unregisterOwnerPushNotifications } from './utils/ownerPushNotifications'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -275,6 +275,7 @@ export default function AdminApp() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
+  const [ordersNotificationVersion, setOrdersNotificationVersion] = useState(0)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(readAnalyticsRange)
   const [products, setProducts] = useState<AdminProduct[]>([])
@@ -316,6 +317,12 @@ export default function AdminApp() {
     return () => window.removeEventListener('popstate', handleRouteChange)
   }, [])
 
+  useEffect(() => listenForOwnerOrderNotifications(orderId => {
+    setSearch(orderId)
+    setOrdersNotificationVersion(version => version + 1)
+    navigateSection('orders')
+  }), [])
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.has('code') || params.has('access_token')) {
@@ -325,7 +332,6 @@ export default function AdminApp() {
       .then(({ user }) => {
         setOwnerEmail(user.email)
         setSignedIn(true)
-        navigateSection('dashboard')
       })
       .catch(() => setSignedIn(false))
       .finally(() => setAuthReady(true))
@@ -758,7 +764,7 @@ export default function AdminApp() {
               }
             }}
           />}
-          {section === 'orders' && <OrdersPage orders={orders} search={search} setSearch={setSearch} confirmingOrderId={confirmingOrderId} updatingStatusOrderId={updatingStatusOrderId} archivingDeliveredOrders={archivingDeliveredOrders} onArchiveDelivered={() => {
+          {section === 'orders' && <OrdersPage key={ordersNotificationVersion} orders={orders} search={search} setSearch={setSearch} confirmingOrderId={confirmingOrderId} updatingStatusOrderId={updatingStatusOrderId} archivingDeliveredOrders={archivingDeliveredOrders} onArchiveDelivered={() => {
             setArchivingDeliveredOrders(true)
             void runAction(async () => api<{ archivedCount: number }>('/api/admin/orders/archive-delivered', { method: 'POST', body: '{}' }), result =>
               result.archivedCount === 1 ? '1 delivered order archived from the owner order history.' : `${result.archivedCount} delivered orders archived from the owner order history.`

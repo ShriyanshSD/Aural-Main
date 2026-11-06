@@ -49,6 +49,9 @@ let pushDevices: StoredPushDevice[] = []
 let userEmail = ownerEmail
 let emailConfirmedAt: string | null = new Date().toISOString()
 let nextSessionId = 0
+let ownerPushDeviceLookupCount = 0
+let submitOrderAlreadySubmitted = false
+let submitOrderSuccess = true
 const originalFetch = globalThis.fetch
 const originalFirebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
 
@@ -118,6 +121,10 @@ const mockSupabaseFetch: typeof fetch = async (input, init) => {
   }
 
   if (url.pathname === '/rest/v1/aurel_owner_push_devices') {
+    if (method === 'GET') {
+      ownerPushDeviceLookupCount += 1
+      return jsonResponse([])
+    }
     if (method === 'POST') {
       const body = JSON.parse(String(init?.body ?? '{}')) as StoredPushDevice
       pushDevices = [...pushDevices.filter(device => device.token_hash !== body.token_hash), body]
@@ -133,6 +140,27 @@ const mockSupabaseFetch: typeof fetch = async (input, init) => {
     }
   }
 
+  if (url.pathname === '/rest/v1/aurel_sessions' && method === 'GET') {
+    return jsonResponse([{user_id: ownerId, expires_at: new Date(Date.now() + 60_000).toISOString()}])
+  }
+
+  if (url.pathname === '/rest/v1/aurel_users' && method === 'GET') {
+    return jsonResponse([{id: ownerId, account_status: 'active'}])
+  }
+
+  if (url.pathname === '/rest/v1/aurel_orders' && method === 'GET') {
+    return jsonResponse([{
+      id: 123,
+      order_id: 'AUR-2026-12345',
+      fulfillment_status: 'unfulfilled',
+      order_experience_rating: null,
+    }])
+  }
+
+  if (url.pathname === '/rest/v1/rpc/aurel_submit_order_for_payment' && method === 'POST') {
+    return jsonResponse({success: submitOrderSuccess, alreadySubmitted: submitOrderAlreadySubmitted})
+  }
+
   return jsonResponse({message: `Unexpected test request: ${method} ${url.pathname}`}, 500)
 }
 
@@ -142,6 +170,7 @@ const requestJson = async <T,>(
     method?: string
     origin?: string
     token?: string
+    cookie?: string
     body?: unknown
     preflightMethod?: string
     preflightHeaders?: string
@@ -151,6 +180,7 @@ const requestJson = async <T,>(
   const headers: Record<string, string> = {'Origin': options.origin ?? nativeOrigin}
   if (body) headers['Content-Type'] = 'application/json'
   if (body) headers['Content-Length'] = String(Buffer.byteLength(body))
+  if (options.cookie) headers.Cookie = options.cookie
   if (options.token) headers.Authorization = `Bearer ${options.token}`
   if (options.preflightMethod) headers['Access-Control-Request-Method'] = options.preflightMethod
   if (options.preflightHeaders) headers['Access-Control-Request-Headers'] = options.preflightHeaders
@@ -214,6 +244,9 @@ beforeEach(() => {
   userEmail = ownerEmail
   emailConfirmedAt = new Date().toISOString()
   nextSessionId = 0
+  ownerPushDeviceLookupCount = 0
+  submitOrderAlreadySubmitted = false
+  submitOrderSuccess = true
 })
 
 after(async () => {
@@ -335,6 +368,34 @@ test('registers and removes push devices only for an authenticated native owner'
   assert.equal(removed.status, 200)
   assert.equal(removed.body.success, true)
   assert.equal(pushDevices.length, 0)
+})
+
+test('notifies owners only after the first successful WhatsApp payment handoff', async () => {
+  process.env.FIREBASE_SERVICE_ACCOUNT_JSON = '{}'
+  const options = {
+    method: 'PATCH',
+    origin: serverOrigin,
+    cookie: `aurel_session=${'a'.repeat(64)}`,
+    body: {orderId: 'AUR-2026-12345', submitForPayment: true},
+  }
+
+  const submitted = await requestJson<{success: boolean; alreadySubmitted: boolean}>('/api/auth/orders', options)
+  assert.equal(submitted.status, 200)
+  assert.equal(submitted.body.success, true)
+  assert.equal(submitted.body.alreadySubmitted, false)
+  assert.equal(ownerPushDeviceLookupCount, 1)
+
+  submitOrderAlreadySubmitted = true
+  const repeatedSubmission = await requestJson<{success: boolean; alreadySubmitted: boolean}>('/api/auth/orders', options)
+  assert.equal(repeatedSubmission.status, 200)
+  assert.equal(repeatedSubmission.body.alreadySubmitted, true)
+  assert.equal(ownerPushDeviceLookupCount, 1)
+
+  submitOrderAlreadySubmitted = false
+  submitOrderSuccess = false
+  const rejectedSubmission = await requestJson<{error: string}>('/api/auth/orders', options)
+  assert.equal(rejectedSubmission.status, 409)
+  assert.equal(ownerPushDeviceLookupCount, 1)
 })
 
 test('issues protected native sessions, rotates refresh tokens, and revokes on logout', async () => {

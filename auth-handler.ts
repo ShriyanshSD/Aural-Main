@@ -1551,9 +1551,9 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       if (typeof orderId !== 'string' || !/^(?:AUR-\d{4}-\d{5,}|AUREL[A-Z0-9]{5,16})$/.test(orderId)) {
         return sendJson(res, 400, { error: 'Provide a valid order number.' })
       }
-      const orders = await supabaseRequest<Array<{ id: number; fulfillment_status: string; order_experience_rating: number | null }>>(
+      const orders = await supabaseRequest<Array<{ id: number; order_id: string; fulfillment_status: string; order_experience_rating: number | null }>>(
         'aurel_orders',
-        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,fulfillment_status,order_experience_rating', limit: '1' })
+        new URLSearchParams({ user_id: `eq.${account.id}`, order_id: `eq.${orderId}`, select: 'id,order_id,fulfillment_status,order_experience_rating', limit: '1' })
       )
       if (!orders[0]) return sendJson(res, 404, { error: 'Order not found in your account.' })
       if (body.submitForPayment === true) {
@@ -1567,6 +1567,14 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
         )
         if (submission.reason === 'not_found') return sendJson(res, 404, { error: 'Order not found in your account.' })
         if (!submission.success) return sendJson(res, 409, { error: 'This order is no longer awaiting payment. Refresh your orders before continuing.' })
+        if (!submission.alreadySubmitted) {
+          try {
+            await notifyOwnerDevicesOfNewOrder(orders[0].order_id)
+          } catch (pushError) {
+            const detail = pushError instanceof Error ? pushError.message : 'Unknown Firebase delivery error.'
+            console.error('The order was submitted, but owner push notifications could not be delivered:', detail)
+          }
+        }
         return sendJson(res, 200, { success: true, alreadySubmitted: Boolean(submission.alreadySubmitted) })
       }
       if (body.orderExperienceRating !== undefined) {
@@ -2147,7 +2155,6 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
       orderStatus: 'pending_payment'
     }
     let stored: StoredAccountOrder[]
-    let createdNewOrder = false
     try {
       stored = await supabaseRequest<StoredAccountOrder[]>(
         'aurel_orders',
@@ -2167,7 +2174,6 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
           })
         }
       )
-      createdNewOrder = true
     } catch (insertError) {
       if (!(insertError instanceof AccountServiceError) || String(insertError.code) !== '23505') throw insertError
       stored = await supabaseRequest<StoredAccountOrder[]>(
@@ -2183,14 +2189,6 @@ export async function accountOrdersHandler(req: AuthRequest, res: ServerResponse
     const row = stored[0]
     if (!row) return sendJson(res, 500, { error: 'The order could not be saved to your account.' })
     if (typeof row.id !== 'number') throw new Error('The saved order did not return its database ID.')
-    if (createdNewOrder) {
-      try {
-        await notifyOwnerDevicesOfNewOrder(row.order_id)
-      } catch (pushError) {
-        const detail = pushError instanceof Error ? pushError.message : 'Unknown Firebase delivery error.'
-        console.error('The order was saved, but owner push notifications could not be delivered:', detail)
-      }
-    }
     await associateMagazineOrderItems(row.id, account.id, orderItems)
     return sendJson(res, 201, {
       order: { ...row.order_data, orderId: row.order_id, paymentStatus: row.payment_status, orderStatus: row.order_status },
