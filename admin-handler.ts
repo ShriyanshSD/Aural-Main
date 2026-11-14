@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAllowedNativeOrigin } from './native-origin.js'
 import { PRODUCTS } from './src/data/products.js'
@@ -26,6 +26,13 @@ interface AdminSession {
   user_email?: string
 }
 
+interface StoredAdminSession {
+  user_id: string
+  access_token_encrypted: string
+  refresh_token_encrypted: string
+  expires_at: string
+}
+
 interface NativeAdminSession {
   id: string
   user_id: string
@@ -36,6 +43,11 @@ interface NativeAdminSession {
   supabase_access_token: string
   supabase_refresh_token: string
   supabase_expires_at: string
+}
+
+interface StoredNativeAdminSession extends Omit<NativeAdminSession, 'supabase_access_token' | 'supabase_refresh_token'> {
+  supabase_access_token_encrypted: string
+  supabase_refresh_token_encrypted: string
 }
 
 interface DeletionAuthUser {
@@ -284,6 +296,42 @@ const cookieHeader = (token: string, clear = false) => {
 
 const hashNativeToken = (token: string) => createHash('sha256').update(token).digest('hex')
 
+const getAdminSessionEncryptionKey = (): Buffer => {
+  const encodedKey = process.env.ADMIN_SESSION_ENCRYPTION_KEY
+  if (!encodedKey) throw new Error('ADMIN_SESSION_ENCRYPTION_KEY is not configured.')
+  const key = Buffer.from(encodedKey, 'base64')
+  if (key.length !== 32 || key.toString('base64') !== encodedKey) {
+    throw new Error('ADMIN_SESSION_ENCRYPTION_KEY must be a base64-encoded 32-byte key.')
+  }
+  return key
+}
+
+const encryptSessionToken = (token: string): string => {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', getAdminSessionEncryptionKey(), iv)
+  const ciphertext = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()])
+  return `v1:${iv.toString('base64')}:${cipher.getAuthTag().toString('base64')}:${ciphertext.toString('base64')}`
+}
+
+const decryptSessionToken = (value: string): string => {
+  const [version, encodedIv, encodedAuthTag, encodedCiphertext, ...extra] = value.split(':')
+  if (version !== 'v1' || !encodedIv || !encodedAuthTag || !encodedCiphertext || extra.length) {
+    throw new Error('Stored admin session token has an invalid encrypted format.')
+  }
+  const iv = Buffer.from(encodedIv, 'base64')
+  const authTag = Buffer.from(encodedAuthTag, 'base64')
+  const ciphertext = Buffer.from(encodedCiphertext, 'base64')
+  if (iv.length !== 12 || authTag.length !== 16 || ciphertext.length === 0
+    || iv.toString('base64') !== encodedIv
+    || authTag.toString('base64') !== encodedAuthTag
+    || ciphertext.toString('base64') !== encodedCiphertext) {
+    throw new Error('Stored admin session token has an invalid encrypted format.')
+  }
+  const decipher = createDecipheriv('aes-256-gcm', getAdminSessionEncryptionKey(), iv)
+  decipher.setAuthTag(authTag)
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
+}
+
 const getNativeBearerToken = (req: AdminRequest): string | undefined => {
   const authorization = req.headers.authorization
   if (!authorization) return undefined
@@ -350,8 +398,8 @@ const upsertSession = async (tokenHash: string, userId: string, tokens: AuthToke
     body: JSON.stringify({
       token_hash: tokenHash,
       user_id: userId,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      access_token_encrypted: encryptSessionToken(tokens.access_token),
+      refresh_token_encrypted: encryptSessionToken(tokens.refresh_token),
       expires_at: expiresAt
     })
   })
@@ -365,16 +413,22 @@ const requireAdmin = async (req: AdminRequest): Promise<AdminSession | undefined
   const token = getCookieToken(req)
   if (!token) return undefined
   const tokenHash = createHash('sha256').update(token).digest('hex')
-  const sessions = await supabaseRequest<AdminSession[]>(
+  const sessions = await supabaseRequest<StoredAdminSession[]>(
     'aurel_admin_sessions',
     new URLSearchParams({
       token_hash: `eq.${tokenHash}`,
-      select: 'user_id,access_token,refresh_token,expires_at',
+      select: 'user_id,access_token_encrypted,refresh_token_encrypted,expires_at',
       limit: '1'
     })
   )
-  let session = sessions[0]
-  if (!session) return undefined
+  const storedSession = sessions[0]
+  if (!storedSession) return undefined
+  let session: AdminSession = {
+    user_id: storedSession.user_id,
+    access_token: decryptSessionToken(storedSession.access_token_encrypted),
+    refresh_token: decryptSessionToken(storedSession.refresh_token_encrypted),
+    expires_at: storedSession.expires_at
+  }
   if (Date.parse(session.expires_at) < Date.now() + 60_000) {
     try {
       const refreshed = await requestAuth<AuthTokens>('token?grant_type=refresh_token', {
@@ -411,15 +465,27 @@ const getNativeSession = async (
   column: 'access_token_hash' | 'refresh_token_hash',
   tokenHash: string
 ): Promise<NativeAdminSession | undefined> => {
-  const sessions = await supabaseRequest<NativeAdminSession[]>(
+  const sessions = await supabaseRequest<StoredNativeAdminSession[]>(
     'aurel_native_admin_sessions',
     new URLSearchParams({
       [column]: `eq.${tokenHash}`,
-      select: 'id,user_id,access_token_hash,refresh_token_hash,access_expires_at,refresh_expires_at,supabase_access_token,supabase_refresh_token,supabase_expires_at',
+      select: 'id,user_id,access_token_hash,refresh_token_hash,access_expires_at,refresh_expires_at,supabase_access_token_encrypted,supabase_refresh_token_encrypted,supabase_expires_at',
       limit: '1'
     })
   )
-  return sessions[0]
+  const session = sessions[0]
+  if (!session) return undefined
+  return {
+    id: session.id,
+    user_id: session.user_id,
+    access_token_hash: session.access_token_hash,
+    refresh_token_hash: session.refresh_token_hash,
+    access_expires_at: session.access_expires_at,
+    refresh_expires_at: session.refresh_expires_at,
+    supabase_access_token: decryptSessionToken(session.supabase_access_token_encrypted),
+    supabase_refresh_token: decryptSessionToken(session.supabase_refresh_token_encrypted),
+    supabase_expires_at: session.supabase_expires_at
+  }
 }
 
 const revokeNativeSession = async (id: string): Promise<void> => {
@@ -435,20 +501,32 @@ const persistNativeIdentityTokens = async (
   if (!tokens.access_token || !tokens.refresh_token || !tokens.expires_in) {
     throw new Error('Supabase Auth returned an incomplete native owner session.')
   }
-  const rows = await supabaseRequest<NativeAdminSession[]>(
+  const rows = await supabaseRequest<StoredNativeAdminSession[]>(
     'aurel_native_admin_sessions',
     new URLSearchParams({ id: `eq.${session.id}` }),
     {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },
       body: JSON.stringify({
-        supabase_access_token: tokens.access_token,
-        supabase_refresh_token: tokens.refresh_token,
+        supabase_access_token_encrypted: encryptSessionToken(tokens.access_token),
+        supabase_refresh_token_encrypted: encryptSessionToken(tokens.refresh_token),
         supabase_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       })
     }
   )
-  return rows[0]
+  const updated = rows[0]
+  if (!updated) return undefined
+  return {
+    id: updated.id,
+    user_id: updated.user_id,
+    access_token_hash: updated.access_token_hash,
+    refresh_token_hash: updated.refresh_token_hash,
+    access_expires_at: updated.access_expires_at,
+    refresh_expires_at: updated.refresh_expires_at,
+    supabase_access_token: decryptSessionToken(updated.supabase_access_token_encrypted),
+    supabase_refresh_token: decryptSessionToken(updated.supabase_refresh_token_encrypted),
+    supabase_expires_at: updated.supabase_expires_at
+  }
 }
 
 const validateNativeIdentity = async (
@@ -543,14 +621,14 @@ const nativeAdminLogin = async (req: AdminRequest, res: ServerResponse) => {
     const now = Date.now()
     const accessExpiresAt = new Date(now + nativeAccessDurationSeconds * 1000).toISOString()
     const refreshExpiresAt = new Date(now + nativeRefreshDurationSeconds * 1000).toISOString()
-    const session: Omit<NativeAdminSession, 'id'> = {
+    const session: Omit<StoredNativeAdminSession, 'id'> = {
       user_id: user.id,
       access_token_hash: hashNativeToken(accessToken),
       refresh_token_hash: hashNativeToken(refreshToken),
       access_expires_at: accessExpiresAt,
       refresh_expires_at: refreshExpiresAt,
-      supabase_access_token: identityTokens.access_token,
-      supabase_refresh_token: identityTokens.refresh_token,
+      supabase_access_token_encrypted: encryptSessionToken(identityTokens.access_token),
+      supabase_refresh_token_encrypted: encryptSessionToken(identityTokens.refresh_token),
       supabase_expires_at: new Date(now + identityTokens.expires_in * 1000).toISOString()
     }
     await supabaseRequest('aurel_native_admin_sessions', new URLSearchParams(), {

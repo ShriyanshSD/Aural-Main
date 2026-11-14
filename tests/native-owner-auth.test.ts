@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { createServer, request, type IncomingMessage, type Server } from 'node:http'
 import { after, before, beforeEach, test } from 'node:test'
 import apiHandler from '../api/index'
+import { getSecurityHeaders } from '../security-headers'
 
 const ownerEmail = 'owner@example.test'
 const nativeOrigin = 'https://localhost'
@@ -15,8 +16,8 @@ interface StoredNativeSession {
   refresh_token_hash: string
   access_expires_at: string
   refresh_expires_at: string
-  supabase_access_token: string
-  supabase_refresh_token: string
+  supabase_access_token_encrypted: string
+  supabase_refresh_token_encrypted: string
   supabase_expires_at: string
 }
 
@@ -26,6 +27,14 @@ interface NativeAuthResponse {
   accessExpiresAt: string
   refreshExpiresAt: string
   user: {id: string; email: string}
+}
+
+interface StoredAdminSession {
+  token_hash: string
+  user_id: string
+  access_token_encrypted: string
+  refresh_token_encrypted: string
+  expires_at: string
 }
 
 interface TestIncomingMessage extends IncomingMessage {
@@ -45,6 +54,7 @@ interface StoredPushDevice {
 let server: Server
 let serverOrigin: string
 let sessions: StoredNativeSession[] = []
+let websiteSessions: StoredAdminSession[] = []
 let pushDevices: StoredPushDevice[] = []
 let userEmail = ownerEmail
 let emailConfirmedAt: string | null = new Date().toISOString()
@@ -54,6 +64,7 @@ let submitOrderAlreadySubmitted = false
 let submitOrderSuccess = true
 const originalFetch = globalThis.fetch
 const originalFirebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
+const originalAdminSessionEncryptionKey = process.env.ADMIN_SESSION_ENCRYPTION_KEY
 
 const jsonResponse = (payload: unknown, status = 200): Response =>
   new Response(JSON.stringify(payload), {
@@ -116,6 +127,22 @@ const mockSupabaseFetch: typeof fetch = async (input, init) => {
     }
     if (method === 'DELETE') {
       sessions = sessions.filter(session => !matches.includes(session))
+      return new Response(null, {status: 204})
+    }
+  }
+
+  if (url.pathname === '/rest/v1/aurel_admin_sessions') {
+    if (method === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as StoredAdminSession
+      websiteSessions = [...websiteSessions.filter(session => session.token_hash !== body.token_hash), body]
+      return new Response(null, {status: 201})
+    }
+
+    const tokenHash = url.searchParams.get('token_hash')?.slice(3)
+    const matches = websiteSessions.filter(session => !tokenHash || session.token_hash === tokenHash)
+    if (method === 'GET') return jsonResponse(matches)
+    if (method === 'DELETE') {
+      websiteSessions = websiteSessions.filter(session => !matches.includes(session))
       return new Response(null, {status: 204})
     }
   }
@@ -216,6 +243,7 @@ before(async () => {
   process.env.SUPABASE_URL = 'https://supabase.test'
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'unit-test-placeholder'
   process.env.ADMIN_EMAILS = ownerEmail
+  process.env.ADMIN_SESSION_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64')
   process.env.OWNER_NATIVE_ORIGINS = nativeOrigin
   delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   globalThis.fetch = mockSupabaseFetch
@@ -240,6 +268,7 @@ before(async () => {
 
 beforeEach(() => {
   sessions = []
+  websiteSessions = []
   pushDevices = []
   userEmail = ownerEmail
   emailConfirmedAt = new Date().toISOString()
@@ -255,6 +284,8 @@ after(async () => {
   delete process.env.SUPABASE_URL
   delete process.env.SUPABASE_SERVICE_ROLE_KEY
   delete process.env.ADMIN_EMAILS
+  if (originalAdminSessionEncryptionKey === undefined) delete process.env.ADMIN_SESSION_ENCRYPTION_KEY
+  else process.env.ADMIN_SESSION_ENCRYPTION_KEY = originalAdminSessionEncryptionKey
   delete process.env.OWNER_NATIVE_ORIGINS
   if (originalFirebaseServiceAccount === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = originalFirebaseServiceAccount
@@ -274,6 +305,24 @@ test('rejects invalid credentials and origins', async () => {
   })
   assert.equal(invalidOrigin.status, 403)
   assert.equal(sessions.length, 0)
+})
+
+test('stores website Supabase session tokens encrypted and decrypts them for requests', async () => {
+  const login = await requestJson<{user: {id: string; email: string}}>('/api/admin/login', {
+    method: 'POST',
+    body: {email: ownerEmail, password: 'GoodPassword1'},
+  })
+  assert.equal(login.status, 200)
+  assert.equal(websiteSessions.length, 1)
+  assert.match(websiteSessions[0].access_token_encrypted, /^v1:/)
+  assert.match(websiteSessions[0].refresh_token_encrypted, /^v1:/)
+  assert.ok(!websiteSessions[0].access_token_encrypted.includes('supabase-access-token'))
+  assert.ok(!websiteSessions[0].refresh_token_encrypted.includes('supabase-refresh-token'))
+
+  const sessionCookie = String(login.headers['set-cookie']).split(';')[0]
+  const authenticated = await requestJson<{user: {id: string}}>('/api/admin/me', {cookie: sessionCookie})
+  assert.equal(authenticated.status, 200)
+  assert.equal(authenticated.body.user.id, ownerId)
 })
 
 test('matches Vercel native rewrites and handles unauthenticated preflight before owner auth', async () => {
@@ -302,6 +351,7 @@ test('matches Vercel native rewrites and handles unauthenticated preflight befor
     preflightMethod: 'POST',
     preflightHeaders: 'authorization,content-type',
   })
+
   assert.equal(preflight.status, 204)
   assert.equal(preflight.headers['access-control-allow-origin'], nativeOrigin)
   assert.match(String(preflight.headers['access-control-allow-methods']), /POST/)
@@ -315,6 +365,21 @@ test('matches Vercel native rewrites and handles unauthenticated preflight befor
   assert.equal(login.body.error, 'Unable to sign in with those owner credentials.')
   assert.notEqual(login.body.error, 'Owner sign-in required.')
   assert.equal(login.headers['access-control-allow-origin'], nativeOrigin)
+})
+
+test('keeps Vercel security headers aligned with the production server policy', async () => {
+  const config = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8')) as {
+    headers: Array<{source: string; headers: Array<{key: string; value: string}>}>
+  }
+  const allRoutesPolicy = config.headers.find(policy => policy.source === '/(.*)')
+
+  assert.ok(allRoutesPolicy, 'Missing all-routes security header policy')
+  assert.deepEqual(
+    allRoutesPolicy.headers,
+    Object.entries(getSecurityHeaders(true)).map(([key, value]) => ({key, value})),
+  )
+  assert.equal('Content-Security-Policy' in getSecurityHeaders(false), false)
+  assert.equal('Strict-Transport-Security' in getSecurityHeaders(false), false)
 })
 
 test('rejects unverified and non-allowlisted owner accounts', async () => {
@@ -409,11 +474,16 @@ test('issues protected native sessions, rotates refresh tokens, and revokes on l
   assert.equal(login.status, 200)
   assert.equal(login.body.user.email, ownerEmail)
   assert.equal(sessions.length, 1)
+  assert.match(sessions[0].supabase_access_token_encrypted, /^v1:/)
+  assert.match(sessions[0].supabase_refresh_token_encrypted, /^v1:/)
+  assert.ok(!sessions[0].supabase_access_token_encrypted.includes('supabase-access-token'))
+  assert.ok(!sessions[0].supabase_refresh_token_encrypted.includes('supabase-refresh-token'))
 
   const ownerApi = await requestJson<{user: {id: string}}>('/api/admin/me', {token: login.body.accessToken})
   assert.equal(ownerApi.status, 200)
   assert.equal(ownerApi.body.user.id, ownerId)
 
+  sessions[0].supabase_expires_at = new Date(Date.now() - 1_000).toISOString()
   const refreshed = await requestJson<NativeAuthResponse>('/api/admin/native/refresh', {
     method: 'POST',
     body: {refreshToken: login.body.refreshToken},
@@ -421,6 +491,10 @@ test('issues protected native sessions, rotates refresh tokens, and revokes on l
   assert.equal(refreshed.status, 200)
   assert.notEqual(refreshed.body.accessToken, login.body.accessToken)
   assert.notEqual(refreshed.body.refreshToken, login.body.refreshToken)
+  assert.match(sessions[0].supabase_access_token_encrypted, /^v1:/)
+  assert.match(sessions[0].supabase_refresh_token_encrypted, /^v1:/)
+  assert.ok(!sessions[0].supabase_access_token_encrypted.includes('supabase-refreshed-access-token'))
+  assert.ok(!sessions[0].supabase_refresh_token_encrypted.includes('supabase-refreshed-refresh-token'))
 
   const oldAccessToken = await requestJson<{error: string}>('/api/admin/me', {token: login.body.accessToken})
   assert.equal(oldAccessToken.status, 401)

@@ -25,6 +25,7 @@ import {
 import { indiaCitiesHandler, indiaStatesHandler } from './locations-handler'
 import { adminApiHandler, publicCatalogHandler } from './admin-handler'
 import { handleNativeCors } from './native-origin'
+import { getSecurityHeaders } from './security-headers'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -50,7 +51,14 @@ for (let i = 0; i < cliArgs.length; i += 1) {
 
 const app = express()
 const PORT = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 3000
+const securityHeaders = getSecurityHeaders(isProduction)
 
+app.use((_req, res, next) => {
+  for (const [name, value] of Object.entries(securityHeaders)) {
+    res.setHeader(name, value)
+  }
+  next()
+})
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next()
   if (handleNativeCors(req, res)) return
