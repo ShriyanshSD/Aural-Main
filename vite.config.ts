@@ -6,8 +6,8 @@ import {defineConfig, loadEnv, type Plugin} from 'vite';
 export default defineConfig(({mode}) => {
   const isOwnerBuild = mode === 'owner';
   const env = loadEnv(mode, process.cwd(), '');
-  const configuredOwnerApiUrl = env.VITE_OWNER_API_BASE_URL || 'https://aural-main.vercel.app';
-  let ownerApiBaseUrl = 'https://aural-main.vercel.app';
+  const configuredOwnerApiUrl = env.VITE_OWNER_API_BASE_URL || 'https://aurelstudios.vercel.app';
+  let ownerApiBaseUrl = 'https://aurelstudios.vercel.app';
   if (isOwnerBuild) {
     let parsedOwnerApiUrl: URL;
     try {

@@ -639,7 +639,7 @@ export default function AdminApp() {
             {error && <AlertMessage message={error} />}
             <form onSubmit={submitLogin} className="mt-7 space-y-4">
               <label className="block text-sm font-medium">Owner email
-                <input autoComplete="username" enterKeyHint="next" inputMode="email" type="email" required value={loginEmail} onChange={event => setLoginEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
+                <input id="owner-login-email" name="email" autoComplete="username" enterKeyHint="next" inputMode="email" type="email" spellCheck={false} autoCorrect="off" autoCapitalize="none" required value={loginEmail} onChange={event => setLoginEmail(event.target.value)} className="mt-2 w-full rounded-xl border border-[#e5d8d2] bg-[#fffdfa] px-4 py-3 outline-none focus:border-[#a45f60] focus:ring-2 focus:ring-[#a45f60]/15" />
               </label>
               <div className="block text-sm font-medium">
                 <label htmlFor="owner-login-password">Password</label>

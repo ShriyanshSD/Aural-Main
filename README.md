@@ -60,7 +60,7 @@ npm run build
 
 The Android owner app has its own Vite entry (`owner.html` and `src/owner-main.tsx`) and build output (`dist-owner`). It mounts the existing `AdminApp` directly. The website continues to use `index.html`, `src/main.tsx`, relative API URLs, and the unchanged `dist` output. The public storefront does not serve the owner dashboard, and `/admin` is not a dashboard route.
 
-The owner build uses `https://aural-main.vercel.app` as its public API and storefront origin. Override it at build time with `VITE_OWNER_API_BASE_URL`, for example in `.env.owner` (which must contain only public build settings, never server credentials). The website build does not use this setting.
+The owner build uses `https://aurelstudios.vercel.app` as its public API and storefront origin. Override it at build time with `VITE_OWNER_API_BASE_URL`, for example in `.env.owner` (which must contain only public build settings, never server credentials). The website build does not use this setting.
 
 Build the Android web assets with `npm run build:owner`. Once the Android platform has been added, `npm run android:sync` rebuilds those assets and synchronizes them into the Capacitor project. `capacitor.config.ts` points Capacitor at `dist-owner`, not the website's `dist` directory. Add the native platform once with `npx cap add android`.
 

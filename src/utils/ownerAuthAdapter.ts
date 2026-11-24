@@ -73,25 +73,35 @@ const saveSession = async (session: NativeOwnerSession): Promise<void> => {
 
 const revokeNativeSession = async (refreshToken: string): Promise<void> => {
   const appCheckToken = await getAppCheckToken();
-  const response = await fetch(ownerApiUrl('/api/admin/native/logout'), {
-    method: 'POST',
-    credentials: 'omit',
-    cache: 'no-store',
-    headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
-    body: JSON.stringify({refreshToken}),
-  });
+  let response: Response;
+  try {
+    response = await fetch(ownerApiUrl('/api/admin/native/logout'), {
+      method: 'POST',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
+      body: JSON.stringify({refreshToken}),
+    });
+  } catch (error) {
+    throw new Error(`Unable to reach the owner service. Check the network connection and try again. (${error instanceof Error ? error.message : String(error)})`);
+  }
   await parseResponse<{success: true}>(response);
 };
 
 const performRefreshSession = async (session: NativeOwnerSession): Promise<NativeOwnerSession> => {
   const appCheckToken = await getAppCheckToken();
-  const response = await fetch(ownerApiUrl('/api/admin/native/refresh'), {
-    method: 'POST',
-    credentials: 'omit',
-    cache: 'no-store',
-    headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
-    body: JSON.stringify({refreshToken: session.refreshToken}),
-  });
+  let response: Response;
+  try {
+    response = await fetch(ownerApiUrl('/api/admin/native/refresh'), {
+      method: 'POST',
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
+      body: JSON.stringify({refreshToken: session.refreshToken}),
+    });
+  } catch (error) {
+    throw new Error(`Unable to reach the owner service. Check the network connection and try again. (${error instanceof Error ? error.message : String(error)})`);
+  }
   if (response.status === 401 || response.status === 403) {
     await SecureStorage.remove(storageKey);
     throw new Error('Your owner session has expired. Sign in again.');
@@ -138,13 +148,18 @@ export const ownerAuthAdapter: OwnerAuthAdapter = {
     this.assertAvailable();
     if (!isOwnerNativeBuild) throw new Error('Native owner sign-in is only available in the AUREL Owner app.');
     const appCheckToken = await getAppCheckToken();
-    const response = await fetch(ownerApiUrl('/api/admin/native/login'), {
-      method: 'POST',
-      credentials: 'omit',
-      cache: 'no-store',
-      headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
-      body: JSON.stringify({email, password}),
-    });
+    let response: Response;
+    try {
+      response = await fetch(ownerApiUrl('/api/admin/native/login'), {
+        method: 'POST',
+        credentials: 'omit',
+        cache: 'no-store',
+        headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
+        body: JSON.stringify({email, password}),
+      });
+    } catch (error) {
+      throw new Error(`Unable to reach the owner service at ${ownerApiUrl('/').replace(/\/$/, '')}. Check the network connection and try again. (${error instanceof Error ? error.message : String(error)})`);
+    }
     const session = await parseResponse<NativeOwnerSession>(response);
     try {
       await saveSession(session);
@@ -175,12 +190,18 @@ export const ownerAuthAdapter: OwnerAuthAdapter = {
     const headers = new Headers(init.headers);
     headers.set('X-Firebase-AppCheck', await getAppCheckToken());
     if (session) headers.set('Authorization', `Bearer ${session.accessToken}`);
-    const request = () => fetch(path, {
-      ...init,
-      credentials: 'omit',
-      cache: 'no-store',
-      headers,
-    });
+    const request = async () => {
+      try {
+        return await fetch(path, {
+          ...init,
+          credentials: 'omit',
+          cache: 'no-store',
+          headers,
+        });
+      } catch (error) {
+        throw new Error(`Unable to reach the owner service at ${ownerApiUrl('/').replace(/\/$/, '')}. Check the network connection and try again. (${error instanceof Error ? error.message : String(error)})`);
+      }
+    };
     let response = await request();
     if (!session || response.status !== 401
       || path.endsWith('/native/login')
