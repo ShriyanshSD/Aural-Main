@@ -24,11 +24,16 @@ const getAppCheckToken = async (): Promise<string> => {
       .then(() => FirebaseAppCheck.setTokenAutoRefreshEnabled({enabled: true}))
       .catch(error => {
         appCheckInitialization = undefined;
-        throw error;
+        throw new Error(`App attestation setup failed: ${error instanceof Error ? error.message : String(error)}`);
       });
   }
   await appCheckInitialization;
-  const {token} = await FirebaseAppCheck.getToken({forceRefresh: false});
+  let token: string | undefined;
+  try {
+    ({token} = await FirebaseAppCheck.getToken({forceRefresh: false}));
+  } catch (error) {
+    throw new Error(`App attestation failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
   if (!token) throw new Error('The AUREL Owner app could not verify this device. Update the app and try again.');
   return token;
 };
