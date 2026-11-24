@@ -1,0 +1,10 @@
+android/
+node_modules/
+.git/
+.gitignore
+dist/
+dist-owner/
+brag-output/
+.agents/
+.claude/
+*.log
