@@ -383,12 +383,12 @@ test('rejects invalid credentials and origins', async () => {
   assert.equal(sessions.length, 0)
 })
 
-test('requires owner app attestation for admin requests outside the test environment', async () => {
+test('does not block owner sign-in or dashboard authorization when optional app attestation is unavailable', async () => {
   process.env.NODE_ENV = 'production'
   try {
     const response = await requestJson<{error: string}>('/api/admin/overview')
     assert.equal(response.status, 401)
-    assert.match(response.body.error, /AUREL Owner app could not be verified/)
+    assert.match(response.body.error, /Owner sign-in required/)
   } finally {
     process.env.NODE_ENV = 'test'
   }

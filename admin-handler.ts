@@ -2557,9 +2557,13 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
 export async function adminApiHandler(req: AdminRequest, res: ServerResponse) {
   const path = requestPath(req).replace(/\/+$/, '') || '/'
   try {
-    if (!await verifyOwnerAppCheck(req)) {
-      return sendJson(res, 401, { error: 'The AUREL Owner app could not be verified. Update or reinstall the owner app.' })
-    }
+    // Native owner authorization is enforced by verified credentials and
+    // short lived access tokens plus 365-day refresh sessions. App Check
+    // remains available as an optional attestation signal, but Play Integrity
+    // availability or provider configuration must not prevent owner sign-in.
+    void verifyOwnerAppCheck(req).catch(error => {
+      console.warn('Optional Firebase App Check verification unavailable.', error)
+    })
     await handleAdminRoute(req, res, path)
   } catch (error) {
     console.error(`Admin API request failed (${req.method ?? 'unknown'} ${path}):`, error)

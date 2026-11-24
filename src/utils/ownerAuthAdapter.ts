@@ -17,24 +17,29 @@ const nativeSessionUnavailableMessage =
   'Native owner sign-in requires the AUREL Owner Android app and Android Keystore storage.';
 const isNativeOwnerApp = isOwnerNativeBuild && Capacitor.isNativePlatform();
 
-const getAppCheckToken = async (): Promise<string> => {
-  if (!isNativeOwnerApp) throw new Error(nativeSessionUnavailableMessage);
+const getAppCheckToken = async (): Promise<string | null> => {
+  if (!isNativeOwnerApp) return null;
   if (!appCheckInitialization) {
     appCheckInitialization = FirebaseAppCheck.initialize()
       .then(() => FirebaseAppCheck.setTokenAutoRefreshEnabled({enabled: true}))
       .catch(error => {
         appCheckInitialization = undefined;
-        throw new Error(`App attestation setup failed: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn('Optional owner App Check setup unavailable.', error);
       });
   }
-  await appCheckInitialization;
+  try {
+    await appCheckInitialization;
+  } catch {
+    return null;
+  }
   let token: string | undefined;
   try {
     ({token} = await FirebaseAppCheck.getToken({forceRefresh: false}));
   } catch (error) {
-    throw new Error(`App attestation failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn('Optional owner App Check token unavailable.', error);
+    return null;
   }
-  if (!token) throw new Error('The AUREL Owner app could not verify this device. Update the app and try again.');
+  if (!token) return null;
   return token;
 };
 
@@ -79,7 +84,9 @@ const revokeNativeSession = async (refreshToken: string): Promise<void> => {
       method: 'POST',
       credentials: 'omit',
       cache: 'no-store',
-      headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
+      headers: appCheckToken
+        ? {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken}
+        : {'Content-Type': 'application/json'},
       body: JSON.stringify({refreshToken}),
     });
   } catch (error) {
@@ -96,7 +103,9 @@ const performRefreshSession = async (session: NativeOwnerSession): Promise<Nativ
       method: 'POST',
       credentials: 'omit',
       cache: 'no-store',
-      headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
+      headers: appCheckToken
+        ? {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken}
+        : {'Content-Type': 'application/json'},
       body: JSON.stringify({refreshToken: session.refreshToken}),
     });
   } catch (error) {
@@ -154,7 +163,9 @@ export const ownerAuthAdapter: OwnerAuthAdapter = {
         method: 'POST',
         credentials: 'omit',
         cache: 'no-store',
-        headers: {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken},
+        headers: appCheckToken
+          ? {'Content-Type': 'application/json', 'X-Firebase-AppCheck': appCheckToken}
+          : {'Content-Type': 'application/json'},
         body: JSON.stringify({email, password}),
       });
     } catch (error) {
@@ -188,7 +199,8 @@ export const ownerAuthAdapter: OwnerAuthAdapter = {
 
     const session = await readSession();
     const headers = new Headers(init.headers);
-    headers.set('X-Firebase-AppCheck', await getAppCheckToken());
+    const appCheckToken = await getAppCheckToken();
+    if (appCheckToken) headers.set('X-Firebase-AppCheck', appCheckToken);
     if (session) headers.set('Authorization', `Bearer ${session.accessToken}`);
     const request = async () => {
       try {
