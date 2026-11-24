@@ -1,4 +1,4 @@
-const ownerApiBaseUrl = (
+export const ownerApiBaseUrl = (
   import.meta.env.VITE_OWNER_API_BASE_URL || 'https://aurelstudios.vercel.app'
 ).replace(/\/+$/, '');
 

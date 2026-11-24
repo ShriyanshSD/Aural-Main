@@ -9,6 +9,8 @@ coverage/
 !.env.example
 android/.gradle/
 android/app/build/
+android/key.properties
+android/app/keystore/
 android/.idea/
 .vercel/
 brag-output

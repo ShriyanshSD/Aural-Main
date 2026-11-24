@@ -8,13 +8,14 @@ import {
   UserRound, Users, X
 } from 'lucide-react'
 import type { Product } from './types'
-import type { StorefrontContent } from './types'
+import type { MagazineDesign, StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
 import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
 import { isOwnerNativeBuild, ownerApiUrl, ownerAssetUrl, ownerStorefrontUrl } from './utils/ownerApi'
 import { ownerAuthAdapter } from './utils/ownerAuthAdapter'
 import { listenForOwnerOrderNotifications, startOwnerPushNotifications, unregisterOwnerPushNotifications } from './utils/ownerPushNotifications'
 import { saveOwnerDownload } from './utils/ownerFileDownloads'
+import { checkForOwnerAppUpdate, rememberOwnerAppUpdateBaseline } from './utils/ownerAppUpdates'
 
 type Section = 'dashboard' | 'orders' | 'products' | 'categories' | 'custom-orders' | 'customers' | 'reviews' | 'settings'
 type OrderStatus = 'pending_payment' | 'paid' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled'
@@ -186,7 +187,13 @@ const initialContent: StorefrontContent = {
   announcement: '',
   aboutText: 'At AUREL, we believe the best gifts are thought about, personalized, and given with meaning.',
   deliveryPolicy: '',
-  returnsPolicy: ''
+  returnsPolicy: '',
+  magazineDesigns: [
+    { id: 'magazine-1', name: 'Magazine 1', previewUrl: 'https://heyzine.com/flip-book/4b27ca51f4.html', images: ['/magazine-samples/magazine-1/1.png', '/magazine-samples/magazine-1/2.png', '/magazine-samples/magazine-1/3.png'] },
+    { id: 'magazine-2', name: 'Magazine 2', previewUrl: 'https://heyzine.com/flip-book/896a424567.html#page/1', images: ['/magazine-samples/magazine-2/1.png', '/magazine-samples/magazine-2/2.png', '/magazine-samples/magazine-2/3.png'] },
+    { id: 'magazine-3', name: 'Magazine 3', previewUrl: 'https://heyzine.com/flip-book/3355ae211e.html', images: ['/magazine-samples/magazine-3/1.png', '/magazine-samples/magazine-3/2.png', '/magazine-samples/magazine-3/3.png', '/magazine-samples/magazine-3/4.png'] },
+    { id: 'magazine-4', name: 'Magazine 4', previewUrl: 'https://heyzine.com/flip-book/5ab53f9de4.html#page/1', images: ['/magazine-samples/magazine-4/1.png', '/magazine-samples/magazine-4/2.png', '/magazine-samples/magazine-4/3.png', '/magazine-samples/magazine-4/4.png'] }
+  ]
 }
 
 const initialSettings: StoreSettings = {
@@ -301,6 +308,26 @@ export default function AdminApp() {
   const [productDraft, setProductDraft] = useState<AdminProduct | null>(null)
   const [categoryDraft, setCategoryDraft] = useState<AdminCategory | null>(null)
   const [customerDraft, setCustomerDraft] = useState<AdminCustomer | null>(null)
+  const [checkingForAppUpdate, setCheckingForAppUpdate] = useState(false)
+
+  const checkOwnerAppUpdate = async (manual = false) => {
+    if (!isOwnerNativeBuild) return
+    if (manual) setCheckingForAppUpdate(true)
+    try {
+      const result = await checkForOwnerAppUpdate(false)
+      if (manual) {
+        if (result.changed) {
+          window.location.replace(result.manifest.entry || '/owner-app/')
+        } else {
+          setNotice('AUREL Owner is already up to date.')
+        }
+      }
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : 'Unable to check for app updates.')
+    } finally {
+      if (manual) setCheckingForAppUpdate(false)
+    }
+  }
 
   const navigateSection = (target: Section) => {
     window.history.pushState(null, '', isOwnerNativeBuild ? `#/owner/${target}` : `/admin/${target}`)
@@ -330,13 +357,41 @@ export default function AdminApp() {
     if (params.has('code') || params.has('access_token')) {
       window.history.replaceState(null, '', isOwnerNativeBuild ? '#/owner/login' : '/admin/login')
     }
+    const cachedOwnerEmail = isOwnerNativeBuild
+      ? window.sessionStorage.getItem('aurel_owner_cached_email')
+      : null
+    if (cachedOwnerEmail) {
+      setOwnerEmail(cachedOwnerEmail)
+      setSignedIn(true)
+    }
     void api<{ user: { id: string; email: string } }>('/api/admin/me')
       .then(({ user }) => {
         setOwnerEmail(user.email)
         setSignedIn(true)
+        if (isOwnerNativeBuild) window.sessionStorage.setItem('aurel_owner_cached_email', user.email)
       })
-      .catch(() => setSignedIn(false))
+      .catch(() => {
+        if (!cachedOwnerEmail) setSignedIn(false)
+      })
       .finally(() => setAuthReady(true))
+  }, [])
+
+  useEffect(() => {
+    if (!isOwnerNativeBuild) return
+    let active = true
+    void rememberOwnerAppUpdateBaseline().catch(updateError => {
+      if (active) console.error('Unable to establish the owner app update baseline.', updateError)
+    })
+    const timer = window.setInterval(() => {
+      if (!active) return
+      void checkForOwnerAppUpdate(true).catch(updateError => {
+        console.error('Automatic owner app update check failed.', updateError)
+      })
+    }, 15 * 60 * 1000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
   }, [])
 
   useEffect(() => {
@@ -368,7 +423,6 @@ export default function AdminApp() {
   }, [signedIn])
 
   const loadSection = async (target: Section) => {
-    setBusy(true)
     setError('')
     try {
       if (target === 'dashboard') setOverview(await api<Overview>(`/api/admin/overview?range=${analyticsRange}`))
@@ -406,8 +460,6 @@ export default function AdminApp() {
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load this dashboard section.')
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -481,6 +533,7 @@ export default function AdminApp() {
       setOwnerEmail(user.email)
       setSignedIn(true)
       setLoginPassword('')
+      if (isOwnerNativeBuild) window.sessionStorage.setItem('aurel_owner_cached_email', user.email)
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'Owner sign-in failed.')
     } finally {
@@ -501,6 +554,7 @@ export default function AdminApp() {
       else await api('/api/admin/logout', { method: 'POST', body: '{}' })
       setSignedIn(false)
       setOwnerEmail('')
+      window.sessionStorage.removeItem('aurel_owner_cached_email')
       setNotice('')
       setSection('dashboard')
       window.history.replaceState(null, '', isOwnerNativeBuild ? '#/owner/login' : '/admin/login')
@@ -516,7 +570,6 @@ export default function AdminApp() {
     try {
       const result = await action()
       setNotice(typeof successMessage === 'function' ? successMessage(result) : successMessage)
-      await loadSection(section)
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'The change could not be saved.')
     } finally {
@@ -687,6 +740,15 @@ export default function AdminApp() {
           <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-[.2em] text-[#aa7771] sm:text-[10px]">Aurel Studio <span className="px-1 text-[#d3c4bd]">/</span> {currentTitle}</p><h1 className="mt-1 truncate font-serif-title text-xl sm:text-2xl">{currentTitle}</h1></div>
           <div className="flex items-center gap-3">
             <span className="hidden max-w-48 truncate text-xs text-[#897770] sm:block">{ownerEmail}</span>
+            {isOwnerNativeBuild && <button
+              type="button"
+              disabled={checkingForAppUpdate}
+              onClick={() => void checkOwnerAppUpdate(true)}
+              className="min-h-10 items-center gap-2 rounded-xl border border-[#eadfd9] px-3 text-xs font-semibold text-[#866e65] hover:bg-[#faf6f3] disabled:cursor-wait disabled:opacity-60 inline-flex"
+            >
+              {checkingForAppUpdate ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+              Check updates
+            </button>}
             <NotificationBell
               notifications={notifications}
               unreadCount={unreadNotificationCount}
@@ -737,7 +799,6 @@ export default function AdminApp() {
               />
             </motion.div>}
           </AnimatePresence>
-          {busy && <div className="mb-4 flex items-center gap-2 text-xs text-[#9b8881]"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Updating dashboard</div>}
 
           <div key={section} className="owner-page-enter owner-route">
           {section === 'dashboard' && <Dashboard
@@ -750,6 +811,20 @@ export default function AdminApp() {
           />}
           {section === 'products' && <ProductsPage
             products={filteredProducts} categories={categories} search={search} setSearch={setSearch}
+            contentDraft={contentDraft} setContentDraft={setContentDraft}
+            onSaveMagazineDraft={() => {
+              void runAction(async () => {
+                await api('/api/admin/content', { method: 'PATCH', body: JSON.stringify({ content: contentDraft }) })
+              }, 'Magazine designs draft saved.')
+            }}
+            onPublishMagazines={() => {
+              if (!window.confirm('Publish these magazine designs to the public storefront now?')) return
+              void runAction(async () => {
+                await api('/api/admin/content', { method: 'PATCH', body: JSON.stringify({ content: contentDraft }) })
+                await api('/api/admin/content/publish', { method: 'POST', body: '{}' })
+                setContentPublished(contentDraft)
+              }, 'Magazine designs published.')
+            }}
             onRefresh={() => void loadSection('products')} onEdit={setProductDraft}
             onDuplicate={product => setProductDraft({
               ...product,
@@ -1260,7 +1335,7 @@ function StorefrontContentPage({ draft, published, setDraft, onSave, onPublish }
   setDraft: React.Dispatch<React.SetStateAction<StorefrontContent>>
   onSave: () => void; onPublish: () => void
 }) {
-  const field = (key: keyof StorefrontContent, label: string, rows = 1) => <label key={key} className="block text-sm font-medium">{label}
+  const field = (key: Exclude<keyof StorefrontContent, 'magazineDesigns'>, label: string, rows = 1) => <label key={key} className="block text-sm font-medium">{label}
     {rows === 1
       ? <input className="form-input mt-2" value={draft[key]} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} />
       : <textarea className="form-input mt-2" rows={rows} value={draft[key]} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))} />}
@@ -1288,6 +1363,104 @@ function StorefrontContentPage({ draft, published, setDraft, onSave, onPublish }
       </div>
     </div>
   </section>
+}
+function MagazineDesignsManager({ draft, setDraft, onSave, onPublish }: {
+  draft: StorefrontContent
+  setDraft: React.Dispatch<React.SetStateAction<StorefrontContent>>
+  onSave: () => void
+  onPublish: () => void
+}) {
+  const [editingDesign, setEditingDesign] = useState<MagazineDesign | null>(null)
+  const [isAdding, setIsAdding] = useState(false)
+  const designs = draft.magazineDesigns ?? []
+  const openNewDesign = () => {
+    setEditingDesign({
+      id: `magazine-${crypto.randomUUID()}`,
+      name: '',
+      previewUrl: '',
+      images: []
+    })
+    setIsAdding(true)
+  }
+  const saveDesign = (design: MagazineDesign) => {
+    setDraft(current => ({
+      ...current,
+      magazineDesigns: isAdding
+        ? [...(current.magazineDesigns ?? []), design]
+        : (current.magazineDesigns ?? []).map(item => item.id === design.id ? design : item)
+    }))
+    setEditingDesign(null)
+    setIsAdding(false)
+  }
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-[#40322e]">Magazine designs</h3>
+          <p className="mt-1 text-sm text-[#938079]">The four current designs appear here. Edit photos or links, or add a new showcase.</p>
+        </div>
+        <button
+          type="button"
+          onClick={openNewDesign}
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8c4e50]"
+        >
+          <Plus className="h-4 w-4" /> Add New Design
+        </button>
+      </div>
+      {designs.length ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {designs.map((design, index) => (
+            <article key={design.id} className="rounded-2xl border border-[#eee5df] bg-white p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h4 className="font-semibold text-[#40322e]">Design {index + 1}</h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`Remove "${design.name}" from the public showcase?`)) {
+                      setDraft(current => ({
+                        ...current,
+                        magazineDesigns: (current.magazineDesigns ?? []).filter(item => item.id !== design.id)
+                      }))
+                    }
+                  }}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-4 w-4" /> Remove
+                </button>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-[180px_minmax(0,1fr)]">
+                {design.images[0]
+                  ? <img src={ownerAssetUrl(design.images[0])} alt={`${design.name} preview`} loading="lazy" className="h-44 w-full rounded-xl border border-[#eee5df] bg-[#f8f4ef] object-contain" />
+                  : <div className="grid h-44 place-items-center rounded-xl border border-dashed border-[#dfcfc7] bg-[#faf7f5]"><ImagePlus className="h-7 w-7 text-[#b88b82]" /></div>}
+                <div className="min-w-0">
+                  <p className="truncate text-lg font-semibold text-[#40322e]">{design.name || `Magazine design ${index + 1}`}</p>
+                  {design.previewUrl
+                    ? <a href={design.previewUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block truncate text-xs font-semibold text-[#a45f60] hover:underline">{design.previewUrl}</a>
+                    : <p className="mt-2 text-xs text-[#938079]">No preview link</p>}
+                  <p className="mt-3 text-xs text-[#938079]">{design.images.length} photo{design.images.length === 1 ? '' : 's'}</p>
+                  <button type="button" onClick={() => { setEditingDesign(design); setIsAdding(false) }} className="mt-4 min-h-10 rounded-xl border border-[#e8d9d2] px-4 text-sm font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Edit design</button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-[#dfcfc7] bg-white p-8 text-center text-sm text-[#938079]">No magazine designs yet. Add one to show it in the storefront showcase.</div>
+      )}
+      <div className="flex flex-wrap gap-3 border-t border-[#f1ebe7] pt-5">
+        <button type="button" onClick={onSave} className="rounded-xl border border-[#e8d9d2] px-4 py-2.5 text-sm font-semibold text-[#a45f60]">Save draft</button>
+        <button type="button" onClick={onPublish} className="rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white">Publish designs</button>
+      </div>
+      {editingDesign && (
+        <MagazineDesignEditor
+          design={editingDesign}
+          isNew={isAdding}
+          onClose={() => { setEditingDesign(null); setIsAdding(false) }}
+          onSave={saveDesign}
+        />
+      )}
+    </section>
+  )
 }
 function ActivityPage({ entries, onRefresh }: { entries: AdminAuditEntry[]; onRefresh: () => void }) {
   return <section>
@@ -1546,12 +1719,17 @@ function TablePager({ page, pageCount, total, onChange }: { page: number; pageCo
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return <div className="owner-page-heading mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-serif-title text-2xl">{title}</h2><p className="mt-1 text-sm text-[#8f7c75]">{description}</p></div>{action}</div>
 }
-function ProductsPage({ products, categories, search, setSearch, onRefresh, onEdit, onDuplicate, onBulkAction, onCreate, onImport, onDelete }: {
+function ProductsPage({ products, categories, search, setSearch, contentDraft, setContentDraft, onSaveMagazineDraft, onPublishMagazines, onRefresh, onEdit, onDuplicate, onBulkAction, onCreate, onImport, onDelete }: {
   products: AdminProduct[]; categories: AdminCategory[]; search: string; setSearch: (value: string) => void
+  contentDraft: StorefrontContent
+  setContentDraft: React.Dispatch<React.SetStateAction<StorefrontContent>>
+  onSaveMagazineDraft: () => void
+  onPublishMagazines: () => void
   onRefresh: () => void; onEdit: (product: AdminProduct) => void; onDuplicate: (product: AdminProduct) => void
   onBulkAction: (productIds: string[], action: 'publish' | 'unpublish' | 'activate' | 'deactivate') => void; onCreate: () => void
   onImport: () => void; onDelete: (product: AdminProduct) => void
 }) {
+  const [tab, setTab] = useState<'products' | 'magazines'>('products')
   const [sort, setSort] = useState<'name' | 'price-low' | 'price-high' | 'stock'>('name')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -1580,7 +1758,27 @@ function ProductsPage({ products, categories, search, setSearch, onRefresh, onEd
     <button type="button" onClick={() => onDelete(product)} className="grid min-h-10 min-w-10 place-items-center rounded-lg text-[#a45f60] transition hover:bg-[#fff2f0]" title="Delete product" aria-label={`Delete ${product.name}`}><Trash2 className="h-4 w-4" /></button>
   </>
   return <section className="space-y-5">
-    <PageHeading title="Product catalog" description="Manage prices, descriptions, inventory and storefront visibility." action={<button type="button" onClick={onCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#a45f60]/15 transition hover:-translate-y-0.5 hover:bg-[#8c4e50]"><Plus className="h-4 w-4" />Add product</button>} />
+    <PageHeading
+      title="Products"
+      description="Manage store products and custom magazine showcase designs."
+      action={tab === 'products'
+        ? <button type="button" onClick={onCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-[#a45f60]/15 transition hover:-translate-y-0.5 hover:bg-[#8c4e50]"><Plus className="h-4 w-4" />Add product</button>
+        : <button type="button" onClick={() => setTab('magazines')} className="sr-only">Magazine designs</button>}
+    />
+    <div role="tablist" aria-label="Product management sections" className="flex gap-2 overflow-x-auto rounded-2xl border border-[#eee5df] bg-white p-2 shadow-sm">
+      {([
+        ['products', 'Product catalog'],
+        ['magazines', 'Magazine designs']
+      ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`min-h-11 shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === id ? 'bg-[#f8eeeb] text-[#934f51] shadow-sm' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>{label}</button>)}
+    </div>
+    {tab === 'magazines' ? (
+      <MagazineDesignsManager
+        draft={contentDraft}
+        setDraft={setContentDraft}
+        onSave={onSaveMagazineDraft}
+        onPublish={onPublishMagazines}
+      />
+    ) : <>
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       {[
         ['Products', products.length, 'Matching this search'],
@@ -1646,6 +1844,7 @@ function ProductsPage({ products, categories, search, setSearch, onRefresh, onEd
       </div>
       {categoryFilteredProducts.length > 15 && <div className="overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-sm"><TablePager page={page} pageCount={pageCount} total={categoryFilteredProducts.length} onChange={setPage} /></div>}
     </> : <EmptyState text="No products match these filters." />}
+    </>}
   </section>
 }
 function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
@@ -2039,6 +2238,144 @@ function SettingsPage({
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return <div className="fixed inset-0 z-40 flex items-end justify-center bg-[#211917]/50 p-0 backdrop-blur-sm sm:items-center sm:p-5" onMouseDown={event => { if (event.target === event.currentTarget) onClose() }}><section className="max-h-[94dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-[#fffdfa] p-5 shadow-2xl sm:rounded-3xl sm:p-7"><header className="mb-6 flex items-center justify-between"><h2 className="font-serif-title text-xl">{title}</h2><button onClick={onClose} className="rounded-full p-2 text-[#8a7770] hover:bg-[#f4ece8]"><X className="h-5 w-5" /></button></header>{children}</section></div>
+}
+function MagazineDesignEditor({ design, isNew, onClose, onSave }: {
+  design: MagazineDesign
+  isNew: boolean
+  onClose: () => void
+  onSave: (design: MagazineDesign) => void
+}) {
+  const [draft, setDraft] = useState<MagazineDesign>(design)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  const uploadPhoto = async (file?: File) => {
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(file.type)) {
+      setError('Choose a valid JPEG, PNG, WebP, or AVIF image.')
+      return
+    }
+    if (file.size > 2.8 * 1024 * 1024) {
+      setError('Photos must be smaller than 2.8 MB.')
+      return
+    }
+    setUploading(true)
+    setError('')
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onerror = () => reject(new Error('The selected photo could not be read.'))
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '')
+        reader.readAsDataURL(file)
+      })
+      const result = await api<{ imageUrl: string }>('/api/admin/products/upload', {
+        method: 'POST',
+        body: JSON.stringify({ fileName: file.name, contentType: file.type, base64 })
+      })
+      setDraft(current => ({ ...current, images: [...current.images, result.imageUrl].slice(0, 20) }))
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Photo upload failed.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!draft.name.trim()) {
+      setError('Enter a magazine name.')
+      return
+    }
+    if (!draft.images.length) {
+      setError('Add at least one showcase photo.')
+      return
+    }
+    if (draft.previewUrl && !/^https?:\/\//i.test(draft.previewUrl)) {
+      setError('Enter a complete preview link beginning with https:// or http://.')
+      return
+    }
+    onSave({
+      ...draft,
+      name: draft.name.trim(),
+      previewUrl: draft.previewUrl.trim()
+    })
+  }
+
+  return (
+    <ModalShell title={isNew ? 'Add new magazine design' : `Edit ${draft.name}`} onClose={onClose}>
+      {error && <AlertMessage message={error} />}
+      <form onSubmit={submit} className="space-y-5">
+        <label className="block text-sm font-medium text-[#51413c]">
+          Magazine name
+          <input
+            name="magazine-design-name"
+            required
+            maxLength={80}
+            value={draft.name}
+            onChange={event => setDraft(current => ({ ...current, name: event.target.value }))}
+            className="form-input"
+            placeholder="Magazine 5"
+          />
+        </label>
+        <label className="block text-sm font-medium text-[#51413c]">
+          Full preview link
+          <input
+            name="magazine-preview-link"
+            type="url"
+            maxLength={2000}
+            value={draft.previewUrl}
+            onChange={event => setDraft(current => ({ ...current, previewUrl: event.target.value }))}
+            className="form-input"
+            placeholder="https://heyzine.com/..."
+          />
+        </label>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-semibold text-[#51413c]">Showcase photos</legend>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[#eadfd9] px-4 py-2.5 text-sm font-semibold text-[#a45f60]">
+            <ImagePlus className="h-4 w-4" />
+            {uploading ? 'Uploading photo…' : 'Upload photos'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              multiple
+              className="sr-only"
+              disabled={uploading}
+              onChange={event => {
+                const files = Array.from(event.target.files ?? [])
+                void (async () => {
+                  for (const file of files) await uploadPhoto(file)
+                })()
+                event.target.value = ''
+              }}
+            />
+          </label>
+          {draft.images.length ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {draft.images.map((image, index) => (
+                <article key={`${image}-${index}`} className="relative overflow-hidden rounded-xl border border-[#eee5df] bg-[#faf7f5]">
+                  <img src={ownerAssetUrl(image)} alt={`Magazine design photo ${index + 1}`} loading="lazy" className="h-32 w-full object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => setDraft(current => ({ ...current, images: current.images.filter((_, itemIndex) => itemIndex !== index) }))}
+                    className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-white/95 text-rose-700 shadow"
+                    aria-label={`Remove magazine photo ${index + 1}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="grid min-h-32 place-items-center rounded-xl border border-dashed border-[#dfcfc7] bg-[#faf7f5] text-xs text-[#938079]">No photos added</div>
+          )}
+        </fieldset>
+        <div className="flex justify-end gap-2 border-t border-[#f0e8e4] pt-4">
+          <button type="button" onClick={onClose} className="rounded-xl border border-[#e8ddd7] px-4 py-2.5 text-sm">Cancel</button>
+          <button type="submit" disabled={uploading} className="rounded-xl bg-[#a45f60] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{isNew ? 'Add design' : 'Save design'}</button>
+        </div>
+      </form>
+    </ModalShell>
+  )
 }
 function ProductEditor({ product, isNew, categories, onClose, onSave }: { product: AdminProduct; isNew: boolean; categories: AdminCategory[]; onClose: () => void; onSave: (product: AdminProduct) => Promise<void> }) {
   const [draft, setDraft] = useState(product)

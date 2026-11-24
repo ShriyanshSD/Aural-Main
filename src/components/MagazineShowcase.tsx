@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronLeft, ChevronRight, ExternalLink, FileText, LoaderCircle, Sparkles, Trash2, Upload, X } from 'lucide-react'
-import { FinishType, MagazineCustomization, MagazineUploadMetadata, StoreSettings } from '../types'
+import { FinishType, MagazineCustomization, MagazineUploadMetadata, MagazineDesign, StoreSettings } from '../types'
 import { BrandLogo } from './BrandLogo'
 import { MAGAZINE_PRICES, MagazinePageCount } from '../data/magazinePricing'
 
-const magazineSamples = [
+const defaultMagazineSamples: MagazineDesign[] = [
   {
+    id: 'magazine-1',
     name: 'Magazine 1',
     images: [
       '/magazine-samples/magazine-1/1.png',
@@ -16,6 +17,7 @@ const magazineSamples = [
     previewUrl: 'https://heyzine.com/flip-book/4b27ca51f4.html'
   },
   {
+    id: 'magazine-2',
     name: 'Magazine 2',
     images: [
       '/magazine-samples/magazine-2/1.png',
@@ -25,6 +27,7 @@ const magazineSamples = [
     previewUrl: 'https://heyzine.com/flip-book/896a424567.html#page/1'
   },
   {
+    id: 'magazine-3',
     name: 'Magazine 3',
     images: [
       '/magazine-samples/magazine-3/1.png',
@@ -35,6 +38,7 @@ const magazineSamples = [
     previewUrl: 'https://heyzine.com/flip-book/3355ae211e.html'
   },
   {
+    id: 'magazine-4',
     name: 'Magazine 4',
     images: [
       '/magazine-samples/magazine-4/1.png',
@@ -54,6 +58,7 @@ interface MagazineShowcaseProps {
   settings: StoreSettings
   scrollRequestId: number
   onScrollToPreview: (target: HTMLElement) => void
+  magazineDesigns?: MagazineDesign[]
 }
 
 interface MagazineDraft {
@@ -122,7 +127,8 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
   userId,
   onRequireAuth,
   scrollRequestId,
-  onScrollToPreview
+  onScrollToPreview,
+  magazineDesigns
 }) => {
   const [initialDraft] = useState(readMagazineDraft)
   const [customizationId, setCustomizationId] = useState(() => initialDraft.customizationId ?? crypto.randomUUID())
@@ -148,7 +154,15 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
   const previewRef = useRef<HTMLDivElement>(null)
   const handledScrollRequestRef = useRef(0)
 
-  const selectedMagazine = magazineSamples[selectedMagazineIndex]
+  const magazineSamples = magazineDesigns?.length ? magazineDesigns : defaultMagazineSamples
+  const selectedMagazine = magazineSamples[selectedMagazineIndex] ?? magazineSamples[0]
+
+  useEffect(() => {
+    if (selectedMagazineIndex >= magazineSamples.length) {
+      setSelectedMagazineIndex(Math.max(0, magazineSamples.length - 1))
+      setSelectedImageIndex(0)
+    }
+  }, [magazineSamples.length, selectedMagazineIndex])
   const inputClass = `w-full rounded-xl border px-4 py-3 text-sm transition-colors focus:border-[#B36D6D] focus:outline-none ${
     isDarkMode
       ? 'border-[#3F302D] bg-[#221B19] text-[#EDE0DA] placeholder:text-[#907D77]'

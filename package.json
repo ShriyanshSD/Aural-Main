@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch server.ts",
     "start": "tsx server.ts",
-    "build": "vite build",
+    "build": "vite build && npm run build:owner && node scripts/prepare-owner-app.mjs",
     "build:owner": "vite build --mode owner",
     "android:sync": "npm run build:owner && cap sync android",
     "android": "npm run android:sync && cd android && gradlew.bat assembleDebug",

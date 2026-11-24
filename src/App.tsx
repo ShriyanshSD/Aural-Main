@@ -199,7 +199,13 @@ const initialStorefrontContent: StorefrontContent = {
   announcement: '',
   aboutText: 'At AUREL, we believe the best gifts are thought about, personalized, and given with meaning.',
   deliveryPolicy: '',
-  returnsPolicy: ''
+  returnsPolicy: '',
+  magazineDesigns: [
+    { id: 'magazine-1', name: 'Magazine 1', previewUrl: 'https://heyzine.com/flip-book/4b27ca51f4.html', images: ['/magazine-samples/magazine-1/1.png', '/magazine-samples/magazine-1/2.png', '/magazine-samples/magazine-1/3.png'] },
+    { id: 'magazine-2', name: 'Magazine 2', previewUrl: 'https://heyzine.com/flip-book/896a424567.html#page/1', images: ['/magazine-samples/magazine-2/1.png', '/magazine-samples/magazine-2/2.png', '/magazine-samples/magazine-2/3.png'] },
+    { id: 'magazine-3', name: 'Magazine 3', previewUrl: 'https://heyzine.com/flip-book/3355ae211e.html', images: ['/magazine-samples/magazine-3/1.png', '/magazine-samples/magazine-3/2.png', '/magazine-samples/magazine-3/3.png', '/magazine-samples/magazine-3/4.png'] },
+    { id: 'magazine-4', name: 'Magazine 4', previewUrl: 'https://heyzine.com/flip-book/5ab53f9de4.html#page/1', images: ['/magazine-samples/magazine-4/1.png', '/magazine-samples/magazine-4/2.png', '/magazine-samples/magazine-4/3.png', '/magazine-samples/magazine-4/4.png'] }
+  ]
 }
 
 const readSignupResumeState = (): SignupResumeState | null => {
@@ -1186,6 +1192,7 @@ function StorefrontApp() {
                   <MagazineShowcase
                     isDarkMode={isDarkMode}
                     settings={storeSettings}
+                    magazineDesigns={storefrontContent.magazineDesigns}
                     userId={authUser?.id}
                     onRequireAuth={() => {
                       setAuthMode('login')

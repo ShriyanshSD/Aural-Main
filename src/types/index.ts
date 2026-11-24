@@ -94,6 +94,14 @@ export interface StorefrontContent {
   aboutText: string
   deliveryPolicy: string
   returnsPolicy: string
+  magazineDesigns: MagazineDesign[]
+}
+
+export interface MagazineDesign {
+  id: string
+  name: string
+  previewUrl: string
+  images: string[]
 }
 
 export interface CartItem {
