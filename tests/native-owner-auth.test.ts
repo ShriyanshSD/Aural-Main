@@ -4,6 +4,8 @@ import { createServer, request, type IncomingMessage, type Server } from 'node:h
 import { after, before, beforeEach, test } from 'node:test'
 import apiHandler from '../api/index'
 import { getSecurityHeaders } from '../security-headers'
+import type { OrderDetails } from '../src/types'
+import { createUpiPaymentUrl } from '../src/utils/payment'
 
 const ownerEmail = 'owner@example.test'
 const nativeOrigin = 'https://localhost'
@@ -56,6 +58,8 @@ let serverOrigin: string
 let sessions: StoredNativeSession[] = []
 let websiteSessions: StoredAdminSession[] = []
 let pushDevices: StoredPushDevice[] = []
+let storeSettings: Record<string, unknown> | null = null
+let analyticsRecordCreatedAt = new Date(Date.now() - 1_000).toISOString()
 let userEmail = ownerEmail
 let emailConfirmedAt: string | null = new Date().toISOString()
 let nextSessionId = 0
@@ -63,8 +67,10 @@ let ownerPushDeviceLookupCount = 0
 let submitOrderAlreadySubmitted = false
 let submitOrderSuccess = true
 const originalFetch = globalThis.fetch
+const originalNodeEnv = process.env.NODE_ENV
 const originalFirebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
 const originalAdminSessionEncryptionKey = process.env.ADMIN_SESSION_ENCRYPTION_KEY
+const originalUpiId = process.env.AUREL_UPI_ID
 
 const jsonResponse = (payload: unknown, status = 200): Response =>
   new Response(JSON.stringify(payload), {
@@ -171,17 +177,51 @@ const mockSupabaseFetch: typeof fetch = async (input, init) => {
     return jsonResponse([{user_id: ownerId, expires_at: new Date(Date.now() + 60_000).toISOString()}])
   }
 
+  if (url.pathname === '/rest/v1/aurel_store_settings') {
+    if (method === 'GET') return jsonResponse(storeSettings ? [{settings: storeSettings}] : [])
+    if (method === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {settings?: Record<string, unknown>}
+      storeSettings = body.settings ?? null
+      return new Response(null, {status: 201})
+    }
+  }
+
+  if (url.pathname === '/rest/v1/aurel_admin_audit_log' && method === 'POST') {
+    return new Response(null, {status: 201})
+  }
+
   if (url.pathname === '/rest/v1/aurel_users' && method === 'GET') {
-    return jsonResponse([{id: ownerId, account_status: 'active'}])
+    const rows = [{id: ownerId, account_status: 'active', created_at: analyticsRecordCreatedAt}]
+    const createdAtFilter = url.searchParams.get('created_at')
+    return jsonResponse(createdAtFilter?.startsWith('gte.')
+      ? rows.filter(row => row.created_at >= createdAtFilter.slice(4))
+      : rows)
+  }
+
+  if (url.pathname === '/rest/v1/aurel_products' && method === 'GET') {
+    const rows = [{id: 'sample-product', created_at: analyticsRecordCreatedAt, is_active: true, stock_quantity: 4, low_stock_threshold: 5}]
+    const createdAtFilter = url.searchParams.get('created_at')
+    return jsonResponse(createdAtFilter?.startsWith('gte.')
+      ? rows.filter(row => row.created_at >= createdAtFilter.slice(4))
+      : rows)
   }
 
   if (url.pathname === '/rest/v1/aurel_orders' && method === 'GET') {
-    return jsonResponse([{
+    const rows = [{
       id: 123,
       order_id: 'AUR-2026-12345',
+      order_data: {total: 450, items: [{productId: 'sample-product', name: 'Sample', quantity: 1}]},
+      created_at: analyticsRecordCreatedAt,
       fulfillment_status: 'unfulfilled',
+      payment_status: 'paid',
+      order_status: 'confirmed',
+      whatsapp_submitted_at: analyticsRecordCreatedAt,
       order_experience_rating: null,
-    }])
+    }]
+    const createdAtFilter = url.searchParams.get('created_at')
+    return jsonResponse(createdAtFilter?.startsWith('gte.')
+      ? rows.filter(row => row.created_at >= createdAtFilter.slice(4))
+      : rows)
   }
 
   if (url.pathname === '/rest/v1/rpc/aurel_submit_order_for_payment' && method === 'POST') {
@@ -245,6 +285,8 @@ before(async () => {
   process.env.ADMIN_EMAILS = ownerEmail
   process.env.ADMIN_SESSION_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64')
   process.env.OWNER_NATIVE_ORIGINS = nativeOrigin
+  process.env.AUREL_UPI_ID = '9999200913@upi'
+  process.env.NODE_ENV = 'test'
   delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   globalThis.fetch = mockSupabaseFetch
 
@@ -270,6 +312,8 @@ beforeEach(() => {
   sessions = []
   websiteSessions = []
   pushDevices = []
+  storeSettings = null
+  analyticsRecordCreatedAt = new Date(Date.now() - 1_000).toISOString()
   userEmail = ownerEmail
   emailConfirmedAt = new Date().toISOString()
   nextSessionId = 0
@@ -281,6 +325,8 @@ beforeEach(() => {
 after(async () => {
   await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
   globalThis.fetch = originalFetch
+  if (originalNodeEnv === undefined) delete process.env.NODE_ENV
+  else process.env.NODE_ENV = originalNodeEnv
   delete process.env.SUPABASE_URL
   delete process.env.SUPABASE_SERVICE_ROLE_KEY
   delete process.env.ADMIN_EMAILS
@@ -289,6 +335,36 @@ after(async () => {
   delete process.env.OWNER_NATIVE_ORIGINS
   if (originalFirebaseServiceAccount === undefined) delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   else process.env.FIREBASE_SERVICE_ACCOUNT_JSON = originalFirebaseServiceAccount
+  if (originalUpiId === undefined) delete process.env.AUREL_UPI_ID
+  else process.env.AUREL_UPI_ID = originalUpiId
+})
+
+test('checkout config and mobile payment link use the configured UPI ID', async () => {
+  const response = await requestJson<{
+    config: { upiId: string; payeeName: string; whatsappNumber: string }
+  }>('/api/payment/config')
+  assert.equal(response.status, 200)
+  assert.equal(response.body.config.upiId, '9999200913@upi')
+
+  const order: OrderDetails = {
+    orderId: 'AUR-2026-TEST01',
+    customerName: 'Test',
+    phoneNumber: '9999999999',
+    email: 'test@example.com',
+    address: '',
+    city: '',
+    postalCode: '',
+    paymentMethod: 'UPI',
+    paymentTimestamp: '',
+    items: [],
+    subtotal: 125,
+    shipping: 0,
+    total: 125,
+    status: 'pending'
+  }
+  const paymentUrl = new URL(createUpiPaymentUrl(order, response.body.config))
+  assert.equal(paymentUrl.protocol, 'upi:')
+  assert.equal(paymentUrl.searchParams.get('pa'), response.body.config.upiId)
 })
 
 test('rejects invalid credentials and origins', async () => {
@@ -305,6 +381,45 @@ test('rejects invalid credentials and origins', async () => {
   })
   assert.equal(invalidOrigin.status, 403)
   assert.equal(sessions.length, 0)
+})
+
+test('requires owner app attestation for admin requests outside the test environment', async () => {
+  process.env.NODE_ENV = 'production'
+  try {
+    const response = await requestJson<{error: string}>('/api/admin/overview')
+    assert.equal(response.status, 401)
+    assert.match(response.body.error, /AUREL Owner app could not be verified/)
+  } finally {
+    process.env.NODE_ENV = 'test'
+  }
+})
+
+test('resets dashboard analytics without deleting business records', async () => {
+  const login = await requestJson<NativeAuthResponse>('/api/admin/native/login', {
+    method: 'POST',
+    body: {email: ownerEmail, password: 'GoodPassword1'},
+  })
+  assert.equal(login.status, 200)
+
+  const before = await requestJson<{metrics: {orders: number; customers: number; products: number; lowStock: number}}>('/api/admin/overview', {
+    token: login.body.accessToken,
+  })
+  assert.equal(before.status, 200, JSON.stringify(before.body))
+  assert.deepEqual(before.body.metrics, {orders: 1, customers: 1, products: 1, lowStock: 1, recordedPaidOrderValue: 450, averageOrderExperienceRating: null, ratedOrders: 0})
+
+  const reset = await requestJson<{success: boolean; resetAt: string}>('/api/admin/overview/reset', {
+    method: 'POST',
+    token: login.body.accessToken,
+  })
+  assert.equal(reset.status, 200)
+  assert.equal(reset.body.success, true)
+  assert.equal(storeSettings?.analyticsResetAt, reset.body.resetAt)
+
+  const after = await requestJson<{metrics: {orders: number; customers: number; products: number; lowStock: number; recordedPaidOrderValue: number; averageOrderExperienceRating: number | null; ratedOrders: number}}>('/api/admin/overview', {
+    token: login.body.accessToken,
+  })
+  assert.equal(after.status, 200, JSON.stringify(after.body))
+  assert.deepEqual(after.body.metrics, {orders: 0, customers: 0, products: 0, lowStock: 0, recordedPaidOrderValue: 0, averageOrderExperienceRating: null, ratedOrders: 0})
 })
 
 test('stores website Supabase session tokens encrypted and decrypts them for requests', async () => {
@@ -349,13 +464,14 @@ test('matches Vercel native rewrites and handles unauthenticated preflight befor
   const preflight = await requestJson<Record<string, never>>('/api/admin/native/login', {
     method: 'OPTIONS',
     preflightMethod: 'POST',
-    preflightHeaders: 'authorization,content-type',
+    preflightHeaders: 'authorization,content-type,x-firebase-appcheck',
   })
 
   assert.equal(preflight.status, 204)
   assert.equal(preflight.headers['access-control-allow-origin'], nativeOrigin)
   assert.match(String(preflight.headers['access-control-allow-methods']), /POST/)
   assert.match(String(preflight.headers['access-control-allow-headers']), /Authorization/i)
+  assert.match(String(preflight.headers['access-control-allow-headers']), /X-Firebase-AppCheck/i)
 
   const login = await requestJson<{error: string}>('/api/admin/native/login', {
     method: 'POST',
@@ -473,6 +589,7 @@ test('issues protected native sessions, rotates refresh tokens, and revokes on l
   })
   assert.equal(login.status, 200)
   assert.equal(login.body.user.email, ownerEmail)
+  assert.ok(Date.parse(login.body.refreshExpiresAt) > Date.now() + 364 * 24 * 60 * 60 * 1000)
   assert.equal(sessions.length, 1)
   assert.match(sessions[0].supabase_access_token_encrypted, /^v1:/)
   assert.match(sessions[0].supabase_refresh_token_encrypted, /^v1:/)

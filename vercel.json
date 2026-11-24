@@ -25,9 +25,7 @@
     { "source": "/api/auth/change-password", "destination": "/api/index?route=/api/auth/change-password" },
     { "source": "/api/auth/delete-account", "destination": "/api/index?route=/api/auth/delete-account" },
     { "source": "/api/auth/confirm-email-change", "destination": "/api/index?route=/api/auth/confirm-email-change" },
-    { "source": "/api/auth/logout", "destination": "/api/index?route=/api/auth/logout" },
-    { "source": "/admin", "destination": "/index.html" },
-    { "source": "/admin/:path*", "destination": "/index.html" }
+    { "source": "/api/auth/logout", "destination": "/api/index?route=/api/auth/logout" }
   ],
   "headers": [
     {

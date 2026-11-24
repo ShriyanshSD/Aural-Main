@@ -19,9 +19,10 @@ const magazineSamples = [
     name: 'Magazine 2',
     images: [
       '/magazine-samples/magazine-2/1.png',
-      '/magazine-samples/magazine-2/2.png'
+      '/magazine-samples/magazine-2/2.png',
+      '/magazine-samples/magazine-2/3.png'
     ],
-    previewUrl: 'https://heyzine.com/flip-book/9bb79572b3.html'
+    previewUrl: 'https://heyzine.com/flip-book/896a424567.html#page/1'
   },
   {
     name: 'Magazine 3',
@@ -32,6 +33,16 @@ const magazineSamples = [
       '/magazine-samples/magazine-3/4.png'
     ],
     previewUrl: 'https://heyzine.com/flip-book/3355ae211e.html'
+  },
+  {
+    name: 'Magazine 4',
+    images: [
+      '/magazine-samples/magazine-4/1.png',
+      '/magazine-samples/magazine-4/2.png',
+      '/magazine-samples/magazine-4/3.png',
+      '/magazine-samples/magazine-4/4.png'
+    ],
+    previewUrl: 'https://heyzine.com/flip-book/5ab53f9de4.html#page/1'
   }
 ]
 
@@ -586,15 +597,17 @@ export const MagazineShowcase: React.FC<MagazineShowcaseProps> = ({
                             “{customMessage}”
                           </p>
                         )}
-                        <a
-                          href={selectedMagazine.previewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mx-auto mb-2 mt-2 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#B36D6D]/40 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#9E5B5B] transition-all hover:border-[#B36D6D] hover:bg-[#B36D6D] hover:text-white dark:text-[#F0BDB5] dark:hover:text-white sm:mt-3 sm:gap-2 sm:px-4 sm:py-2 sm:text-[10px]"
-                        >
-                          <span>Full Preview Sample</span>
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
+                        {selectedMagazine.previewUrl && (
+                          <a
+                            href={selectedMagazine.previewUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mx-auto mb-2 mt-2 flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[#B36D6D]/40 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#9E5B5B] transition-all hover:border-[#B36D6D] hover:bg-[#B36D6D] hover:text-white dark:text-[#F0BDB5] dark:hover:text-white sm:mt-3 sm:gap-2 sm:px-4 sm:py-2 sm:text-[10px]"
+                          >
+                            <span>Full Preview Sample</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
                       </div>
 
                       <div className="mt-4 flex shrink-0 items-center justify-between border-t border-black/10 pt-3 text-[9px] uppercase tracking-wider text-[#88746F] dark:border-white/10 dark:text-[#A79690] sm:text-[10px]">

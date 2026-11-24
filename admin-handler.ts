@@ -6,6 +6,7 @@ import type { Product, StorefrontContent } from './src/types/index.js'
 import { createMagazineSignedDownloadUrl, getSupabaseAuthKey, getSupabaseConfig, supabaseRequest } from './auth-handler.js'
 import { normalizeValidPhoneNumber } from './src/utils/accountValidation.js'
 import { sendOrderConfirmationEmail, sendOrderStatusEmail } from './email-service.js'
+import { verifyOwnerAppCheck } from './owner-app-check.js'
 
 interface AdminRequest extends IncomingMessage {
   body?: unknown
@@ -214,7 +215,7 @@ const productionStatuses = [
 const cookieName = 'aurel_admin_session'
 const sessionDurationSeconds = 60 * 60 * 8
 const nativeAccessDurationSeconds = 10 * 60
-const nativeRefreshDurationSeconds = 30 * 24 * 60 * 60
+const nativeRefreshDurationSeconds = 365 * 24 * 60 * 60
 const defaultSettings: StoreSettings = {
   storeName: 'AUREL',
   tagline: 'Made With Love For You',
@@ -1294,26 +1295,49 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     if (!['7d', '30d', '90d', 'all'].includes(requestedRange)) {
       return sendJson(res, 400, { error: 'Choose a supported analytics period.' })
     }
+    const settingsRows = await supabaseRequest<Array<{ settings: Record<string, unknown> }>>(
+      'aurel_store_settings',
+      new URLSearchParams({ id: 'eq.storefront', select: 'settings', limit: '1' })
+    )
+    const storedResetAt = settingsRows[0]?.settings?.analyticsResetAt
+    const analyticsResetAt = typeof storedResetAt === 'string' && Number.isFinite(Date.parse(storedResetAt))
+      ? new Date(storedResetAt).toISOString()
+      : undefined
     const orderQuery = new URLSearchParams({
       whatsapp_submitted_at: 'not.is.null',
       select: 'id,order_id,order_data,created_at,fulfillment_status,payment_status,order_status,order_experience_rating',
       order: 'created_at.desc',
       limit: '500'
     })
-    if (requestedRange !== 'all') {
-      const days = Number(requestedRange.slice(0, -1))
-      orderQuery.set('created_at', `gte.${new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()}`)
+    const rangeStart = requestedRange === 'all'
+      ? 0
+      : Date.now() - Number(requestedRange.slice(0, -1)) * 24 * 60 * 60 * 1000
+    const analyticsStart = Math.max(
+      rangeStart,
+      analyticsResetAt ? Date.parse(analyticsResetAt) : 0
+    )
+    if (analyticsStart) {
+      orderQuery.set('created_at', `gte.${new Date(analyticsStart).toISOString()}`)
+    }
+    const productQuery = new URLSearchParams({
+      select: 'id,name,category,price,stock_quantity,low_stock_threshold,is_active,created_at',
+      limit: '1000'
+    })
+    const userQuery = new URLSearchParams({ select: 'id,created_at', limit: '1000' })
+    if (analyticsResetAt) {
+      productQuery.set('created_at', `gte.${analyticsResetAt}`)
+      userQuery.set('created_at', `gte.${analyticsResetAt}`)
     }
     const [orders, products, users] = await Promise.all([
       fetchAllRows<{ id: number; order_id: string; order_data: Record<string, unknown>; created_at: string; fulfillment_status: string; payment_status: string; order_status: string; order_experience_rating: number | null }>(
         'aurel_orders',
         orderQuery
       ),
-      fetchAllRows<{ id: string; name: string; category: string; price: number; stock_quantity: number | null; low_stock_threshold: number; is_active: boolean }>(
+      fetchAllRows<{ id: string; name: string; category: string; price: number; stock_quantity: number | null; low_stock_threshold: number; is_active: boolean; created_at: string }>(
         'aurel_products',
-        new URLSearchParams({ select: 'id,name,category,price,stock_quantity,low_stock_threshold,is_active', limit: '1000' })
+        productQuery
       ),
-      fetchAllRows<{ id: string }>('aurel_users', new URLSearchParams({ select: 'id', limit: '1000' }))
+      fetchAllRows<{ id: string; created_at: string }>('aurel_users', userQuery)
     ])
     const paidOrders = orders.filter(order => order.payment_status === 'paid')
     const revenue = paidOrders.reduce((total, order) => {
@@ -1355,6 +1379,25 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       bestsellers: [...bestsellers.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
       orderStatuses: [...orderStatusCounts.entries()].map(([status, count]) => ({ status, count }))
     })
+  }
+
+  if (path === '/api/admin/overview/reset' && method === 'POST') {
+    const resetAt = new Date().toISOString()
+    const rows = await supabaseRequest<Array<{ settings: Record<string, unknown> }>>(
+      'aurel_store_settings',
+      new URLSearchParams({ id: 'eq.storefront', select: 'settings', limit: '1' })
+    )
+    await supabaseRequest('aurel_store_settings', new URLSearchParams({ on_conflict: 'id' }), {
+      method: 'POST',
+      body: JSON.stringify({
+        id: 'storefront',
+        settings: { ...(rows[0]?.settings ?? {}), analyticsResetAt: resetAt },
+        updated_at: resetAt
+      }),
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }
+    })
+    await logAdminAction(session, 'analytics_reset', 'analytics', 'overview', { resetAt })
+    return sendJson(res, 200, { success: true, resetAt })
   }
 
   if (path === '/api/admin/products/import' && method === 'POST') {
@@ -2479,6 +2522,9 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
 export async function adminApiHandler(req: AdminRequest, res: ServerResponse) {
   const path = requestPath(req).replace(/\/+$/, '') || '/'
   try {
+    if (!await verifyOwnerAppCheck(req)) {
+      return sendJson(res, 401, { error: 'The AUREL Owner app could not be verified. Update or reinstall the owner app.' })
+    }
     await handleAdminRoute(req, res, path)
   } catch (error) {
     console.error(`Admin API request failed (${req.method ?? 'unknown'} ${path}):`, error)

@@ -2204,7 +2204,7 @@ export async function paymentConfigHandler(req: IncomingMessage, res: ServerResp
     res.setHeader('Allow', 'GET')
     return sendJson(res, 405, { error: 'Method not allowed.' })
   }
-  const upiId = process.env.AUREL_UPI_ID?.trim() || 'shriyansh.dogra2003@okicici'
+  const upiId = process.env.AUREL_UPI_ID?.trim() || '9999200913@upi'
   const payeeName = process.env.AUREL_UPI_PAYEE_NAME?.trim() || 'AUREL'
   const configuredNumber = (process.env.AUREL_WHATSAPP_NUMBER || '8588905927').replace(/\D/g, '')
   if (!/^[\w.-]+@[\w.-]+$/.test(upiId) || !payeeName || payeeName.length > 80 || !/^\d{10,15}$/.test(configuredNumber)) {
