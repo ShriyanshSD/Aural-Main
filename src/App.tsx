@@ -14,7 +14,6 @@ import { Product, ProductCategory, CartItem, OrderDetails, FinishType, AuthUser,
 import { PRODUCTS } from './data/products'
 import { MAGAZINE_PRICES } from './data/magazinePricing'
 
-const AdminApp = React.lazy(() => import('./AdminApp'))
 const Sidebar = React.lazy(() => import('./components/Sidebar').then(module => ({ default: module.Sidebar })))
 const MomentsSection = React.lazy(() => import('./components/MomentsSection').then(module => ({ default: module.MomentsSection })))
 const CategoryGrid = React.lazy(() => import('./components/CategoryGrid').then(module => ({ default: module.CategoryGrid })))
@@ -1429,8 +1428,5 @@ function StorefrontApp() {
 }
 
 export default function App() {
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
-    return <React.Suspense fallback={<div className="min-h-screen bg-[#f7f3ef]" />}><AdminApp /></React.Suspense>
-  }
   return <StorefrontApp />
 }

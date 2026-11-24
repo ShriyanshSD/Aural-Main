@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import {
@@ -227,7 +227,7 @@ const readAnalyticsRange = (): AnalyticsRange => {
   return analyticsRanges.find(range => range === saved) ?? '30d'
 }
 const ownerPathFromLocation = () => isOwnerNativeBuild
-  ? window.location.hash.startsWith('#/admin/') ? window.location.hash.slice(1) : '/admin/dashboard'
+  ? window.location.hash.startsWith('#/owner/') ? window.location.hash.slice(1) : '/owner/dashboard'
   : window.location.pathname
 const sectionFromPath = (path: string): Section => {
   const segment = path.split('/').filter(Boolean)[1]
@@ -279,6 +279,7 @@ export default function AdminApp() {
   const [ordersNotificationVersion, setOrdersNotificationVersion] = useState(0)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRange>(readAnalyticsRange)
+  const [resettingAnalytics, setResettingAnalytics] = useState(false)
   const [products, setProducts] = useState<AdminProduct[]>([])
   const [customOrders, setCustomOrders] = useState<AdminCustomOrder[]>([])
   const [customMagazines, setCustomMagazines] = useState<AdminMagazineOrder[]>([])
@@ -302,7 +303,7 @@ export default function AdminApp() {
   const [customerDraft, setCustomerDraft] = useState<AdminCustomer | null>(null)
 
   const navigateSection = (target: Section) => {
-    window.history.pushState(null, '', isOwnerNativeBuild ? `#/admin/${target}` : `/admin/${target}`)
+    window.history.pushState(null, '', isOwnerNativeBuild ? `#/owner/${target}` : `/admin/${target}`)
     setSection(target)
   }
 
@@ -327,7 +328,7 @@ export default function AdminApp() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.has('code') || params.has('access_token')) {
-      window.history.replaceState(null, '', isOwnerNativeBuild ? '#/admin/login' : '/admin/login')
+      window.history.replaceState(null, '', isOwnerNativeBuild ? '#/owner/login' : '/admin/login')
     }
     void api<{ user: { id: string; email: string } }>('/api/admin/me')
       .then(({ user }) => {
@@ -410,6 +411,20 @@ export default function AdminApp() {
     }
   }
 
+  const resetAnalytics = async () => {
+    setResettingAnalytics(true)
+    setError('')
+    try {
+      await api<{ success: boolean }>('/api/admin/overview/reset', { method: 'POST' })
+      setOverview(await api<Overview>(`/api/admin/overview?range=${analyticsRange}`))
+      setNotice('Dashboard analytics were reset. Your existing business records are unchanged.')
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Dashboard analytics could not be reset.')
+    } finally {
+      setResettingAnalytics(false)
+    }
+  }
+
   useEffect(() => {
     if (signedIn) void loadSection(section)
   }, [section, signedIn, analyticsRange])
@@ -488,7 +503,7 @@ export default function AdminApp() {
       setOwnerEmail('')
       setNotice('')
       setSection('dashboard')
-      window.history.replaceState(null, '', isOwnerNativeBuild ? '#/admin/login' : '/admin/login')
+      window.history.replaceState(null, '', isOwnerNativeBuild ? '#/owner/login' : '/admin/login')
     } catch (logoutError) {
       setError(logoutError instanceof Error ? logoutError.message : 'Unable to sign out.')
     }
@@ -725,7 +740,14 @@ export default function AdminApp() {
           {busy && <div className="mb-4 flex items-center gap-2 text-xs text-[#9b8881]"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Updating dashboard</div>}
 
           <div key={section} className="owner-page-enter owner-route">
-          {section === 'dashboard' && <Dashboard overview={overview} range={analyticsRange} onRangeChange={setAnalyticsRange} onOpenSection={navigateSection} />}
+          {section === 'dashboard' && <Dashboard
+            overview={overview}
+            range={analyticsRange}
+            onRangeChange={setAnalyticsRange}
+            onOpenSection={navigateSection}
+            onResetAnalytics={() => void resetAnalytics()}
+            resettingAnalytics={resettingAnalytics}
+          />}
           {section === 'products' && <ProductsPage
             products={filteredProducts} categories={categories} search={search} setSearch={setSearch}
             onRefresh={() => void loadSection('products')} onEdit={setProductDraft}
@@ -1381,19 +1403,22 @@ function NotificationBell({ notifications, unreadCount, open, onToggle, onRead, 
 function AlertMessage({ message }: { message: string }) {
   return <div role="alert" className="my-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{message}</div>
 }
-function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
+function Dashboard({ overview, range, onRangeChange, onOpenSection, onResetAnalytics, resettingAnalytics }: {
   overview: Overview | null
   range: '7d' | '30d' | '90d' | 'all'
   onRangeChange: (range: '7d' | '30d' | '90d' | 'all') => void
   onOpenSection: (section: Section) => void
+  onResetAnalytics: () => void
+  resettingAnalytics: boolean
 }) {
+  const resetDialogRef = useRef<HTMLDialogElement>(null)
   const metrics = overview?.metrics
   const cards = [
     { label: 'Verified revenue', value: money(metrics?.recordedPaidOrderValue), detail: 'Payments confirmed by you', Icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-700' },
     { label: 'Orders', value: String(metrics?.orders ?? 0), detail: 'In the selected period', Icon: ShoppingBag, tone: 'bg-[#f8eeeb] text-[#a45f60]' },
     { label: 'Customers', value: String(metrics?.customers ?? 0), detail: 'Registered accounts', Icon: UserRound, tone: 'bg-sky-50 text-sky-700' },
     { label: 'Products', value: String(metrics?.products ?? 0), detail: `${metrics?.lowStock ?? 0} running low on stock`, Icon: PackageCheck, tone: 'bg-violet-50 text-violet-700' },
-    { label: 'Customer experience', value: metrics?.averageOrderExperienceRating == null ? '—' : `${metrics.averageOrderExperienceRating.toFixed(1)} / 5`, detail: `${metrics?.ratedOrders ?? 0} customer ratings`, Icon: Star, tone: 'bg-amber-50 text-amber-700' }
+    { label: 'Customer experience', value: metrics?.averageOrderExperienceRating == null ? '0.0 / 5' : `${metrics.averageOrderExperienceRating.toFixed(1)} / 5`, detail: `${metrics?.ratedOrders ?? 0} customer ratings`, Icon: Star, tone: 'bg-amber-50 text-amber-700' }
   ]
   const awaitingCount = overview?.orderStatuses.find(item => item.status === 'pending_payment')?.count ?? 0
   const statusColors: Record<string, string> = {
@@ -1429,12 +1454,18 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
             </a>
           </div>
         </div>
-        <label className="flex shrink-0 flex-col gap-2 text-[10px] font-semibold uppercase tracking-[.14em] text-white/60">
-          Analytics period
-          <select value={range} onChange={event => onRangeChange(event.target.value as typeof range)} className="min-h-11 rounded-xl border border-white/15 bg-[#4b3b3b] px-3 text-xs font-medium normal-case tracking-normal text-white outline-none transition focus:border-white/40">
-            <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="all">All time</option>
-          </select>
-        </label>
+        <div className="flex shrink-0 flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-2 text-[10px] font-semibold uppercase tracking-[.14em] text-white/60">
+            Analytics period
+            <select value={range} onChange={event => onRangeChange(event.target.value as typeof range)} className="min-h-11 rounded-xl border border-white/15 bg-[#4b3b3b] px-3 text-xs font-medium normal-case tracking-normal text-white outline-none transition focus:border-white/40">
+              <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="all">All time</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => resetDialogRef.current?.showModal()} disabled={resettingAnalytics} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-3 text-xs font-semibold text-white transition hover:bg-white/10 disabled:cursor-wait disabled:opacity-60">
+            <Trash2 className="h-4 w-4" />
+            {resettingAnalytics ? 'Clearing…' : 'Clear history'}
+          </button>
+        </div>
       </div>
     </section>
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -1469,6 +1500,30 @@ function Dashboard({ overview, range, onRangeChange, onOpenSection }: {
     <section className="owner-card rounded-2xl border border-[#eee5df] bg-white p-5 shadow-[0_8px_24px_rgba(70,48,39,0.035)] sm:p-6"><div className="mb-4 flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#f8eeeb] text-[#a45f60]"><Activity className="h-4 w-4" /></span><div><h3 className="font-semibold text-[#3d302e]">Top sellers</h3><p className="mt-0.5 text-xs text-[#9a8881]">Based on recorded paid order items</p></div></div>
         {overview?.bestsellers.length ? <div className="space-y-4">{overview.bestsellers.map(item => <div key={item.name}><div className="mb-1.5 flex justify-between gap-3 text-sm"><span className="truncate">{item.name}</span><span className="shrink-0 text-[#8d7770]">{item.quantity} sold</span></div><div className="h-2 overflow-hidden rounded-full bg-[#f3eae6]"><div className="h-full rounded-full bg-[#b97772]" style={{ width: `${Math.min(100, Math.max(8, item.quantity / overview.bestsellers[0].quantity * 100))}%` }} /></div></div>)}</div> : <EmptyState text="Product sales will appear here after paid orders." />}
     </section>
+    <dialog
+      ref={resetDialogRef}
+      aria-labelledby="analytics-reset-title"
+      aria-describedby="analytics-reset-description"
+      className="m-auto w-[min(92vw,28rem)] max-w-none rounded-2xl border border-[#eee5df] bg-white p-0 text-[#3d302e] shadow-2xl backdrop:bg-black/50"
+    >
+      <div className="p-6">
+        <h1 id="analytics-reset-title" className="font-serif-title text-2xl">Clear dashboard history?</h1>
+        <p id="analytics-reset-description" className="mt-3 text-sm leading-6 text-[#76645e]">
+          Analytics will reset to zero from now on. Existing orders, customer accounts, and products will not be deleted.
+        </p>
+        <form method="dialog" className="mt-6 flex justify-end gap-3">
+          <button type="submit" value="cancel" autoFocus className="min-h-11 rounded-xl border border-[#e9dfda] px-4 py-2.5 text-sm font-semibold text-[#6b5750] transition hover:bg-[#f8f3f0]">
+            Cancel
+          </button>
+          <button type="button" disabled={resettingAnalytics} onClick={() => {
+            resetDialogRef.current?.close()
+            onResetAnalytics()
+          }} className="min-h-11 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#8c4e50] disabled:cursor-wait disabled:opacity-60">
+            Clear analytics
+          </button>
+        </form>
+      </div>
+    </dialog>
   </div>
 }
 function EmptyState({ text }: { text: string }) {

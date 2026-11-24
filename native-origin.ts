@@ -2,7 +2,7 @@ import type {IncomingMessage, ServerResponse} from 'node:http';
 
 const defaultNativeOrigins = ['https://localhost'];
 const allowedMethods = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
-const allowedHeaders = new Set(['content-type', 'authorization']);
+const allowedHeaders = new Set(['content-type', 'authorization', 'x-firebase-appcheck']);
 
 export const getNativeOrigins = (): Set<string> => {
   const configuredOrigins = process.env.OWNER_NATIVE_ORIGINS
@@ -62,7 +62,7 @@ export const handleNativeCors = (req: IncomingMessage, res: ServerResponse): boo
   }
 
   res.setHeader('Access-Control-Allow-Methods', [...allowedMethods, 'OPTIONS'].join(', '));
-  if (requestedHeaders.length) res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (requestedHeaders.length) res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firebase-AppCheck');
   res.setHeader('Access-Control-Max-Age', '600');
   res.statusCode = 204;
   res.end();

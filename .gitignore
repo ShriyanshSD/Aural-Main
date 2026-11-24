@@ -9,3 +9,9 @@ coverage/
 !.env.example
 android/.gradle/
 android/app/build/
+android/.idea/
+.vercel/
+brag-output
+.agents
+.claude
+.vercel
