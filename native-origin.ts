@@ -1,6 +1,9 @@
 import type {IncomingMessage, ServerResponse} from 'node:http';
 
-const defaultNativeOrigins = ['https://localhost'];
+const defaultNativeOrigins = [
+  'https://localhost',
+  'https://aurelstudios.vercel.app',
+];
 const allowedMethods = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
 const allowedHeaders = new Set(['content-type', 'authorization', 'x-firebase-appcheck']);
 
@@ -9,7 +12,9 @@ export const getNativeOrigins = (): Set<string> => {
     ?.split(',')
     .map(origin => origin.trim())
     .filter(Boolean);
-  const origins = configuredOrigins?.length ? configuredOrigins : defaultNativeOrigins;
+  const origins = configuredOrigins?.length
+    ? [...new Set([...configuredOrigins, ...defaultNativeOrigins])]
+    : defaultNativeOrigins;
 
   return new Set(origins.map(origin => {
     let parsedOrigin: URL;
@@ -31,6 +36,9 @@ export const isAllowedNativeOrigin = (origin: string): boolean =>
 
 export const handleNativeCors = (req: IncomingMessage, res: ServerResponse): boolean => {
   const origin = req.headers.origin;
+  if (!origin && (req.headers.authorization || req.headers['x-firebase-appcheck'])) {
+    return false;
+  }
   const isAllowedOrigin = Boolean(origin && isAllowedNativeOrigin(origin));
 
   if (origin && isAllowedOrigin) {

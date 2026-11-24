@@ -578,7 +578,8 @@ const validateNativeIdentity = async (
 
 const nativeOriginIsAllowed = (req: AdminRequest): boolean => {
   const origin = req.headers.origin
-  return Boolean(origin && isAllowedNativeOrigin(origin))
+  if (!origin) return true
+  return isAllowedNativeOrigin(origin)
 }
 
 const sendNativeTokens = (
