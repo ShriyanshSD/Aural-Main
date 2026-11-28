@@ -199,6 +199,15 @@ const initialContent: StorefrontContent = {
     { id: 'magazine-4', name: 'Magazine 4', previewUrl: 'https://heyzine.com/flip-book/5ab53f9de4.html#page/1', images: ['/magazine-samples/magazine-4/1.png', '/magazine-samples/magazine-4/2.png', '/magazine-samples/magazine-4/3.png', '/magazine-samples/magazine-4/4.png'] }
   ]
 }
+const magazineDesignListsMatch = (left: MagazineDesign[], right: MagazineDesign[]) =>
+  left.length === right.length && left.every((design, index) => {
+    const publishedDesign = right[index]
+    return design.id === publishedDesign.id
+      && design.name === publishedDesign.name
+      && design.previewUrl === publishedDesign.previewUrl
+      && design.images.length === publishedDesign.images.length
+      && design.images.every((image, imageIndex) => image === publishedDesign.images[imageIndex])
+  })
 
 const initialSettings: StoreSettings = {
   storeName: 'AUREL',
@@ -297,6 +306,8 @@ export default function AdminApp() {
   const [activityEntries, setActivityEntries] = useState<AdminAuditEntry[]>([])
   const [contentDraft, setContentDraft] = useState<StorefrontContent>(initialContent)
   const [contentPublished, setContentPublished] = useState<StorefrontContent>(initialContent)
+  const [contentLoaded, setContentLoaded] = useState(false)
+  const [contentLoading, setContentLoading] = useState(false)
   const [categories, setCategories] = useState<AdminCategory[]>([])
   const [orders, setOrders] = useState<AdminOrder[]>([])
   const [confirmingOrderId, setConfirmingOrderId] = useState<string>('')
@@ -443,6 +454,19 @@ export default function AdminApp() {
         ])
         setProducts(result.products)
         setCategories(categoryResult.categories)
+        if (!contentLoaded) {
+          setContentLoading(true)
+          try {
+            const contentResult = await api<{ draft: StorefrontContent; published: StorefrontContent }>('/api/admin/content')
+            setContentDraft(contentResult.draft)
+            setContentPublished(contentResult.published)
+            setContentLoaded(true)
+          } catch (contentLoadError) {
+            setError(contentLoadError instanceof Error ? contentLoadError.message : 'Could not load saved magazine designs.')
+          } finally {
+            setContentLoading(false)
+          }
+        }
         if (!result.products.length) setNotice('Import the existing storefront catalog to begin managing products.')
       }
       if (target === 'custom-orders') {
@@ -466,6 +490,7 @@ export default function AdminApp() {
         setSettings(settingsResult.settings)
         setContentDraft(contentResult.draft)
         setContentPublished(contentResult.published)
+        setContentLoaded(true)
         setActivityEntries(activityResult.entries)
       }
     } catch (loadError) {
@@ -564,6 +589,8 @@ export default function AdminApp() {
       else await api('/api/admin/logout', { method: 'POST', body: '{}' })
       setSignedIn(false)
       setOwnerEmail('')
+      setContentLoaded(false)
+      setContentLoading(false)
       window.sessionStorage.removeItem('aurel_owner_cached_email')
       setNotice('')
       setSection('dashboard')
@@ -826,7 +853,7 @@ export default function AdminApp() {
           />}
           {section === 'products' && <ProductsPage
             products={filteredProducts} categories={categories} search={search} setSearch={setSearch}
-            contentDraft={contentDraft} setContentDraft={setContentDraft}
+            contentDraft={contentDraft} contentPublished={contentPublished} contentLoaded={contentLoaded} contentLoading={contentLoading} setContentDraft={setContentDraft}
             onSaveMagazineDraft={() => {
               void runAction(async () => {
                 await api('/api/admin/content', { method: 'PATCH', body: JSON.stringify({ content: contentDraft }) })
@@ -838,6 +865,7 @@ export default function AdminApp() {
                 await api('/api/admin/content', { method: 'PATCH', body: JSON.stringify({ content: contentDraft }) })
                 await api('/api/admin/content/publish', { method: 'POST', body: '{}' })
                 setContentPublished(contentDraft)
+                setContentLoaded(true)
               }, 'Magazine designs published.')
             }}
             onRefresh={() => void loadSection('products')} onEdit={setProductDraft}
@@ -1390,8 +1418,9 @@ function StorefrontContentPage({ draft, published, setDraft, onSave, onPublish }
     </div>
   </section>
 }
-function MagazineDesignsManager({ draft, setDraft, onSave, onPublish }: {
+function MagazineDesignsManager({ draft, published, setDraft, onSave, onPublish }: {
   draft: StorefrontContent
+  published: StorefrontContent
   setDraft: React.Dispatch<React.SetStateAction<StorefrontContent>>
   onSave: () => void
   onPublish: () => void
@@ -1399,6 +1428,7 @@ function MagazineDesignsManager({ draft, setDraft, onSave, onPublish }: {
   const [editingDesign, setEditingDesign] = useState<MagazineDesign | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const designs = draft.magazineDesigns ?? []
+  const hasUnpublishedChanges = !magazineDesignListsMatch(designs, published.magazineDesigns ?? [])
   const openNewDesign = () => {
     setEditingDesign({
       id: `magazine-${crypto.randomUUID()}`,
@@ -1423,7 +1453,7 @@ function MagazineDesignsManager({ draft, setDraft, onSave, onPublish }: {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-[#40322e]">Magazine designs</h3>
-          <p className="mt-1 text-sm text-[#938079]">The four current designs appear here. Edit photos or links, or add a new showcase.</p>
+          <p className="mt-1 text-sm text-[#938079]">Your magazine designs appear here. Edit photos or links, or add a new showcase.</p>
         </div>
         <button
           type="button"
@@ -1475,7 +1505,7 @@ function MagazineDesignsManager({ draft, setDraft, onSave, onPublish }: {
       )}
       <div className="flex flex-wrap gap-3 border-t border-[#f1ebe7] pt-5">
         <button type="button" onClick={onSave} className="rounded-xl border border-[#e8d9d2] px-4 py-2.5 text-sm font-semibold text-[#a45f60]">Save draft</button>
-        <button type="button" onClick={onPublish} className="rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white">Publish designs</button>
+        <button type="button" disabled={!hasUnpublishedChanges} onClick={onPublish} className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${hasUnpublishedChanges ? 'bg-[#a45f60] text-white hover:bg-[#8c4e50]' : 'cursor-not-allowed bg-[#eee8e4] text-[#9a8881]'}`}>Publish designs</button>
       </div>
       {editingDesign && (
         <MagazineDesignEditor
@@ -1745,9 +1775,12 @@ function TablePager({ page, pageCount, total, onChange }: { page: number; pageCo
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return <div className="owner-page-heading mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="font-serif-title text-2xl">{title}</h2><p className="mt-1 text-sm text-[#8f7c75]">{description}</p></div>{action}</div>
 }
-function ProductsPage({ products, categories, search, setSearch, contentDraft, setContentDraft, onSaveMagazineDraft, onPublishMagazines, onRefresh, onEdit, onDuplicate, onBulkAction, onCreate, onImport, onDelete }: {
+function ProductsPage({ products, categories, search, setSearch, contentDraft, contentPublished, contentLoaded, contentLoading, setContentDraft, onSaveMagazineDraft, onPublishMagazines, onRefresh, onEdit, onDuplicate, onBulkAction, onCreate, onImport, onDelete }: {
   products: AdminProduct[]; categories: AdminCategory[]; search: string; setSearch: (value: string) => void
   contentDraft: StorefrontContent
+  contentPublished: StorefrontContent
+  contentLoaded: boolean
+  contentLoading: boolean
   setContentDraft: React.Dispatch<React.SetStateAction<StorefrontContent>>
   onSaveMagazineDraft: () => void
   onPublishMagazines: () => void
@@ -1798,12 +1831,17 @@ function ProductsPage({ products, categories, search, setSearch, contentDraft, s
       ] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`min-h-11 shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${tab === id ? 'bg-[#f8eeeb] text-[#934f51] shadow-sm' : 'text-[#776762] hover:bg-[#faf7f5]'}`}>{label}</button>)}
     </div>
     {tab === 'magazines' ? (
-      <MagazineDesignsManager
+      contentLoaded ? <MagazineDesignsManager
         draft={contentDraft}
+        published={contentPublished}
         setDraft={setContentDraft}
         onSave={onSaveMagazineDraft}
         onPublish={onPublishMagazines}
-      />
+      /> : <div className="rounded-2xl border border-[#eee5df] bg-white p-8 text-center text-sm text-[#938079]">
+        {contentLoading
+          ? <span className="inline-flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin" />Loading saved magazine designs…</span>
+          : <div><p>Saved magazine designs could not be loaded. Refresh before editing to avoid overwriting existing designs.</p><button type="button" onClick={onRefresh} className="mt-4 min-h-10 rounded-xl border border-[#e8d9d2] px-4 text-sm font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Retry</button></div>}
+      </div>
     ) : <>
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
       {[
