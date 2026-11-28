@@ -313,16 +313,18 @@ export default function AdminApp() {
   const [categoryDraft, setCategoryDraft] = useState<AdminCategory | null>(null)
   const [customerDraft, setCustomerDraft] = useState<AdminCustomer | null>(null)
   const [checkingForAppUpdate, setCheckingForAppUpdate] = useState(false)
+  const [ownerAppUpdateAvailable, setOwnerAppUpdateAvailable] = useState(false)
 
   const checkOwnerAppUpdate = async (manual = false) => {
     if (!isOwnerNativeBuild) return
     if (manual) setCheckingForAppUpdate(true)
     try {
-      const result = await checkForOwnerAppUpdate(false)
+      const result = await checkForOwnerAppUpdate(true)
       if (manual) {
         if (result.changed) {
-          window.location.replace(result.manifest.entry || '/owner-app/')
+          setOwnerAppUpdateAvailable(false)
         } else {
+          setOwnerAppUpdateAvailable(false)
           setNotice('AUREL Owner is already up to date.')
         }
       }
@@ -386,12 +388,16 @@ export default function AdminApp() {
     void rememberOwnerAppUpdateBaseline().catch(updateError => {
       if (active) console.error('Unable to establish the owner app update baseline.', updateError)
     })
-    const timer = window.setInterval(() => {
+    const checkForAvailableUpdate = () => {
       if (!active) return
-      void checkForOwnerAppUpdate(true).catch(updateError => {
+      void checkForOwnerAppUpdate(false).then(({ changed }) => {
+        if (active) setOwnerAppUpdateAvailable(changed)
+      }).catch(updateError => {
         console.error('Automatic owner app update check failed.', updateError)
       })
-    }, 15 * 60 * 1000)
+    }
+    checkForAvailableUpdate()
+    const timer = window.setInterval(checkForAvailableUpdate, 15 * 60 * 1000)
     return () => {
       active = false
       window.clearInterval(timer)
@@ -748,10 +754,15 @@ export default function AdminApp() {
               type="button"
               disabled={checkingForAppUpdate}
               onClick={() => void checkOwnerAppUpdate(true)}
+              aria-label={ownerAppUpdateAvailable ? 'Update available. Check updates to install.' : 'Check for owner app updates'}
+              title={ownerAppUpdateAvailable ? 'A new owner app update is available' : 'Check for owner app updates'}
               className="min-h-10 items-center gap-2 rounded-xl border border-[#eadfd9] px-3 text-xs font-semibold text-[#866e65] hover:bg-[#faf6f3] disabled:cursor-wait disabled:opacity-60 inline-flex"
             >
-              {checkingForAppUpdate ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
-              Check updates
+              <span className="relative inline-flex items-center gap-2">
+                {checkingForAppUpdate ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
+                Check updates
+                {ownerAppUpdateAvailable && <span aria-hidden="true" className="absolute -right-3 -top-3 grid h-4 min-w-4 place-items-center rounded-full bg-rose-600 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#f8f1e5]">!</span>}
+              </span>
             </button>}
             <NotificationBell
               notifications={notifications}

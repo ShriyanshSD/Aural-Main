@@ -34,8 +34,8 @@ export const checkForOwnerAppUpdate = async (
   const changed = Boolean(cachedVersion && cachedVersion !== manifest.webVersion)
 
   if (changed) {
-    window.localStorage.setItem(cachedManifestKey, manifest.webVersion)
     if (reloadIfChanged) {
+      window.localStorage.setItem(cachedManifestKey, manifest.webVersion)
       const nextEntry = manifest.entry || '/owner-app/'
       window.location.replace(nextEntry)
       return { changed: true, manifest }
