@@ -310,7 +310,8 @@ export const sendOrderConfirmationEmail = async (id: number): Promise<Confirmati
 
 export const sendOrderStatusEmail = async (
   id: number,
-  status: 'shipped' | 'delivered'
+  status: 'shipped' | 'delivered',
+  trackingDetails?: { trackingNumber: string; trackingUrl: string }
 ): Promise<{ status: 'sent' | 'failed'; error?: string }> => {
   const order = await getOrder(id)
   if (!order) throw new Error('Order not found.')
@@ -352,9 +353,31 @@ export const sendOrderStatusEmail = async (
     const message = shipped
       ? 'We’re pleased to let you know that your AUREL order has been carefully prepared and dispatched. We hope it reaches you safely and brings joy to your special moment.'
       : 'We’re delighted to confirm that your AUREL order has been delivered. We hope your keepsake makes your special moment even more memorable.'
+    const rawTrackingNumber = trackingDetails?.trackingNumber ?? order.order_data.trackingNumber
+    const rawTrackingUrl = trackingDetails?.trackingUrl ?? order.order_data.trackingUrl
+    const trackingNumber = typeof rawTrackingNumber === 'string' ? rawTrackingNumber.trim() : ''
+    const rawTrackingUrlText = typeof rawTrackingUrl === 'string' ? rawTrackingUrl.trim() : ''
+    if (trackingNumber.length > 120 || /[\u0000-\u001f\u007f]/.test(trackingNumber)) {
+      throw new Error('The saved tracking ID is invalid.')
+    }
+    let trackingUrl = ''
+    if (rawTrackingUrlText) {
+      const parsedTrackingUrl = new URL(rawTrackingUrlText)
+      if (!['http:', 'https:'].includes(parsedTrackingUrl.protocol) || parsedTrackingUrl.username || parsedTrackingUrl.password) {
+        throw new Error('The saved tracking link is invalid.')
+      }
+      trackingUrl = parsedTrackingUrl.toString()
+    }
     const safeName = escapeHtml(customerName)
     const safeOrderNumber = escapeHtml(orderNumber)
     const safeOrdersUrl = escapeHtml(ordersUrl)
+    const trackingText = [
+      ...(trackingNumber ? [`Tracking ID: ${trackingNumber}`] : []),
+      ...(trackingUrl ? [`Track your order: ${trackingUrl}`] : [])
+    ]
+    const trackingHtml = trackingNumber || trackingUrl
+      ? `<div style="margin:18px 0;padding:16px;border:1px solid #eadfd9;border-radius:12px;background:#fffaf6"><p style="margin:0 0 8px;font-size:12px;font-weight:bold;color:#665650">TRACKING DETAILS</p>${trackingNumber ? `<p style="margin:4px 0;font-size:13px;color:#665650"><strong>Tracking ID:</strong> ${escapeHtml(trackingNumber)}</p>` : ''}${trackingUrl ? `<p style="margin:4px 0;font-size:13px"><a href="${escapeHtml(trackingUrl)}" style="color:#8f5554">Track your order</a></p>` : ''}</div>`
+      : ''
     const text = [
       'AUREL',
       'Made With Love For You',
@@ -367,6 +390,7 @@ export const sendOrderStatusEmail = async (
       `Order Number: ${orderNumber}`,
       `Order Date: ${displayDate(order.created_at)}`,
       `Order Status: ${status.toUpperCase()}`,
+      ...(trackingText.length ? ['', 'Tracking details:', ...trackingText] : []),
       '',
       `View your orders: ${ordersUrl}`,
       '',
@@ -376,7 +400,7 @@ export const sendOrderStatusEmail = async (
       'Team AUREL',
       'Made With Love For You'
     ].join('\n')
-    const html = `<!doctype html><html><body style="margin:0;background:#f7f3ef;color:#302725;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f3ef;padding:32px 12px"><tr><td align="center"><table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;border:1px solid #eadfd9;border-radius:20px;overflow:hidden"><tr><td style="padding:34px 32px;text-align:center;background:#f4ece7"><div style="font-family:Georgia,serif;font-size:30px;letter-spacing:5px;color:#8f5554">AUREL</div><div style="margin-top:8px;font-size:11px;letter-spacing:2px;color:#806b64">MADE WITH LOVE FOR YOU</div></td></tr><tr><td style="padding:32px"><h1 style="margin:0 0 16px;text-align:center;font-family:Georgia,serif;font-size:27px;font-weight:400;color:#352927">${title}</h1><p style="font-size:15px;line-height:1.7">Dear ${safeName},</p><p style="font-size:14px;line-height:1.8;color:#665650">${message}</p><div style="margin:26px 0;padding:18px;border:1px solid #eee5df;border-radius:12px;background:#fcfaf8"><p style="margin:0;font-size:12px;line-height:1.8;color:#665650"><strong>Order Number:</strong> ${safeOrderNumber}<br><strong>Order Date:</strong> ${escapeHtml(displayDate(order.created_at))}<br><strong>Order Status:</strong> ${status.toUpperCase()}</p></div><div style="padding:8px 0 18px;text-align:center"><a href="${safeOrdersUrl}" style="display:inline-block;padding:13px 24px;border-radius:999px;background:#a45f60;color:#fff;text-decoration:none;font-size:12px;font-weight:bold;letter-spacing:1px">VIEW MY ORDERS</a></div><p style="font-size:13px;line-height:1.8;color:#665650">Thank you for making AUREL a part of your special moments.</p><p style="font-size:14px;line-height:1.8">With love,<br><strong>Team AUREL</strong><br><span style="font-size:11px;color:#806b64">Made With Love For You</span></p></td></tr></table></td></tr></table></body></html>`
+    const html = `<!doctype html><html><body style="margin:0;background:#f7f3ef;color:#302725;font-family:Arial,Helvetica,sans-serif"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f3ef;padding:32px 12px"><tr><td align="center"><table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;background:#fff;border:1px solid #eadfd9;border-radius:20px;overflow:hidden"><tr><td style="padding:34px 32px;text-align:center;background:#f4ece7"><div style="font-family:Georgia,serif;font-size:30px;letter-spacing:5px;color:#8f5554">AUREL</div><div style="margin-top:8px;font-size:11px;letter-spacing:2px;color:#806b64">MADE WITH LOVE FOR YOU</div></td></tr><tr><td style="padding:32px"><h1 style="margin:0 0 16px;text-align:center;font-family:Georgia,serif;font-size:27px;font-weight:400;color:#352927">${title}</h1><p style="font-size:15px;line-height:1.7">Dear ${safeName},</p><p style="font-size:14px;line-height:1.8;color:#665650">${message}</p><div style="margin:26px 0;padding:18px;border:1px solid #eee5df;border-radius:12px;background:#fcfaf8"><p style="margin:0;font-size:12px;line-height:1.8;color:#665650"><strong>Order Number:</strong> ${safeOrderNumber}<br><strong>Order Date:</strong> ${escapeHtml(displayDate(order.created_at))}<br><strong>Order Status:</strong> ${status.toUpperCase()}</p></div>${trackingHtml}<div style="padding:8px 0 18px;text-align:center"><a href="${safeOrdersUrl}" style="display:inline-block;padding:13px 24px;border-radius:999px;background:#a45f60;color:#fff;text-decoration:none;font-size:12px;font-weight:bold;letter-spacing:1px">VIEW MY ORDERS</a></div><p style="font-size:13px;line-height:1.8;color:#665650">Thank you for making AUREL a part of your special moments.</p><p style="font-size:14px;line-height:1.8">With love,<br><strong>Team AUREL</strong><br><span style="font-size:11px;color:#806b64">Made With Love For You</span></p></td></tr></table></td></tr></table></body></html>`
 
     const transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',

@@ -2241,12 +2241,37 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     if (orderStatus !== 'shipped' && orderStatus !== 'delivered') {
       return sendJson(res, 400, { error: 'Choose Shipped or Delivered.' })
     }
+    let trackingNumber = ''
+    let trackingUrl = ''
+    if (orderStatus === 'shipped') {
+      if ((body.trackingNumber !== undefined && typeof body.trackingNumber !== 'string')
+        || (body.trackingUrl !== undefined && typeof body.trackingUrl !== 'string')) {
+        return sendJson(res, 400, { error: 'Enter valid tracking details.' })
+      }
+      trackingNumber = typeof body.trackingNumber === 'string' ? body.trackingNumber.trim() : ''
+      trackingUrl = typeof body.trackingUrl === 'string' ? body.trackingUrl.trim() : ''
+      if (trackingNumber.length > 120 || /[\u0000-\u001f\u007f]/.test(trackingNumber)) {
+        return sendJson(res, 400, { error: 'The tracking ID must be 120 characters or fewer and cannot contain control characters.' })
+      }
+      if (trackingUrl) {
+        if (trackingUrl.length > 2048) return sendJson(res, 400, { error: 'The tracking link must be 2048 characters or fewer.' })
+        try {
+          const parsedTrackingUrl = new URL(trackingUrl)
+          if (!['http:', 'https:'].includes(parsedTrackingUrl.protocol) || parsedTrackingUrl.username || parsedTrackingUrl.password) {
+            throw new Error('Invalid tracking link.')
+          }
+          trackingUrl = parsedTrackingUrl.toString()
+        } catch {
+          return sendJson(res, 400, { error: 'Enter a valid HTTP or HTTPS tracking link.' })
+        }
+      }
+    }
     const result = await supabaseRequest<{
       success: boolean
       alreadyUpdated?: boolean
       reason?: string
       currentStatus?: string
-      order?: Record<string, unknown>
+      order?: { order_data?: Record<string, unknown> }
     }>(
       'rpc/aurel_update_order_fulfillment_status',
       new URLSearchParams(),
@@ -2267,9 +2292,39 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
     }
     const alreadyUpdated = Boolean(result.alreadyUpdated)
     let emailError: string | undefined
+    let trackingError: string | undefined
     if (!alreadyUpdated) {
+      if (orderStatus === 'shipped' && (trackingNumber || trackingUrl)) {
+        try {
+          const orderData = result.order?.order_data
+          if (!orderData) throw new Error('The updated order did not include its saved details.')
+          const savedOrders = await supabaseRequest<Array<{ id: number }>>(
+            'aurel_orders',
+            new URLSearchParams({ id: `eq.${orderMatch[1]}`, select: 'id' }),
+            {
+              method: 'PATCH',
+              headers: { Prefer: 'return=representation' },
+              body: JSON.stringify({
+                order_data: { ...orderData, trackingNumber, trackingUrl }
+              })
+            }
+          )
+          if (!savedOrders.length) throw new Error('No matching order was updated.')
+        } catch (trackingSaveFailure) {
+          console.error('Order tracking details could not be saved.', {
+            orderId: orderMatch[1],
+            errorCode: trackingSaveFailure && typeof trackingSaveFailure === 'object' && 'code' in trackingSaveFailure
+              && typeof trackingSaveFailure.code === 'string' ? trackingSaveFailure.code : 'unknown'
+          })
+          trackingError = 'Tracking details could not be saved to the order record.'
+        }
+      }
       try {
-        const statusEmail = await sendOrderStatusEmail(Number(orderMatch[1]), orderStatus)
+        const statusEmail = await sendOrderStatusEmail(
+          Number(orderMatch[1]),
+          orderStatus,
+          orderStatus === 'shipped' ? { trackingNumber, trackingUrl } : undefined
+        )
         if (statusEmail.status === 'failed') emailError = statusEmail.error
       } catch (emailFailure) {
         console.error(`Order ${orderStatus} update email could not be processed.`, {
@@ -2284,6 +2339,7 @@ const handleAdminRoute = async (req: AdminRequest, res: ServerResponse, path: st
       success: true,
       alreadyUpdated,
       order: result.order,
+      ...(trackingError ? { trackingError } : {}),
       ...(emailError ? { emailError } : {})
     })
   }

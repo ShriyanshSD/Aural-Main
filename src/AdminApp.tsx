@@ -98,6 +98,10 @@ interface AdminOrder {
   confirmation_email_error: string | null
   events?: AdminOrderEvent[]
 }
+interface ShipmentTrackingDetails {
+  trackingNumber: string
+  trackingUrl: string
+}
 interface AdminOrderEvent {
   id: number
   actor_type: string
@@ -877,17 +881,28 @@ export default function AdminApp() {
                 : result.emailStatus === 'sending'
                   ? 'Order confirmation email is already being processed.'
                 : result.emailError || 'Payment remains confirmed, but the confirmation email could not be sent.')
-          }} onUpdate={async (order, status) => {
+          }} onUpdate={async (order, status, trackingDetails) => {
             setUpdatingStatusOrderId(String(order.id))
-            await runAction(async () => {
-              return api<{ alreadyUpdated?: boolean; emailError?: string }>(`/api/admin/orders/${order.id}`, { method: 'PATCH', body: JSON.stringify({ orderStatus: status }) })
-            }, result => {
-              const statusMessage = result.alreadyUpdated
-                ? `${order.order_id} was already ${statusLabel(status)}.`
-                : `${order.order_id} marked ${statusLabel(status).toLowerCase()}.`
-              return result.emailError ? `${statusMessage} ${result.emailError}` : statusMessage
-            })
-            setUpdatingStatusOrderId('')
+            let updated = false
+            try {
+              await runAction(async () => {
+                const result = await api<{ alreadyUpdated?: boolean; emailError?: string; trackingError?: string }>(`/api/admin/orders/${order.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ orderStatus: status, ...trackingDetails })
+                })
+                updated = true
+                await loadSection('orders')
+                return result
+              }, result => {
+                const statusMessage = result.alreadyUpdated
+                  ? `${order.order_id} was already ${statusLabel(status)}.`
+                  : `${order.order_id} marked ${statusLabel(status).toLowerCase()}.`
+                return [statusMessage, result.trackingError, result.emailError].filter(Boolean).join(' ')
+              })
+            } finally {
+              setUpdatingStatusOrderId('')
+            }
+            return updated
           }} />}
           {section === 'reviews' && <ReviewsPage
             reviews={reviews}
@@ -1888,9 +1903,10 @@ function CategoriesPage({ categories, onCreate, onEdit, onDelete }: {
     </article>)}</div> : <EmptyState text="No categories have been created yet." />}
   </section>
 }
-function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStatusOrderId, archivingDeliveredOrders, onArchiveDelivered, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; updatingStatusOrderId: string; archivingDeliveredOrders: boolean; onArchiveDelivered: () => void; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus) => Promise<void> }) {
+function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStatusOrderId, archivingDeliveredOrders, onArchiveDelivered, onConfirmPayment, onRetryEmail, onUpdate }: { orders: AdminOrder[]; search: string; setSearch: (value: string) => void; confirmingOrderId: string; updatingStatusOrderId: string; archivingDeliveredOrders: boolean; onArchiveDelivered: () => void; onConfirmPayment: (order: AdminOrder) => Promise<boolean>; onRetryEmail: (order: AdminOrder) => void; onUpdate: (order: AdminOrder, status: OrderStatus, trackingDetails?: ShipmentTrackingDetails) => Promise<boolean> }) {
   const [tab, setTab] = useState<'awaiting' | 'paid' | 'shipped' | 'delivered' | 'all'>('awaiting')
   const [allStatusFilter, setAllStatusFilter] = useState<'all' | 'pending_payment' | 'paid' | 'shipped' | 'delivered' | 'cancelled'>('all')
+  const [shipmentOrder, setShipmentOrder] = useState<AdminOrder | null>(null)
   const tabOrders = useMemo(() => orders.filter(order => {
     if (tab === 'paid') return order.payment_status === 'paid' && !['shipped', 'delivered', 'cancelled'].includes(order.order_status)
     if (tab === 'shipped') return order.order_status === 'shipped'
@@ -2039,16 +2055,18 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStat
         const address = [order.order_data.address, order.order_data.city, order.order_data.state, order.order_data.postalCode].filter(Boolean).map(String).join(', ') || '—'
         if (tab === 'awaiting') return <article key={order.id} className="owner-card overflow-hidden rounded-2xl border border-[#eee5df] bg-white shadow-[0_8px_24px_rgba(70,48,39,0.035)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f1ebe7] bg-gradient-to-r from-[#fffaf6] to-white px-4 py-4 sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#fff0df] text-[#ae712e]"><ShoppingBag className="h-[18px] w-[18px]" /></span>
-              <div className="min-w-0"><p className="truncate text-sm font-bold text-[#3d302e]">{order.order_id}</p><p className="mt-1 flex items-center gap-1.5 text-[11px] text-[#938079]"><CalendarDays className="h-3 w-3" />Placed {dateLabel(order.created_at)}</p></div>
+              <div className="min-w-0"><p className="truncate text-[10px] font-semibold uppercase tracking-wide text-[#938079]">{order.order_id}</p><p className="mt-0.5 truncate text-lg font-bold text-[#3d302e] sm:text-xl">{String(order.order_data.customerName ?? 'Customer')}</p><p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-[#76645e]"><CalendarDays className="h-3.5 w-3.5" />{order.paid_at ? `Paid ${dateLabel(order.paid_at)}` : `Placed ${dateLabel(order.created_at)}`}</p></div>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-[10px] font-semibold text-amber-800"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Awaiting confirmation</span>
+            <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-end">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1.5 text-[10px] font-semibold text-amber-800"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Awaiting confirmation</span>
+              <div className="rounded-xl border border-[#eadfd9] bg-white px-3 py-2 text-right shadow-sm sm:px-4"><p className="text-[9px] font-semibold uppercase tracking-wider text-[#938079]">Total amount</p><p className="text-xl font-bold tracking-tight text-[#3d302e] sm:text-2xl">{money(order.order_data.total)}</p></div>
+            </div>
           </div>
           <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
             <section className="min-w-0">
               <h3 className="text-[10px] font-semibold uppercase tracking-[.15em] text-[#9a827a]">Customer & delivery</h3>
-              <p className="mt-2 text-sm font-semibold text-[#40332f]">{String(order.order_data.customerName ?? 'Customer')}</p>
               <div className="mt-2 grid gap-2 text-xs text-[#76645e] sm:grid-cols-2">
                 <a href={`tel:${encodeURIComponent(String(order.order_data.phoneNumber ?? ''))}`} className="flex min-w-0 items-center gap-2 break-all hover:text-[#a45f60]"><Phone className="h-3.5 w-3.5 shrink-0 text-[#aa7771]" />{String(order.order_data.phoneNumber ?? 'No phone number')}</a>
                 <a href={`mailto:${encodeURIComponent(String(order.order_data.email ?? ''))}`} className="flex min-w-0 items-center gap-2 break-all hover:text-[#a45f60]"><Mail className="h-3.5 w-3.5 shrink-0 text-[#aa7771]" />{String(order.order_data.email ?? 'No email')}</a>
@@ -2126,10 +2144,14 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStat
               {order.payment_status === 'paid' && ['paid', 'confirmed', 'processing', 'shipped', 'delivered'].includes(order.order_status) && ['pending', 'failed'].includes(order.confirmation_email_status) && <button type="button" onClick={() => onRetryEmail(order)} className="rounded-lg border border-[#a45f60]/40 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5">{order.confirmation_email_status === 'failed' ? 'Retry email' : 'Send email'}</button>}
               {tab === 'paid' && order.order_status === 'paid' && <>
                 {(['shipped', 'delivered'] as const).map(target => <button key={target} type="button" disabled={Boolean(updatingStatusOrderId)} onClick={() => {
-                  if (window.confirm(`Mark order ${order.order_id} as ${target}?`)) void onUpdate(order, target)
+                  if (target === 'shipped') {
+                    setShipmentOrder(order)
+                  } else if (window.confirm(`Mark order ${order.order_id} as ${target}?`)) {
+                    void onUpdate(order, target)
+                  }
                 }} className="inline-flex items-center gap-1.5 rounded-lg border border-[#a45f60]/35 px-3 py-2.5 text-xs font-semibold text-[#a45f60] hover:bg-[#a45f60]/5 disabled:cursor-wait disabled:opacity-60">
                   {updatingStatusOrderId === String(order.id) ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
-                  {updatingStatusOrderId === String(order.id) ? 'Updating…' : `Mark ${target}`}
+                  {updatingStatusOrderId === String(order.id) ? 'Updating…' : target === 'shipped' ? 'Mark as shipped' : 'Mark delivered'}
                 </button>)}
               </>}
               {tab === 'shipped' && order.order_status === 'shipped' && <button type="button" disabled={Boolean(updatingStatusOrderId)} onClick={() => {
@@ -2150,7 +2172,63 @@ function OrdersPage({ orders, search, setSearch, confirmingOrderId, updatingStat
       {!visibleItems.length && <EmptyState text="No matching orders in this tab." />}
       {filteredOrders.length > 0 && <TablePager page={page} pageCount={pageCount} total={filteredOrders.length} onChange={setPage} />}
     </div>
+    {shipmentOrder && <ShipmentDetailsDialog
+      order={shipmentOrder}
+      isSubmitting={updatingStatusOrderId === String(shipmentOrder.id)}
+      onClose={() => setShipmentOrder(null)}
+      onConfirm={async details => {
+        const updated = await onUpdate(shipmentOrder, 'shipped', details)
+        if (updated) setShipmentOrder(null)
+      }}
+    />}
   </section>
+}
+function ShipmentDetailsDialog({ order, isSubmitting, onClose, onConfirm }: {
+  order: AdminOrder
+  isSubmitting: boolean
+  onClose: () => void
+  onConfirm: (details: ShipmentTrackingDetails) => Promise<void>
+}) {
+  const [trackingNumber, setTrackingNumber] = useState('')
+  const [trackingUrl, setTrackingUrl] = useState('')
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    dialog.showModal()
+    return () => {
+      if (dialog.open) dialog.close()
+    }
+  }, [])
+  return <dialog ref={dialogRef} aria-labelledby="shipment-dialog-title" onCancel={event => {
+    event.preventDefault()
+    if (!isSubmitting) onClose()
+  }} className="m-auto max-h-[94dvh] w-[calc(100%-1rem)] max-w-lg overflow-y-auto rounded-3xl border-0 bg-[#fffdfa] p-5 text-[#40332f] shadow-2xl backdrop:bg-[#211917]/50 backdrop:backdrop-blur-sm sm:p-7">
+    <header className="mb-5 flex items-center justify-between gap-3">
+      <h2 id="shipment-dialog-title" className="font-serif-title text-xl">Ship order {order.order_id}</h2>
+      <button type="button" disabled={isSubmitting} onClick={onClose} aria-label="Close dialog" className="rounded-full p-2 text-[#8a7770] hover:bg-[#f4ece8] disabled:opacity-60"><X className="h-5 w-5" /></button>
+    </header>
+    <form aria-labelledby="shipment-dialog-title" onSubmit={async event => {
+      event.preventDefault()
+      await onConfirm({ trackingNumber: trackingNumber.trim(), trackingUrl: trackingUrl.trim() })
+    }}>
+      <p className="mb-5 text-sm leading-6 text-[#76645e]">Add the courier tracking details to the shipping email. Both fields are optional if they are not available.</p>
+      <div className="space-y-4">
+        <label htmlFor="shipment-tracking-number" className="block text-sm font-medium text-[#51413c]">Tracking ID (optional)
+          <input id="shipment-tracking-number" type="text" maxLength={120} autoFocus autoCapitalize="off" autoCorrect="off" spellCheck={false} value={trackingNumber} onChange={event => setTrackingNumber(event.target.value)} className="form-input mt-2" />
+        </label>
+        <label htmlFor="shipment-tracking-url" className="block text-sm font-medium text-[#51413c]">Tracking link (optional)
+          <input id="shipment-tracking-url" type="url" maxLength={2048} autoCapitalize="off" autoCorrect="off" spellCheck={false} value={trackingUrl} onChange={event => setTrackingUrl(event.target.value)} className="form-input mt-2" />
+        </label>
+      </div>
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" disabled={isSubmitting} onClick={onClose} className="min-h-11 rounded-xl border border-[#e8d9d2] px-4 py-2.5 text-sm font-semibold text-[#76645e] disabled:opacity-60">Cancel</button>
+        <button type="submit" disabled={isSubmitting} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#a45f60] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#8c4e50] disabled:cursor-wait disabled:opacity-60">
+          {isSubmitting ? <><LoaderCircle className="h-4 w-4 animate-spin" />Confirming…</> : 'Confirm shipment'}
+        </button>
+      </div>
+    </form>
+  </dialog>
 }
 function CustomersPage({ customers, search, setSearch, onEdit, onToggleStatus, onDelete }: { customers: AdminCustomer[]; search: string; setSearch: (value: string) => void; onEdit: (customer: AdminCustomer) => void; onToggleStatus: (customer: AdminCustomer) => void; onDelete: (customer: AdminCustomer) => void }) {
   const { page, setPage, pageCount, visibleItems } = usePagination(customers)
