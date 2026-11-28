@@ -209,6 +209,40 @@ const magazineDesignListsMatch = (left: MagazineDesign[], right: MagazineDesign[
       && design.images.every((image, imageIndex) => image === publishedDesign.images[imageIndex])
   })
 
+interface AdminContentResponse {
+  draft: StorefrontContent
+  published: StorefrontContent
+  updatedAt: string | null
+  publishedAt: string | null
+}
+
+const loadAdminContent = async (): Promise<AdminContentResponse> => {
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await api<AdminContentResponse>('/api/admin/content')
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) await new Promise(resolve => window.setTimeout(resolve, (attempt + 1) * 500))
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Could not load saved magazine designs.')
+}
+
+const contentForMagazineManager = ({ draft, published, updatedAt, publishedAt }: AdminContentResponse) => {
+  const draftUpdatedAt = Date.parse(updatedAt ?? '')
+  const contentPublishedAt = Date.parse(publishedAt ?? '')
+  const hasDraftTimestamp = Number.isFinite(draftUpdatedAt)
+  const hasPublishedTimestamp = Number.isFinite(contentPublishedAt)
+  const publishedIsAtLeastAsRecent = hasPublishedTimestamp
+    && (!hasDraftTimestamp || contentPublishedAt >= draftUpdatedAt)
+  const resolvedDraft = publishedIsAtLeastAsRecent
+    && !magazineDesignListsMatch(draft.magazineDesigns ?? [], published.magazineDesigns ?? [])
+    ? { ...draft, magazineDesigns: published.magazineDesigns ?? [] }
+    : draft
+  return { draft: resolvedDraft, published }
+}
+
 const initialSettings: StoreSettings = {
   storeName: 'AUREL',
   tagline: 'Made With Love For You',
@@ -448,26 +482,35 @@ export default function AdminApp() {
     try {
       if (target === 'dashboard') setOverview(await api<Overview>(`/api/admin/overview?range=${analyticsRange}`))
       if (target === 'products') {
-        const [result, categoryResult] = await Promise.all([
-          api<{ products: AdminProduct[] }>('/api/admin/products'),
-          api<{ categories: AdminCategory[] }>('/api/admin/categories')
-        ])
-        setProducts(result.products)
-        setCategories(categoryResult.categories)
-        if (!contentLoaded) {
-          setContentLoading(true)
-          try {
-            const contentResult = await api<{ draft: StorefrontContent; published: StorefrontContent }>('/api/admin/content')
-            setContentDraft(contentResult.draft)
-            setContentPublished(contentResult.published)
+        const shouldLoadContent = !contentLoaded && !contentLoading
+        if (shouldLoadContent) setContentLoading(true)
+        const contentRequest = shouldLoadContent
+          ? loadAdminContent().then(
+            content => ({ ok: true as const, content }),
+            loadError => ({ ok: false as const, loadError })
+          )
+          : Promise.resolve(null)
+        try {
+          const [result, categoryResult, contentOutcome] = await Promise.all([
+            api<{ products: AdminProduct[] }>('/api/admin/products'),
+            api<{ categories: AdminCategory[] }>('/api/admin/categories'),
+            contentRequest
+          ])
+          setProducts(result.products)
+          setCategories(categoryResult.categories)
+          if (contentOutcome?.ok) {
+            const content = contentForMagazineManager(contentOutcome.content)
+            setContentDraft(content.draft)
+            setContentPublished(content.published)
             setContentLoaded(true)
-          } catch (contentLoadError) {
+          } else if (contentOutcome) {
+            const contentLoadError = contentOutcome.loadError
             setError(contentLoadError instanceof Error ? contentLoadError.message : 'Could not load saved magazine designs.')
-          } finally {
-            setContentLoading(false)
           }
+          if (!result.products.length) setNotice('Import the existing storefront catalog to begin managing products.')
+        } finally {
+          if (shouldLoadContent) setContentLoading(false)
         }
-        if (!result.products.length) setNotice('Import the existing storefront catalog to begin managing products.')
       }
       if (target === 'custom-orders') {
         const result = await api<{ orders: AdminCustomOrder[]; magazines: AdminMagazineOrder[] }>('/api/admin/custom-orders')
@@ -484,12 +527,13 @@ export default function AdminApp() {
       if (target === 'settings') {
         const [settingsResult, contentResult, activityResult] = await Promise.all([
           api<{ settings: StoreSettings }>('/api/admin/settings'),
-          api<{ draft: StorefrontContent; published: StorefrontContent }>('/api/admin/content'),
+          loadAdminContent(),
           api<{ entries: AdminAuditEntry[] }>('/api/admin/activity')
         ])
+        const content = contentForMagazineManager(contentResult)
         setSettings(settingsResult.settings)
-        setContentDraft(contentResult.draft)
-        setContentPublished(contentResult.published)
+        setContentDraft(content.draft)
+        setContentPublished(content.published)
         setContentLoaded(true)
         setActivityEntries(activityResult.entries)
       }
@@ -513,8 +557,8 @@ export default function AdminApp() {
   }
 
   useEffect(() => {
-    if (signedIn) void loadSection(section)
-  }, [section, signedIn, analyticsRange])
+    if (signedIn && authReady) void loadSection(section)
+  }, [section, signedIn, authReady, analyticsRange])
 
   useEffect(() => {
     if (!signedIn) return
@@ -853,7 +897,7 @@ export default function AdminApp() {
           />}
           {section === 'products' && <ProductsPage
             products={filteredProducts} categories={categories} search={search} setSearch={setSearch}
-            contentDraft={contentDraft} contentPublished={contentPublished} contentLoaded={contentLoaded} contentLoading={contentLoading} setContentDraft={setContentDraft}
+            contentDraft={contentDraft} contentPublished={contentPublished} contentLoaded={contentLoaded} contentLoading={contentLoading || !authReady} setContentDraft={setContentDraft}
             onSaveMagazineDraft={() => {
               void runAction(async () => {
                 await api('/api/admin/content', { method: 'PATCH', body: JSON.stringify({ content: contentDraft }) })
@@ -1840,7 +1884,7 @@ function ProductsPage({ products, categories, search, setSearch, contentDraft, c
       /> : <div className="rounded-2xl border border-[#eee5df] bg-white p-8 text-center text-sm text-[#938079]">
         {contentLoading
           ? <span className="inline-flex items-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin" />Loading saved magazine designs…</span>
-          : <div><p>Saved magazine designs could not be loaded. Refresh before editing to avoid overwriting existing designs.</p><button type="button" onClick={onRefresh} className="mt-4 min-h-10 rounded-xl border border-[#e8d9d2] px-4 text-sm font-semibold text-[#a45f60] hover:bg-[#faf2ef]">Retry</button></div>}
+          : <p>Saved magazine designs could not be loaded after automatic retries. Editing is unavailable to protect the existing designs.</p>}
       </div>
     ) : <>
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
