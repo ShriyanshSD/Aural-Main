@@ -17,6 +17,13 @@ const nativeSessionUnavailableMessage =
   'Native owner sign-in requires the AUREL Owner Android app and Android Keystore storage.';
 const isNativeOwnerApp = isOwnerNativeBuild && Capacitor.isNativePlatform();
 
+export class OwnerSessionExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OwnerSessionExpiredError';
+  }
+}
+
 const getAppCheckToken = async (): Promise<string | null> => {
   if (!isNativeOwnerApp) return null;
   if (!appCheckInitialization) {
@@ -69,7 +76,7 @@ const readSession = async (): Promise<NativeOwnerSession | null> => {
   if (stored === null) return null;
   if (isNativeOwnerSession(stored)) return stored;
   await SecureStorage.remove(storageKey);
-  throw new Error('The saved owner session is invalid. Sign in again.');
+  throw new OwnerSessionExpiredError('The saved owner session is invalid. Sign in again.');
 };
 
 const saveSession = async (session: NativeOwnerSession): Promise<void> => {
@@ -113,7 +120,7 @@ const performRefreshSession = async (session: NativeOwnerSession): Promise<Nativ
   }
   if (response.status === 401 || response.status === 403) {
     await SecureStorage.remove(storageKey);
-    throw new Error('Your owner session has expired. Sign in again.');
+    throw new OwnerSessionExpiredError('Your owner session has expired. Sign in again.');
   }
   const refreshed = await parseResponse<Omit<NativeOwnerSession, 'user'> & {user: NativeOwnerSession['user']}>(response);
   const nextSession: NativeOwnerSession = {

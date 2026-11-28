@@ -12,7 +12,7 @@ import type { MagazineDesign, StorefrontContent } from './types'
 import PasswordInput from './components/PasswordInput'
 import { BlobWriter, HttpReader, ZipWriter } from '@zip.js/zip.js'
 import { isOwnerNativeBuild, ownerApiUrl, ownerAssetUrl, ownerStorefrontUrl } from './utils/ownerApi'
-import { ownerAuthAdapter } from './utils/ownerAuthAdapter'
+import { OwnerSessionExpiredError, ownerAuthAdapter } from './utils/ownerAuthAdapter'
 import { listenForOwnerOrderNotifications, startOwnerPushNotifications, unregisterOwnerPushNotifications } from './utils/ownerPushNotifications'
 import { saveOwnerDownload } from './utils/ownerFileDownloads'
 import { checkForOwnerAppUpdate, rememberOwnerAppUpdateBaseline } from './utils/ownerAppUpdates'
@@ -290,6 +290,20 @@ const sectionFromPath = (path: string): Section => {
   return sections.some(section => section.id === segment) ? segment as Section : 'dashboard'
 }
 
+class AdminApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'AdminApiError'
+    this.status = status
+  }
+}
+
+const isDefinitiveOwnerAuthFailure = (error: unknown) =>
+  error instanceof OwnerSessionExpiredError
+  || (error instanceof AdminApiError && error.status >= 400 && error.status < 500 && error.status !== 429)
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   ownerAuthAdapter.assertAvailable()
   const response = await ownerAuthAdapter.fetch(ownerApiUrl(path), {
@@ -303,9 +317,9 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     payload = await response.json() as { error?: string } & T
   } catch {
-    throw new Error(`The owner service returned an invalid response (HTTP ${response.status}).`)
+    throw new AdminApiError(`The owner service returned an invalid response (HTTP ${response.status}).`, response.status)
   }
-  if (!response.ok) throw new Error(payload.error || `The request failed (HTTP ${response.status}).`)
+  if (!response.ok) throw new AdminApiError(payload.error || `The request failed (HTTP ${response.status}).`, response.status)
   return payload
 }
 
@@ -324,6 +338,9 @@ export default function AdminApp() {
   const [ownerEmail, setOwnerEmail] = useState('')
   const [signedIn, setSignedIn] = useState(false)
   const [authReady, setAuthReady] = useState(false)
+  const [authRetryKey, setAuthRetryKey] = useState(0)
+  const [authUnavailable, setAuthUnavailable] = useState(false)
+  const [authRestoreMessage, setAuthRestoreMessage] = useState('Checking your saved owner session…')
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -403,7 +420,30 @@ export default function AdminApp() {
     navigateSection('orders')
   }), [])
 
+  const retryOwnerSession = () => {
+    setAuthUnavailable(false)
+    setAuthRestoreMessage('Checking your saved owner session…')
+    setAuthReady(false)
+    setAuthRetryKey(key => key + 1)
+  }
+
   useEffect(() => {
+    let active = true
+    let retryTimer: number | undefined
+    let cancelDelay: (() => void) | undefined
+    const delay = (milliseconds: number) => new Promise<void>(resolve => {
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined
+        cancelDelay = undefined
+        resolve()
+      }, milliseconds)
+      cancelDelay = () => {
+        if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+        retryTimer = undefined
+        cancelDelay = undefined
+        resolve()
+      }
+    })
     const params = new URLSearchParams(window.location.search)
     if (params.has('code') || params.has('access_token')) {
       window.history.replaceState(null, '', isOwnerNativeBuild ? '#/owner/login' : '/admin/login')
@@ -415,17 +455,60 @@ export default function AdminApp() {
       setOwnerEmail(cachedOwnerEmail)
       setSignedIn(true)
     }
-    void api<{ user: { id: string; email: string } }>('/api/admin/me')
-      .then(({ user }) => {
-        setOwnerEmail(user.email)
-        setSignedIn(true)
-        if (isOwnerNativeBuild) window.sessionStorage.setItem('aurel_owner_cached_email', user.email)
-      })
-      .catch(() => {
-        if (!cachedOwnerEmail) setSignedIn(false)
-      })
-      .finally(() => setAuthReady(true))
-  }, [])
+    const restoreOwnerSession = async () => {
+      for (let attempt = 0; active; attempt += 1) {
+        try {
+          const { user } = await api<{ user: { id: string; email: string } }>('/api/admin/me')
+          if (!active) return
+          setOwnerEmail(user.email)
+          setSignedIn(true)
+          setAuthUnavailable(false)
+          setAuthRestoreMessage('')
+          if (isOwnerNativeBuild) window.sessionStorage.setItem('aurel_owner_cached_email', user.email)
+          setAuthReady(true)
+          return
+        } catch (restoreError) {
+          if (!active) return
+          if (!isOwnerNativeBuild) {
+            if (!cachedOwnerEmail) setSignedIn(false)
+            setAuthReady(true)
+            return
+          }
+          if (isDefinitiveOwnerAuthFailure(restoreError)) {
+            window.sessionStorage.removeItem('aurel_owner_cached_email')
+            setOwnerEmail('')
+            setSignedIn(false)
+            setAuthUnavailable(false)
+            setAuthRestoreMessage('')
+            setAuthReady(true)
+            return
+          }
+          if (attempt < 2) {
+            setAuthRestoreMessage('Your saved session is safe. Reconnecting to the owner service…')
+            await delay((attempt + 1) * 1000)
+            continue
+          }
+          setAuthRestoreMessage('The owner service is unavailable. Your saved session has not been removed.')
+          setAuthUnavailable(true)
+          setAuthReady(true)
+          retryTimer = window.setTimeout(() => {
+            retryTimer = undefined
+            if (!active) return
+            setAuthUnavailable(false)
+            setAuthReady(false)
+            setAuthRetryKey(key => key + 1)
+          }, 15_000)
+          return
+        }
+      }
+    }
+    void restoreOwnerSession()
+    return () => {
+      active = false
+      cancelDelay?.()
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+    }
+  }, [authRetryKey])
 
   useEffect(() => {
     if (!isOwnerNativeBuild) return
@@ -756,7 +839,19 @@ export default function AdminApp() {
     }
   }
 
-  if (!authReady) return <AdminLoading />
+  if (!authReady) return <AdminLoading message={authRestoreMessage} />
+  if (authUnavailable) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f7f3ef] px-5 py-12 text-[#342825]">
+        <section role="status" aria-live="polite" className="w-full max-w-md rounded-3xl border border-[#eadbd4] bg-white p-8 text-center shadow-xl shadow-[#5d3a2d]/5">
+          <CircleAlert className="mx-auto h-8 w-8 text-[#a45f60]" />
+          <h1 className="mt-4 font-serif-title text-2xl">Restoring your owner session</h1>
+          <p className="mt-3 text-sm leading-6 text-[#826f69]">{authRestoreMessage} The app will keep checking automatically.</p>
+          <button type="button" onClick={retryOwnerSession} className="mt-6 min-h-11 rounded-xl bg-[#a45f60] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#8c4e50]">Retry connection</button>
+        </section>
+      </main>
+    )
+  }
   if (!signedIn) {
     return (
       <main className="min-h-screen bg-[#f7f3ef] px-5 py-12 text-[#342825]">
@@ -1134,8 +1229,8 @@ export default function AdminApp() {
   )
 }
 
-function AdminLoading() {
-  return <div className="grid min-h-screen place-items-center bg-[#f7f3ef]"><LoaderCircle className="h-6 w-6 animate-spin text-[#a45f60]" /></div>
+function AdminLoading({ message }: { message: string }) {
+  return <div role="status" aria-live="polite" className="grid min-h-screen place-items-center bg-[#f7f3ef] px-5 text-[#826f69]"><div className="flex items-center gap-3"><LoaderCircle className="h-6 w-6 animate-spin text-[#a45f60]" /><span>{message}</span></div></div>
 }
 function CustomOrdersPage({ orders, magazines, giftHistoryCount, magazineHistoryCount, search, setSearch, updatingStatusOrderId, archivingHistory, onUpdateGiftOrder, onArchiveHistory }: {
   orders: AdminCustomOrder[]
